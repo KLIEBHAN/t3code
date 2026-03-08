@@ -2,12 +2,14 @@
 import "../index.css";
 
 import {
+  EventId,
   ORCHESTRATION_WS_METHODS,
   type MessageId,
   type OrchestrationReadModel,
   type ProjectId,
   type ServerConfig,
   type ThreadId,
+  TurnId,
   type WsWelcomePayload,
   WS_CHANNELS,
   WS_METHODS,
@@ -355,6 +357,77 @@ function createSnapshotWithLongProposedPlan(): OrchestrationReadModel {
           })
         : thread,
     ),
+  };
+}
+
+function resolveWsRpc(body: WsRequestEnvelope["body"]): unknown {
+  const tag = body._tag;
+function createToolCallSnapshot(): OrchestrationReadModel {
+  return {
+    snapshotSequence: 1,
+    updatedAt: NOW_ISO,
+    projects: [
+      {
+        id: PROJECT_ID,
+        title: "Project",
+        workspaceRoot: "/repo/project",
+        defaultModel: "gpt-5",
+        scripts: [],
+        createdAt: NOW_ISO,
+        updatedAt: NOW_ISO,
+        deletedAt: null,
+      },
+    ],
+    threads: [
+      {
+        id: THREAD_ID,
+        projectId: PROJECT_ID,
+        title: "Browser test thread",
+        model: "gpt-5",
+        interactionMode: "default",
+        runtimeMode: "full-access",
+        branch: "main",
+        worktreePath: null,
+        latestTurn: null,
+        createdAt: NOW_ISO,
+        updatedAt: NOW_ISO,
+        deletedAt: null,
+        messages: [],
+        activities: [
+          {
+            id: EventId.makeUnsafe("activity-tool-output"),
+            createdAt: isoAt(1),
+            kind: "tool.completed",
+            summary: "Command run complete",
+            tone: "tool",
+            turnId: TurnId.makeUnsafe("turn-tool-output"),
+            payload: {
+              itemType: "command_execution",
+              detail: "2 matches found",
+              data: {
+                item: {
+                  command: ["/bin/zsh", "-lc", "rg -n diff apps/web/src/components/ChatView.tsx"],
+                  result: {
+                    output: ["line 1", "line 2"],
+                  },
+                },
+              },
+            },
+          },
+        ],
+        proposedPlans: [],
+        checkpoints: [],
+        session: {
+          threadId: THREAD_ID,
+          status: "ready",
+          providerName: "codex",
+          runtimeMode: "full-access",
+          activeTurnId: null,
+          lastError: null,
+          updatedAt: NOW_ISO,
+        },
+      },
+    ],
   };
 }
 
@@ -1320,6 +1393,91 @@ describe("ChatView timeline estimator parity (full app)", () => {
               },
             },
           });
+        },
+        { timeout: 8_000, interval: 16 },
+      );
+    } finally {
+      await mounted.cleanup();
+    }
+  });
+  it("reorders sidebar projects by drag-and-drop without collapsing the dragged project on release", async () => {
+    const mounted = await mountChatView({
+      viewport: DEFAULT_VIEWPORT,
+      snapshot: createSidebarProjectSnapshot(),
+    });
+
+    try {
+      await vi.waitFor(
+        () => {
+          expect(readSidebarProjectOrder()).toEqual(["Alpha", "Beta"]);
+        },
+        { timeout: 8_000, interval: 16 },
+      );
+
+      useStore.setState((state) => ({
+        ...state,
+        projects: state.projects.map((project) =>
+          project.id === SECOND_PROJECT_ID ? { ...project, expanded: false } : project,
+        ),
+      }));
+      await waitForLayout();
+
+      expect(readSidebarProjectExpansion()).toMatchObject({
+        Alpha: true,
+        Beta: false,
+      });
+
+      const alphaButton = await waitForSidebarProjectButton("Alpha");
+      const betaButton = await waitForSidebarProjectButton("Beta");
+      await dragSidebarProjectToTarget({
+        source: alphaButton,
+        target: betaButton,
+      });
+
+      await vi.waitFor(
+        () => {
+          expect(readSidebarProjectOrder()).toEqual(["Beta", "Alpha"]);
+        },
+        { timeout: 8_000, interval: 16 },
+      );
+
+      expect(readSidebarProjectExpansion()).toMatchObject({
+        Alpha: true,
+        Beta: false,
+      });
+
+      const persistedState = JSON.parse(localStorage.getItem(PERSISTED_STATE_KEY) ?? "{}") as {
+        projectOrderCwds?: string[];
+      };
+      expect(persistedState.projectOrderCwds).toEqual(["/repo/project-beta", "/repo/project"]);
+    } finally {
+      await mounted.cleanup();
+    }
+  });
+
+  it("lets users expand a tool call to inspect its result", async () => {
+    const mounted = await mountChatView({
+      viewport: DEFAULT_VIEWPORT,
+      snapshot: createToolCallSnapshot(),
+    });
+
+    try {
+      const trigger = await waitForElement(
+        () =>
+          Array.from(document.querySelectorAll<HTMLButtonElement>("button")).find((button) =>
+            button.textContent?.includes('rg -n diff apps/web/src/components/ChatView.tsx'),
+          ) ?? null,
+        "Unable to find tool call trigger button.",
+      );
+
+      expect(document.body.textContent).not.toContain("line 1");
+      trigger.click();
+
+      await vi.waitFor(
+        () => {
+          expect(document.body.textContent).toContain("line 1");
+          expect(document.body.textContent).toContain("line 2");
+          expect(document.body.textContent).toContain("2 matches found");
         },
         { timeout: 8_000, interval: 16 },
       );

@@ -509,6 +509,24 @@ function asTrimmedString(value: unknown): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
+function asTrimmedText(value: unknown): string | null {
+  const direct = asTrimmedString(value);
+  if (direct) {
+    return direct;
+  }
+  if (!Array.isArray(value)) {
+    return null;
+  }
+
+  const joined = value
+    .map((entry) => asTrimmedString(entry))
+    .filter((entry): entry is string => entry !== null)
+    .join("\n")
+    .trim();
+
+  return joined.length > 0 ? joined : null;
+}
+
 function normalizeCommandValue(value: unknown): string | null {
   const direct = asTrimmedString(value);
   if (direct) {
@@ -589,21 +607,21 @@ function extractToolOutput(payload: Record<string, unknown> | null): string | nu
   const item = asRecord(data?.item);
   const itemResult = asRecord(item?.result);
   const candidates = [
-    asTrimmedString(itemResult?.output),
-    asTrimmedString(itemResult?.stdout),
-    asTrimmedString(itemResult?.stderr),
-    asTrimmedString(itemResult?.text),
-    asTrimmedString(item?.output),
-    asTrimmedString(item?.stdout),
-    asTrimmedString(item?.stderr),
-    asTrimmedString(data?.output),
-    asTrimmedString(data?.stdout),
-    asTrimmedString(data?.stderr),
+    asTrimmedText(itemResult?.output),
+    asTrimmedText(itemResult?.stdout),
+    asTrimmedText(itemResult?.stderr),
+    asTrimmedText(itemResult?.text),
+    asTrimmedText(item?.output),
+    asTrimmedText(item?.stdout),
+    asTrimmedText(item?.stderr),
+    asTrimmedText(data?.output),
+    asTrimmedText(data?.stdout),
+    asTrimmedText(data?.stderr),
   ];
 
   const combinedStdoutStderr = [
-    asTrimmedString(itemResult?.stdout),
-    asTrimmedString(itemResult?.stderr),
+    asTrimmedText(itemResult?.stdout),
+    asTrimmedText(itemResult?.stderr),
   ]
     .filter((value): value is string => value !== null)
     .join("\n\n");
