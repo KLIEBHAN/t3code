@@ -1480,6 +1480,25 @@ describe("ChatView timeline estimator parity (full app)", () => {
         },
         { timeout: 8_000, interval: 16 },
       );
+
+      useStore.setState((state) => ({
+        ...state,
+        threads: [...state.threads],
+      }));
+      await waitForLayout();
+
+      expect(document.body.textContent).toContain("line 1");
+      expect(document.body.textContent).toContain("line 2");
+
+      trigger.click();
+
+      await vi.waitFor(
+        () => {
+          expect(document.body.textContent).not.toContain("line 1");
+          expect(document.body.textContent).not.toContain("line 2");
+        },
+        { timeout: 8_000, interval: 16 },
+      );
     } finally {
       await mounted.cleanup();
     }
