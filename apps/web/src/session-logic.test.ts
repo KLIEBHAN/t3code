@@ -12,6 +12,7 @@ import {
   findLatestProposedPlan,
   hasToolActivityForTurn,
   isLatestTurnSettled,
+  resolveTurnDiffSummaryForAssistantMessage,
   shouldResetSendPhase,
 } from "./session-logic";
 
@@ -134,6 +135,51 @@ describe("derivePendingApprovals", () => {
     ];
 
     expect(derivePendingApprovals(activities)).toEqual([]);
+  });
+});
+
+describe("resolveTurnDiffSummaryForAssistantMessage", () => {
+  it("prefers turn-based lookup when assistantMessageId is unavailable", () => {
+    const turnId = TurnId.makeUnsafe("turn-1");
+    const summary = {
+      turnId,
+      completedAt: "2026-02-23T00:00:01.000Z",
+      files: [],
+    };
+
+    expect(
+      resolveTurnDiffSummaryForAssistantMessage({
+        message: {
+          id: MessageId.makeUnsafe("assistant:message-1"),
+          role: "assistant",
+          turnId,
+        },
+        turnDiffSummaryByAssistantMessageId: new Map(),
+        turnDiffSummaryByTurnId: new Map([[turnId, summary]]),
+      }),
+    ).toEqual(summary);
+  });
+
+  it("falls back to assistantMessageId lookup when no turn-based summary exists", () => {
+    const messageId = MessageId.makeUnsafe("assistant:message-2");
+    const summary = {
+      turnId: TurnId.makeUnsafe("turn-2"),
+      completedAt: "2026-02-23T00:00:01.000Z",
+      files: [],
+      assistantMessageId: messageId,
+    };
+
+    expect(
+      resolveTurnDiffSummaryForAssistantMessage({
+        message: {
+          id: messageId,
+          role: "assistant",
+          turnId: TurnId.makeUnsafe("turn-missing"),
+        },
+        turnDiffSummaryByAssistantMessageId: new Map([[messageId, summary]]),
+        turnDiffSummaryByTurnId: new Map(),
+      }),
+    ).toEqual(summary);
   });
 });
 

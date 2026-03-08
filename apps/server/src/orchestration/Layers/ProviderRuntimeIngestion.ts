@@ -42,15 +42,20 @@ const BUFFERED_PROPOSED_PLAN_BY_ID_TTL = Duration.minutes(120);
 const MAX_BUFFERED_ASSISTANT_CHARS = 24_000;
 const MAX_BUFFERED_TOOL_OUTPUT_INLINE_CHARS = 24_000;
 const STRICT_PROVIDER_LIFECYCLE_GUARD = process.env.T3CODE_STRICT_PROVIDER_LIFECYCLE_GUARD !== "0";
+const BUFFERED_TOOL_OUTPUT_BY_ITEM_KEY_TTL_MS = Duration.toMillis(
+  BUFFERED_TOOL_OUTPUT_BY_ITEM_KEY_TTL,
+);
 
 type BufferedToolOutputState = {
   inlineText: string;
   spillPath: string | null;
+  updatedAt: number;
 };
 
 const EMPTY_BUFFERED_TOOL_OUTPUT_STATE: BufferedToolOutputState = {
   inlineText: "",
   spillPath: null,
+  updatedAt: 0,
 };
 
 type TurnStartRequestedDomainEvent = Extract<
@@ -147,6 +152,55 @@ function mergeToolOutput(existing: string | undefined, buffered: string | undefi
     return normalizedBuffered;
   }
   return `${normalizedBuffered}\n\n${normalizedExisting}`;
+}
+
+function assistantMessageIdForRuntimeEvent(event: ProviderRuntimeEvent): MessageId {
+  return MessageId.makeUnsafe(`assistant:${event.itemId ?? event.turnId ?? event.eventId}`);
+}
+
+function resolveAssistantMessageIdForFallbackDiff(input: {
+  thread: {
+    messages: ReadonlyArray<{
+      id: MessageId;
+      role: "user" | "assistant" | "system";
+      turnId: TurnId | null;
+    }>;
+    checkpoints: ReadonlyArray<{
+      turnId: TurnId;
+      assistantMessageId: MessageId | null;
+    }>;
+  };
+  turnId: TurnId;
+  event: ProviderRuntimeEvent;
+}): MessageId {
+  const latestAssistantMessageForTurn = input.thread.messages
+    .toReversed()
+    .find((message) => message.role === "assistant" && message.turnId === input.turnId)?.id;
+  if (latestAssistantMessageForTurn) {
+    return latestAssistantMessageForTurn;
+  }
+
+  const existingCheckpointAssistantMessageId = input.thread.checkpoints.find(
+    (checkpoint) => checkpoint.turnId === input.turnId,
+  )?.assistantMessageId;
+  if (existingCheckpointAssistantMessageId) {
+    return existingCheckpointAssistantMessageId;
+  }
+
+  return assistantMessageIdForRuntimeEvent(input.event);
+}
+
+function resolveCheckpointTurnCountForTurn(input: {
+  checkpoints: ReadonlyArray<{
+    turnId: TurnId;
+    checkpointTurnCount: number;
+  }>;
+  turnId: TurnId;
+}): number {
+  return (
+    input.checkpoints.find((checkpoint) => checkpoint.turnId === input.turnId)?.checkpointTurnCount ??
+    nextCheckpointTurnCount(input.checkpoints)
+  );
 }
 
 function normalizeRuntimeTurnState(
@@ -551,11 +605,7 @@ const make = Effect.gen(function* () {
     prefix: "t3code-tool-output-",
   });
 
-  const bufferedToolOutputByItemKey = yield* Cache.make<string, BufferedToolOutputState>({
-    capacity: BUFFERED_TOOL_OUTPUT_BY_ITEM_KEY_CACHE_CAPACITY,
-    timeToLive: BUFFERED_TOOL_OUTPUT_BY_ITEM_KEY_TTL,
-    lookup: () => Effect.succeed(EMPTY_BUFFERED_TOOL_OUTPUT_STATE),
-  });
+  const bufferedToolOutputByItemKey = yield* Ref.make(new Map<string, BufferedToolOutputState>());
 
   const bufferedProposedPlanById = yield* Cache.make<string, { text: string; createdAt: string }>({
     capacity: BUFFERED_PROPOSED_PLAN_BY_ID_CACHE_CAPACITY,
@@ -655,67 +705,153 @@ const make = Effect.gen(function* () {
       Effect.catch(() => Effect.void),
     );
 
+  const cleanupBufferedToolOutputSpills = (spillPaths: ReadonlyArray<string>) =>
+    Effect.forEach(spillPaths, removeBufferedToolOutputSpill, { concurrency: "unbounded" }).pipe(
+      Effect.asVoid,
+    );
+
+  const pruneBufferedToolOutputMap = (input: {
+    current: ReadonlyMap<string, BufferedToolOutputState>;
+    nowMs: number;
+    preserveKey?: string;
+    requiredFreeSlots: number;
+  }) => {
+    const next = new Map(input.current);
+    const spillPathsToDelete: string[] = [];
+
+    for (const [key, state] of input.current) {
+      if (
+        key !== input.preserveKey &&
+        input.nowMs - state.updatedAt >= BUFFERED_TOOL_OUTPUT_BY_ITEM_KEY_TTL_MS
+      ) {
+        next.delete(key);
+        if (state.spillPath) {
+          spillPathsToDelete.push(state.spillPath);
+        }
+      }
+    }
+
+    const maxEntriesAfterPrune = Math.max(
+      0,
+      BUFFERED_TOOL_OUTPUT_BY_ITEM_KEY_CACHE_CAPACITY - input.requiredFreeSlots,
+    );
+    if (next.size <= maxEntriesAfterPrune) {
+      return { next, spillPathsToDelete };
+    }
+
+    const evictableEntries = [...next.entries()]
+      .filter(([key]) => key !== input.preserveKey)
+      .toSorted((left, right) => left[1].updatedAt - right[1].updatedAt);
+    for (const [key, state] of evictableEntries) {
+      if (next.size <= maxEntriesAfterPrune) {
+        break;
+      }
+      next.delete(key);
+      if (state.spillPath) {
+        spillPathsToDelete.push(state.spillPath);
+      }
+    }
+
+    return { next, spillPathsToDelete };
+  };
+
   const appendBufferedToolOutput = (bufferKey: string, delta: string) =>
-    Cache.getOption(bufferedToolOutputByItemKey, bufferKey).pipe(
-      Effect.flatMap((existingText) =>
-        Effect.gen(function* () {
-          const current = Option.getOrElse(existingText, () => EMPTY_BUFFERED_TOOL_OUTPUT_STATE);
-          if (current.spillPath) {
-            yield* appendBufferedToolOutputSpill(current.spillPath, delta);
-            return;
-          }
+    Effect.gen(function* () {
+      const nowMs = Date.now();
+      const current = yield* Ref.get(bufferedToolOutputByItemKey);
+      const { next, spillPathsToDelete } = pruneBufferedToolOutputMap({
+        current,
+        nowMs,
+        preserveKey: bufferKey,
+        requiredFreeSlots: current.has(bufferKey) ? 0 : 1,
+      });
+      const existingState = next.get(bufferKey) ?? EMPTY_BUFFERED_TOOL_OUTPUT_STATE;
 
-          const nextInlineText = `${current.inlineText}${delta}`;
-          if (nextInlineText.length <= MAX_BUFFERED_TOOL_OUTPUT_INLINE_CHARS) {
-            yield* Cache.set(bufferedToolOutputByItemKey, bufferKey, {
-              inlineText: nextInlineText,
-              spillPath: null,
-            });
-            return;
-          }
-
+      if (existingState.spillPath) {
+        yield* appendBufferedToolOutputSpill(existingState.spillPath, delta);
+        next.set(bufferKey, {
+          ...existingState,
+          updatedAt: nowMs,
+        });
+      } else {
+        const nextInlineText = `${existingState.inlineText}${delta}`;
+        if (nextInlineText.length <= MAX_BUFFERED_TOOL_OUTPUT_INLINE_CHARS) {
+          next.set(bufferKey, {
+            inlineText: nextInlineText,
+            spillPath: null,
+            updatedAt: nowMs,
+          });
+        } else {
           const spillPath = path.join(
             bufferedToolOutputSpillDir,
             `tool-output-${process.pid}-${crypto.randomUUID()}.log`,
           );
           yield* appendBufferedToolOutputSpill(spillPath, nextInlineText);
-          yield* Cache.set(bufferedToolOutputByItemKey, bufferKey, {
+          next.set(bufferKey, {
             inlineText: "",
             spillPath,
+            updatedAt: nowMs,
           });
-        }),
-      ),
-    );
+        }
+      }
+
+      yield* Ref.set(bufferedToolOutputByItemKey, next);
+      yield* cleanupBufferedToolOutputSpills(spillPathsToDelete);
+    });
 
   const getBufferedToolOutput = (bufferKey: string) =>
-    Cache.getOption(bufferedToolOutputByItemKey, bufferKey).pipe(
-      Effect.flatMap((existingState) =>
-        Effect.gen(function* () {
-          const current = Option.getOrElse(existingState, () => EMPTY_BUFFERED_TOOL_OUTPUT_STATE);
-          if (!current.spillPath) {
-            return current.inlineText;
-          }
-          return yield* readBufferedToolOutputSpill(current.spillPath);
-        }),
-      ),
-    );
+    Effect.gen(function* () {
+      const current = yield* Ref.get(bufferedToolOutputByItemKey);
+      const nowMs = Date.now();
+      const { next, spillPathsToDelete } = pruneBufferedToolOutputMap({
+        current,
+        nowMs,
+        requiredFreeSlots: 0,
+      });
+      const currentState = next.get(bufferKey);
+      yield* Ref.set(bufferedToolOutputByItemKey, next);
+      yield* cleanupBufferedToolOutputSpills(spillPathsToDelete);
+      return yield* Effect.gen(function* () {
+        const current = currentState ?? EMPTY_BUFFERED_TOOL_OUTPUT_STATE;
+        if (!current.spillPath) {
+          return current.inlineText;
+        }
+        return yield* readBufferedToolOutputSpill(current.spillPath);
+      });
+    });
 
   const takeBufferedToolOutput = (bufferKey: string) =>
-    Cache.getOption(bufferedToolOutputByItemKey, bufferKey).pipe(
-      Effect.flatMap((existingState) =>
-        Effect.gen(function* () {
-          const current = Option.getOrElse(existingState, () => EMPTY_BUFFERED_TOOL_OUTPUT_STATE);
-          const bufferedOutput = current.spillPath
-            ? yield* readBufferedToolOutputSpill(current.spillPath)
-            : current.inlineText;
-          yield* Cache.invalidate(bufferedToolOutputByItemKey, bufferKey);
-          if (current.spillPath) {
-            yield* removeBufferedToolOutputSpill(current.spillPath);
-          }
-          return bufferedOutput;
-        }),
-      ),
-    );
+    Effect.gen(function* () {
+      const current = yield* Ref.get(bufferedToolOutputByItemKey);
+      const nowMs = Date.now();
+      const { next, spillPathsToDelete } = pruneBufferedToolOutputMap({
+        current,
+        nowMs,
+        requiredFreeSlots: 0,
+      });
+      const currentState = next.get(bufferKey);
+      next.delete(bufferKey);
+      yield* Ref.set(bufferedToolOutputByItemKey, next);
+      const bufferedState = currentState ?? EMPTY_BUFFERED_TOOL_OUTPUT_STATE;
+      const bufferedOutput = bufferedState.spillPath
+        ? yield* readBufferedToolOutputSpill(bufferedState.spillPath)
+        : bufferedState.inlineText;
+      const spillPaths = bufferedState.spillPath
+        ? [...spillPathsToDelete, bufferedState.spillPath]
+        : spillPathsToDelete;
+      yield* cleanupBufferedToolOutputSpills(spillPaths);
+      return bufferedOutput;
+    });
+
+  yield* Effect.addFinalizer(() =>
+    Effect.gen(function* () {
+      const current = yield* Ref.get(bufferedToolOutputByItemKey);
+      const spillPaths = [...current.values()]
+        .flatMap((state) => (state.spillPath ? [state.spillPath] : []));
+      yield* Ref.set(bufferedToolOutputByItemKey, new Map());
+      yield* cleanupBufferedToolOutputSpills(spillPaths);
+    }),
+  );
 
   const bufferToolOutputDeltaIfPresent = (event: ProviderRuntimeEvent) =>
     Effect.gen(function* () {
@@ -1055,9 +1191,7 @@ const make = Effect.gen(function* () {
         event.type === "turn.proposed.delta" ? event.payload.delta : undefined;
 
       if (assistantDelta && assistantDelta.length > 0) {
-        const assistantMessageId = MessageId.makeUnsafe(
-          `assistant:${event.itemId ?? event.turnId ?? event.eventId}`,
-        );
+        const assistantMessageId = assistantMessageIdForRuntimeEvent(event);
         const turnId = toTurnId(event.turnId);
         if (turnId) {
           yield* rememberAssistantMessageId(thread.id, turnId, assistantMessageId);
@@ -1104,9 +1238,7 @@ const make = Effect.gen(function* () {
       const assistantCompletion =
         event.type === "item.completed" && event.payload.itemType === "assistant_message"
           ? {
-              messageId: MessageId.makeUnsafe(
-                `assistant:${event.itemId ?? event.turnId ?? event.eventId}`,
-              ),
+              messageId: assistantMessageIdForRuntimeEvent(event),
               fallbackText: event.payload.detail,
             }
           : undefined;
@@ -1235,9 +1367,11 @@ const make = Effect.gen(function* () {
         const turnId = toTurnId(event.turnId);
         if (turnId) {
           const unifiedDiff = event.payload.unifiedDiff.trim();
-          const assistantMessageId = MessageId.makeUnsafe(
-            `assistant:${event.itemId ?? event.turnId ?? event.eventId}`,
-          );
+          const assistantMessageId = resolveAssistantMessageIdForFallbackDiff({
+            thread,
+            turnId,
+            event,
+          });
           yield* orchestrationEngine.dispatch({
             type: "thread.turn.diff.complete",
             commandId: providerCommandId(event, "thread-turn-diff-complete"),
@@ -1249,7 +1383,10 @@ const make = Effect.gen(function* () {
             files: checkpointFilesFromUnifiedDiff(unifiedDiff),
             ...(unifiedDiff.length > 0 ? { unifiedDiff } : {}),
             assistantMessageId,
-            checkpointTurnCount: nextCheckpointTurnCount(thread.checkpoints),
+            checkpointTurnCount: resolveCheckpointTurnCountForTurn({
+              checkpoints: thread.checkpoints,
+              turnId,
+            }),
             createdAt: now,
           });
         }

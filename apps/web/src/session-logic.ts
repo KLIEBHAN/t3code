@@ -1,6 +1,7 @@
 import {
   ApprovalRequestId,
   isToolLifecycleItemType,
+  type MessageId,
   type OrchestrationLatestTurn,
   type OrchestrationThreadActivity,
   type OrchestrationProposedPlanId,
@@ -785,8 +786,6 @@ function pushChangedFile(target: string[], seen: Set<string>, value: unknown) {
   target.push(normalized);
 }
 
-function collectChangedFiles(value: unknown, target: string[], seen: Set<string>, depth: number) {
-  if (depth > 4 || target.length >= 12) {
 function collectChangedFiles(
   value: unknown,
   target: string[],
@@ -884,6 +883,25 @@ export function deriveTimelineEntries(
   return [...messageRows, ...proposedPlanRows, ...workRows].toSorted((a, b) =>
     a.createdAt.localeCompare(b.createdAt),
   );
+}
+
+export function resolveTurnDiffSummaryForAssistantMessage(input: {
+  message: Pick<ChatMessage, "id" | "role" | "turnId">;
+  turnDiffSummaryByAssistantMessageId: ReadonlyMap<MessageId, TurnDiffSummary>;
+  turnDiffSummaryByTurnId: ReadonlyMap<TurnId, TurnDiffSummary>;
+}): TurnDiffSummary | undefined {
+  if (input.message.role !== "assistant") {
+    return undefined;
+  }
+
+  if (input.message.turnId) {
+    const byTurnId = input.turnDiffSummaryByTurnId.get(input.message.turnId);
+    if (byTurnId) {
+      return byTurnId;
+    }
+  }
+
+  return input.turnDiffSummaryByAssistantMessageId.get(input.message.id);
 }
 
 export function inferCheckpointTurnCountByTurnId(

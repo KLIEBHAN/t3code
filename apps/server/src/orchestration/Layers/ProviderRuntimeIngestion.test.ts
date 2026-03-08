@@ -1606,6 +1606,122 @@ describe("ProviderRuntimeIngestion", () => {
     expect(checkpoint?.checkpointTurnCount).toBe(4);
   });
 
+  it("keeps the same fallback checkpoint turn count when a provider diff is updated again", async () => {
+    const harness = await createHarness();
+    const now = new Date().toISOString();
+
+    harness.emit({
+      type: "turn.diff.updated",
+      eventId: asEventId("evt-turn-diff-updated-first"),
+      provider: "codex",
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      turnId: asTurnId("turn-stable-diff"),
+      itemId: asItemId("item-stable-diff"),
+      payload: {
+        unifiedDiff:
+          "diff --git a/file.txt b/file.txt\n--- a/file.txt\n+++ b/file.txt\n@@ -0,0 +1 @@\n+hello\n",
+      },
+    });
+
+    await waitForThread(
+      harness.engine,
+      (entry) =>
+        entry.checkpoints.some(
+          (checkpoint: ProviderRuntimeTestCheckpoint) =>
+            checkpoint.turnId === "turn-stable-diff" && checkpoint.checkpointTurnCount === 1,
+        ),
+    );
+
+    harness.emit({
+      type: "turn.diff.updated",
+      eventId: asEventId("evt-turn-diff-updated-second"),
+      provider: "codex",
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      turnId: asTurnId("turn-stable-diff"),
+      itemId: asItemId("item-stable-diff"),
+      payload: {
+        unifiedDiff:
+          "diff --git a/file.txt b/file.txt\n--- a/file.txt\n+++ b/file.txt\n@@ -0,0 +1,2 @@\n+hello\n+world\n",
+      },
+    });
+
+    const thread = await waitForThread(
+      harness.engine,
+      (entry) =>
+        entry.checkpoints.some(
+          (checkpoint: ProviderRuntimeTestCheckpoint) =>
+            checkpoint.turnId === "turn-stable-diff" &&
+            checkpoint.checkpointTurnCount === 1 &&
+            checkpoint.checkpointRef === "provider-diff:evt-turn-diff-updated-second",
+        ),
+    );
+
+    expect(
+      thread.checkpoints.filter(
+        (checkpoint: ProviderRuntimeTestCheckpoint) => checkpoint.turnId === "turn-stable-diff",
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("reuses the real assistant message id for fallback diffs when the diff event has no item id", async () => {
+    const harness = await createHarness();
+    const now = new Date().toISOString();
+
+    harness.emit({
+      type: "item.completed",
+      eventId: asEventId("evt-assistant-item-before-diff"),
+      provider: "codex",
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      turnId: asTurnId("turn-diff-no-item-id"),
+      itemId: asItemId("assistant-item-before-diff"),
+      payload: {
+        itemType: "assistant_message",
+        status: "completed",
+        detail: "assistant text",
+      },
+    });
+
+    await waitForThread(
+      harness.engine,
+      (entry) =>
+        entry.messages.some(
+          (message: ProviderRuntimeTestMessage) =>
+            message.id === "assistant:assistant-item-before-diff" && !message.streaming,
+        ),
+    );
+
+    harness.emit({
+      type: "turn.diff.updated",
+      eventId: asEventId("evt-turn-diff-no-item-id"),
+      provider: "codex",
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      turnId: asTurnId("turn-diff-no-item-id"),
+      payload: {
+        unifiedDiff:
+          "diff --git a/file.txt b/file.txt\n--- a/file.txt\n+++ b/file.txt\n@@ -0,0 +1 @@\n+hello\n",
+      },
+    });
+
+    const thread = await waitForThread(
+      harness.engine,
+      (entry) =>
+        entry.checkpoints.some(
+          (checkpoint: ProviderRuntimeTestCheckpoint) =>
+            checkpoint.turnId === "turn-diff-no-item-id" &&
+            checkpoint.assistantMessageId === "assistant:assistant-item-before-diff",
+        ),
+    );
+
+    const checkpoint = thread.checkpoints.find(
+      (entry: ProviderRuntimeTestCheckpoint) => entry.turnId === "turn-diff-no-item-id",
+    );
+    expect(checkpoint?.assistantMessageId).toBe("assistant:assistant-item-before-diff");
+  });
+
   it("projects provider fallback diffs even when the workspace is not a git repository", async () => {
     const harness = await createHarness({ gitRepo: false });
     const now = new Date().toISOString();
