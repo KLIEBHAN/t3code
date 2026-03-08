@@ -139,9 +139,11 @@ describe("ProviderRuntimeIngestion", () => {
     }
   });
 
-  async function createHarness() {
+  async function createHarness(options?: { gitRepo?: boolean }) {
     const workspaceRoot = makeTempDir("t3-provider-project-");
-    fs.mkdirSync(path.join(workspaceRoot, ".git"));
+    if (options?.gitRepo !== false) {
+      fs.mkdirSync(path.join(workspaceRoot, ".git"));
+    }
     const provider = createProviderServiceHarness();
     const orchestrationLayer = OrchestrationEngineLive.pipe(
       Layer.provide(OrchestrationProjectionPipelineLive),
@@ -309,6 +311,80 @@ describe("ProviderRuntimeIngestion", () => {
         ],
       },
     });
+  });
+
+  it("keeps buffered tool output intact without truncating it", async () => {
+    const harness = await createHarness();
+    const now = new Date().toISOString();
+    const firstChunk = "x".repeat(18_000);
+    const secondChunk = "y".repeat(18_000);
+
+    harness.emit({
+      type: "content.delta",
+      eventId: asEventId("evt-command-output-large-1"),
+      provider: "codex",
+      threadId: asThreadId("thread-1"),
+      createdAt: now,
+      turnId: asTurnId("turn-large-output"),
+      itemId: asItemId("item-large-output"),
+      payload: {
+        streamKind: "command_output",
+        delta: firstChunk,
+      },
+    });
+
+    harness.emit({
+      type: "content.delta",
+      eventId: asEventId("evt-command-output-large-2"),
+      provider: "codex",
+      threadId: asThreadId("thread-1"),
+      createdAt: new Date(Date.parse(now) + 50).toISOString(),
+      turnId: asTurnId("turn-large-output"),
+      itemId: asItemId("item-large-output"),
+      payload: {
+        streamKind: "command_output",
+        delta: secondChunk,
+      },
+    });
+
+    harness.emit({
+      type: "item.completed",
+      eventId: asEventId("evt-command-output-large-completed"),
+      provider: "codex",
+      threadId: asThreadId("thread-1"),
+      createdAt: new Date(Date.parse(now) + 100).toISOString(),
+      turnId: asTurnId("turn-large-output"),
+      itemId: asItemId("item-large-output"),
+      payload: {
+        itemType: "command_execution",
+        title: "Command run",
+        data: {
+          item: {
+            command: ["printf", "large-output"],
+          },
+        },
+      },
+    });
+
+    const thread = await waitForThread(
+      harness.engine,
+      (entry) =>
+        entry.activities.some(
+          (activity: ProviderRuntimeTestActivity) =>
+            activity.id === "evt-command-output-large-completed",
+        ),
+    );
+
+    const activity = thread.activities.find(
+      (entry: ProviderRuntimeTestActivity) => entry.id === "evt-command-output-large-completed",
+    );
+    const payload =
+      activity?.payload && typeof activity.payload === "object"
+        ? (activity.payload as Record<string, unknown>)
+        : undefined;
+
+    expect(payload?.output).toBe(`${firstChunk}${secondChunk}`);
+    expect(String(payload?.output)).not.toContain("[output truncated]");
   });
 
   it("attaches buffered command output to the matching completed tool activity", async () => {
@@ -1528,6 +1604,42 @@ describe("ProviderRuntimeIngestion", () => {
       (entry: ProviderRuntimeTestCheckpoint) => entry.turnId === "turn-new",
     );
     expect(checkpoint?.checkpointTurnCount).toBe(4);
+  });
+
+  it("projects provider fallback diffs even when the workspace is not a git repository", async () => {
+    const harness = await createHarness({ gitRepo: false });
+    const now = new Date().toISOString();
+
+    harness.emit({
+      type: "turn.diff.updated",
+      eventId: asEventId("evt-turn-diff-updated-no-git"),
+      provider: "codex",
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      turnId: asTurnId("turn-no-git"),
+      itemId: asItemId("item-no-git"),
+      payload: {
+        unifiedDiff:
+          "diff --git a/file.txt b/file.txt\n--- a/file.txt\n+++ b/file.txt\n@@ -0,0 +1 @@\n+hello\n",
+      },
+    });
+
+    const thread = await waitForThread(
+      harness.engine,
+      (entry) =>
+        entry.checkpoints.some(
+          (checkpoint: ProviderRuntimeTestCheckpoint) => checkpoint.turnId === "turn-no-git",
+        ),
+    );
+
+    const checkpoint = thread.checkpoints.find(
+      (entry: ProviderRuntimeTestCheckpoint) => entry.turnId === "turn-no-git",
+    );
+    expect(checkpoint?.status).toBe("missing");
+    expect(checkpoint?.checkpointRef).toBe("provider-diff:evt-turn-diff-updated-no-git");
+    expect(checkpoint?.unifiedDiff).toBe(
+      "diff --git a/file.txt b/file.txt\n--- a/file.txt\n+++ b/file.txt\n@@ -0,0 +1 @@\n+hello",
+    );
   });
 
   it("projects Codex task lifecycle chunks into thread activities", async () => {

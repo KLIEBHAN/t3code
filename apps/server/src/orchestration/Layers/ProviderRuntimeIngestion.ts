@@ -1,3 +1,6 @@
+import fs from "node:fs/promises";
+import path from "node:path";
+
 import {
   ApprovalRequestId,
   type AssistantDeliveryMode,
@@ -11,13 +14,12 @@ import {
   type OrchestrationThreadActivity,
   type ProviderRuntimeEvent,
 } from "@t3tools/contracts";
-import { Cache, Cause, Duration, Effect, Layer, Option, Ref, Stream } from "effect";
+import { Cache, Cause, Duration, Effect, FileSystem, Layer, Option, Queue, Ref, Stream } from "effect";
 import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
 
 import { checkpointFilesFromUnifiedDiff } from "../../checkpointing/Diffs.ts";
 import { ProviderService } from "../../provider/Services/ProviderService.ts";
-import { nextCheckpointTurnCount, resolveThreadWorkspaceCwd } from "../../checkpointing/Utils.ts";
-import { isGitRepository } from "../../git/isRepo.ts";
+import { nextCheckpointTurnCount } from "../../checkpointing/Utils.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import {
   ProviderRuntimeIngestionService,
@@ -38,9 +40,18 @@ const BUFFERED_TOOL_OUTPUT_BY_ITEM_KEY_TTL = Duration.minutes(120);
 const BUFFERED_PROPOSED_PLAN_BY_ID_CACHE_CAPACITY = 10_000;
 const BUFFERED_PROPOSED_PLAN_BY_ID_TTL = Duration.minutes(120);
 const MAX_BUFFERED_ASSISTANT_CHARS = 24_000;
-const MAX_BUFFERED_TOOL_OUTPUT_CHARS = 24_000;
-const BUFFERED_TOOL_OUTPUT_TRUNCATION_NOTICE = "\n[output truncated]";
+const MAX_BUFFERED_TOOL_OUTPUT_INLINE_CHARS = 24_000;
 const STRICT_PROVIDER_LIFECYCLE_GUARD = process.env.T3CODE_STRICT_PROVIDER_LIFECYCLE_GUARD !== "0";
+
+type BufferedToolOutputState = {
+  inlineText: string;
+  spillPath: string | null;
+};
+
+const EMPTY_BUFFERED_TOOL_OUTPUT_STATE: BufferedToolOutputState = {
+  inlineText: "",
+  spillPath: null,
+};
 
 type TurnStartRequestedDomainEvent = Extract<
   OrchestrationEvent,
@@ -518,6 +529,7 @@ function runtimeEventToActivities(
 const make = Effect.gen(function* () {
   const orchestrationEngine = yield* OrchestrationEngineService;
   const providerService = yield* ProviderService;
+  const fileSystem = yield* FileSystem.FileSystem;
 
   const assistantDeliveryModeRef = yield* Ref.make<AssistantDeliveryMode>(
     DEFAULT_ASSISTANT_DELIVERY_MODE,
@@ -535,10 +547,14 @@ const make = Effect.gen(function* () {
     lookup: () => Effect.succeed(""),
   });
 
-  const bufferedToolOutputByItemKey = yield* Cache.make<string, string>({
+  const bufferedToolOutputSpillDir = yield* fileSystem.makeTempDirectoryScoped({
+    prefix: "t3code-tool-output-",
+  });
+
+  const bufferedToolOutputByItemKey = yield* Cache.make<string, BufferedToolOutputState>({
     capacity: BUFFERED_TOOL_OUTPUT_BY_ITEM_KEY_CACHE_CAPACITY,
     timeToLive: BUFFERED_TOOL_OUTPUT_BY_ITEM_KEY_TTL,
-    lookup: () => Effect.succeed(""),
+    lookup: () => Effect.succeed(EMPTY_BUFFERED_TOOL_OUTPUT_STATE),
   });
 
   const bufferedProposedPlanById = yield* Cache.make<string, { text: string; createdAt: string }>({
@@ -547,23 +563,11 @@ const make = Effect.gen(function* () {
     lookup: () => Effect.succeed({ text: "", createdAt: "" }),
   });
 
-  const isGitRepoForThread = Effect.fnUntraced(function* (threadId: ThreadId) {
-    const readModel = yield* orchestrationEngine.getReadModel();
-    const thread = readModel.threads.find((entry) => entry.id === threadId);
-    if (!thread) {
-      return false;
-    }
-    const workspaceCwd = resolveThreadWorkspaceCwd({
-      thread,
-      projects: readModel.projects,
-    });
-    if (!workspaceCwd) {
-      return false;
-    }
-    return isGitRepository(workspaceCwd);
-  });
-
-  const rememberAssistantMessageId = (threadId: ThreadId, turnId: TurnId, messageId: MessageId) =>
+  const rememberAssistantMessageId = (
+    threadId: ThreadId,
+    turnId: TurnId,
+    messageId: MessageId,
+  ) =>
     Cache.getOption(turnMessageIdsByTurnKey, providerTurnKey(threadId, turnId)).pipe(
       Effect.flatMap((existingIds) =>
         Cache.set(
@@ -640,41 +644,76 @@ const make = Effect.gen(function* () {
   const clearBufferedAssistantText = (messageId: MessageId) =>
     Cache.invalidate(bufferedAssistantTextByMessageId, messageId);
 
+  const appendBufferedToolOutputSpill = (spillPath: string, content: string) =>
+    Effect.tryPromise(() => fs.appendFile(spillPath, content, "utf8"));
+
+  const readBufferedToolOutputSpill = (spillPath: string) =>
+    Effect.tryPromise(() => fs.readFile(spillPath, "utf8"));
+
+  const removeBufferedToolOutputSpill = (spillPath: string) =>
+    Effect.tryPromise(() => fs.rm(spillPath, { force: true })).pipe(
+      Effect.catch(() => Effect.void),
+    );
+
   const appendBufferedToolOutput = (bufferKey: string, delta: string) =>
     Cache.getOption(bufferedToolOutputByItemKey, bufferKey).pipe(
       Effect.flatMap((existingText) =>
         Effect.gen(function* () {
-          const nextText = Option.match(existingText, {
-            onNone: () => delta,
-            onSome: (text) => `${text}${delta}`,
-          });
-
-          if (nextText.length <= MAX_BUFFERED_TOOL_OUTPUT_CHARS) {
-            yield* Cache.set(bufferedToolOutputByItemKey, bufferKey, nextText);
+          const current = Option.getOrElse(existingText, () => EMPTY_BUFFERED_TOOL_OUTPUT_STATE);
+          if (current.spillPath) {
+            yield* appendBufferedToolOutputSpill(current.spillPath, delta);
             return;
           }
 
-          const availableChars = Math.max(
-            0,
-            MAX_BUFFERED_TOOL_OUTPUT_CHARS - BUFFERED_TOOL_OUTPUT_TRUNCATION_NOTICE.length,
+          const nextInlineText = `${current.inlineText}${delta}`;
+          if (nextInlineText.length <= MAX_BUFFERED_TOOL_OUTPUT_INLINE_CHARS) {
+            yield* Cache.set(bufferedToolOutputByItemKey, bufferKey, {
+              inlineText: nextInlineText,
+              spillPath: null,
+            });
+            return;
+          }
+
+          const spillPath = path.join(
+            bufferedToolOutputSpillDir,
+            `tool-output-${process.pid}-${crypto.randomUUID()}.log`,
           );
-          const truncatedText = `${nextText.slice(0, availableChars)}${BUFFERED_TOOL_OUTPUT_TRUNCATION_NOTICE}`;
-          yield* Cache.set(bufferedToolOutputByItemKey, bufferKey, truncatedText);
+          yield* appendBufferedToolOutputSpill(spillPath, nextInlineText);
+          yield* Cache.set(bufferedToolOutputByItemKey, bufferKey, {
+            inlineText: "",
+            spillPath,
+          });
         }),
       ),
     );
 
   const getBufferedToolOutput = (bufferKey: string) =>
     Cache.getOption(bufferedToolOutputByItemKey, bufferKey).pipe(
-      Effect.map((existingText) => Option.getOrElse(existingText, () => "")),
+      Effect.flatMap((existingState) =>
+        Effect.gen(function* () {
+          const current = Option.getOrElse(existingState, () => EMPTY_BUFFERED_TOOL_OUTPUT_STATE);
+          if (!current.spillPath) {
+            return current.inlineText;
+          }
+          return yield* readBufferedToolOutputSpill(current.spillPath);
+        }),
+      ),
     );
 
   const takeBufferedToolOutput = (bufferKey: string) =>
     Cache.getOption(bufferedToolOutputByItemKey, bufferKey).pipe(
-      Effect.flatMap((existingText) =>
-        Cache.invalidate(bufferedToolOutputByItemKey, bufferKey).pipe(
-          Effect.as(Option.getOrElse(existingText, () => "")),
-        ),
+      Effect.flatMap((existingState) =>
+        Effect.gen(function* () {
+          const current = Option.getOrElse(existingState, () => EMPTY_BUFFERED_TOOL_OUTPUT_STATE);
+          const bufferedOutput = current.spillPath
+            ? yield* readBufferedToolOutputSpill(current.spillPath)
+            : current.inlineText;
+          yield* Cache.invalidate(bufferedToolOutputByItemKey, bufferKey);
+          if (current.spillPath) {
+            yield* removeBufferedToolOutputSpill(current.spillPath);
+          }
+          return bufferedOutput;
+        }),
       ),
     );
 
@@ -1194,38 +1233,25 @@ const make = Effect.gen(function* () {
 
       if (event.type === "turn.diff.updated") {
         const turnId = toTurnId(event.turnId);
-        if (turnId && (yield* isGitRepoForThread(thread.id))) {
-          // Skip if a checkpoint already exists for this turn. A real
-          // (non-placeholder) capture from CheckpointReactor should not
-          // be clobbered, and dispatching a duplicate placeholder for the
-          // same turnId would produce an unstable checkpointTurnCount.
-          if (thread.checkpoints.some((c) => c.turnId === turnId)) {
-            // Already tracked; no-op.
-          } else {
-            const unifiedDiff = event.payload.unifiedDiff.trim();
-            const assistantMessageId = MessageId.makeUnsafe(
-              `assistant:${event.itemId ?? event.turnId ?? event.eventId}`,
-            );
-            yield* orchestrationEngine.dispatch({
-              type: "thread.turn.diff.complete",
-              commandId: providerCommandId(event, "thread-turn-diff-complete"),
-              threadId: thread.id,
-              turnId,
-              completedAt: now,
-              checkpointRef: CheckpointRef.makeUnsafe(`provider-diff:${event.eventId}`),
-              status: "missing",
-              files: parseTurnDiffFilesFromUnifiedDiff(unifiedDiff).map((file) => ({
-                path: file.path,
-                kind: "modified",
-                additions: file.additions,
-                deletions: file.deletions,
-              })),
-              ...(unifiedDiff.length > 0 ? { unifiedDiff } : {}),
-              assistantMessageId,
-              checkpointTurnCount: nextCheckpointTurnCount(thread.checkpoints),
-              createdAt: now,
-            });
-          }
+        if (turnId) {
+          const unifiedDiff = event.payload.unifiedDiff.trim();
+          const assistantMessageId = MessageId.makeUnsafe(
+            `assistant:${event.itemId ?? event.turnId ?? event.eventId}`,
+          );
+          yield* orchestrationEngine.dispatch({
+            type: "thread.turn.diff.complete",
+            commandId: providerCommandId(event, "thread-turn-diff-complete"),
+            threadId: thread.id,
+            turnId,
+            completedAt: now,
+            checkpointRef: CheckpointRef.makeUnsafe(`provider-diff:${event.eventId}`),
+            status: "missing",
+            files: checkpointFilesFromUnifiedDiff(unifiedDiff),
+            ...(unifiedDiff.length > 0 ? { unifiedDiff } : {}),
+            assistantMessageId,
+            checkpointTurnCount: nextCheckpointTurnCount(thread.checkpoints),
+            createdAt: now,
+          });
         }
       }
 
