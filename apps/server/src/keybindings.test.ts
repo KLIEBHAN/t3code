@@ -27,7 +27,10 @@ const makeKeybindingsLayer = () =>
           const { join } = yield* Path.Path;
           const dir = yield* fs.makeTempDirectoryScoped({ prefix: "t3code-server-config-test-" });
           const configPath = join(dir, "keybindings.json");
-          return { keybindingsConfigPath: configPath } as ServerConfigShape;
+          return {
+            keybindingsConfigPath: configPath,
+            customSlashCommandsDirectoryPath: join(dir, "slash-commands"),
+          } as ServerConfigShape;
         }),
       ),
     ),

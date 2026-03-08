@@ -9,6 +9,7 @@
 import { Config, Data, Effect, FileSystem, Layer, Option, Path, Schema, ServiceMap } from "effect";
 import { Command, Flag } from "effect/unstable/cli";
 import { NetService } from "@t3tools/shared/Net";
+import { homedir } from "node:os";
 import {
   DEFAULT_PORT,
   resolveStaticDir,
@@ -120,6 +121,10 @@ const CliEnvConfig = Config.all({
     Config.option,
     Config.map(Option.getOrUndefined),
   ),
+  customSlashCommandsDirectoryPath: Config.string("T3CODE_CUSTOM_SLASH_COMMANDS_DIR").pipe(
+    Config.option,
+    Config.map(Option.getOrUndefined),
+  ),
 });
 
 const resolveBooleanFlag = (flag: Option.Option<boolean>, envValue: boolean) =>
@@ -167,8 +172,11 @@ const ServerConfigLive = (input: CliInput) =>
         env.logWebSocketEvents ?? Boolean(devUrl),
       );
       const staticDir = devUrl ? undefined : yield* cliConfig.resolveStaticDir;
-      const { join } = yield* Path.Path;
+      const { join, resolve } = yield* Path.Path;
       const keybindingsConfigPath = join(stateDir, "keybindings.json");
+      const customSlashCommandsDirectoryPath = resolve(
+        env.customSlashCommandsDirectoryPath ?? join(homedir(), ".config", "t3code", "slash-commands"),
+      );
       const host =
         Option.getOrUndefined(input.host) ??
         env.host ??
@@ -179,6 +187,7 @@ const ServerConfigLive = (input: CliInput) =>
         port,
         cwd: cliConfig.cwd,
         keybindingsConfigPath,
+        customSlashCommandsDirectoryPath,
         host,
         stateDir,
         staticDir,

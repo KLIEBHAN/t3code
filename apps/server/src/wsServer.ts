@@ -78,6 +78,7 @@ import { expandHomePath } from "./os-jank.ts";
 import { makeServerPushBus } from "./wsServer/pushBus.ts";
 import { makeServerReadiness } from "./wsServer/readiness.ts";
 import { decodeJsonResult, formatSchemaError } from "@t3tools/shared/schemaJson";
+import { CustomSlashCommands } from "./customSlashCommands";
 
 /**
  * ServerShape - Service API for server lifecycle control.
@@ -216,6 +217,7 @@ export type ServerRuntimeServices =
   | GitCore
   | TerminalManager
   | Keybindings
+  | CustomSlashCommands
   | Open
   | AnalyticsService;
 
@@ -241,6 +243,7 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
     port,
     cwd,
     keybindingsConfigPath,
+    customSlashCommandsDirectoryPath,
     staticDir,
     devUrl,
     authToken,
@@ -253,6 +256,7 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
   const gitManager = yield* GitManager;
   const terminalManager = yield* TerminalManager;
   const keybindingsManager = yield* Keybindings;
+  const customSlashCommandsManager = yield* CustomSlashCommands;
   const providerHealth = yield* ProviderHealth;
   const git = yield* GitCore;
   const fileSystem = yield* FileSystem.FileSystem;
@@ -269,7 +273,7 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
   );
 
   const providerStatuses = yield* providerHealth.getStatuses;
-
+  yield* customSlashCommandsManager.syncDirectoryOnStartup;
   const clients = yield* Ref.make(new Set<WebSocket>());
   const logger = createLogger("ws");
   const readiness = yield* makeServerReadiness;
@@ -295,6 +299,19 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
     ),
   );
   yield* readiness.markKeybindingsReady;
+
+  const buildServerConfigUpdatedPayload = Effect.fnUntraced(function* (
+    sources: Array<"keybindings" | "custom-slash-commands">,
+  ) {
+    const keybindingsConfig = yield* keybindingsManager.loadConfigState;
+    const customSlashCommandsConfig = yield* customSlashCommandsManager.loadConfigState;
+    return {
+      issues: [...keybindingsConfig.issues, ...customSlashCommandsConfig.issues],
+      providers: providerStatuses,
+      sources,
+      updatedAt: new Date().toISOString(),
+    };
+  });
 
   const normalizeDispatchCommand = Effect.fnUntraced(function* (input: {
     readonly command: ClientOrchestrationCommand;
@@ -618,6 +635,18 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
     }),
   ).pipe(Effect.forkIn(subscriptionsScope));
 
+  yield* Stream.runForEach(keybindingsManager.changes, () =>
+    Effect.flatMap(buildServerConfigUpdatedPayload(["keybindings"]), (payload) =>
+      pushBus.publishAll(WS_CHANNELS.serverConfigUpdated, payload),
+    ),
+  ).pipe(Effect.forkIn(subscriptionsScope));
+
+  yield* Stream.runForEach(customSlashCommandsManager.changes, () =>
+    Effect.flatMap(buildServerConfigUpdatedPayload(["custom-slash-commands"]), (payload) =>
+      pushBus.publishAll(WS_CHANNELS.serverConfigUpdated, payload),
+    ),
+  ).pipe(Effect.forkIn(subscriptionsScope));
+
   yield* Scope.provide(orchestrationReactor.start, subscriptionsScope);
   yield* readiness.markOrchestrationSubscriptionsReady;
 
@@ -868,11 +897,14 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
 
       case WS_METHODS.serverGetConfig:
         const keybindingsConfig = yield* keybindingsManager.loadConfigState;
+        const customSlashCommandsConfig = yield* customSlashCommandsManager.loadConfigState;
         return {
           cwd,
           keybindingsConfigPath,
+          customSlashCommandsDirectoryPath,
           keybindings: keybindingsConfig.keybindings,
-          issues: keybindingsConfig.issues,
+          customSlashCommands: customSlashCommandsConfig.commands,
+          issues: [...keybindingsConfig.issues, ...customSlashCommandsConfig.issues],
           providers: providerStatuses,
           availableEditors,
         };

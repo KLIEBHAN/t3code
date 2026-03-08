@@ -503,6 +503,7 @@ describe("WebSocket Server", () => {
       host: undefined,
       cwd: options.cwd ?? "/test/project",
       keybindingsConfigPath: path.join(stateDir, "keybindings.json"),
+      customSlashCommandsDirectoryPath: path.join(stateDir, "slash-commands"),
       stateDir,
       staticDir: options.staticDir,
       devUrl: options.devUrl ? new URL(options.devUrl) : undefined,
@@ -813,6 +814,7 @@ describe("WebSocket Server", () => {
   it("responds to server.getConfig", async () => {
     const stateDir = makeTempDir("t3code-state-get-config-");
     const keybindingsPath = path.join(stateDir, "keybindings.json");
+    const slashCommandsPath = path.join(stateDir, "slash-commands");
     fs.writeFileSync(keybindingsPath, "[]", "utf8");
 
     server = await createTestServer({ cwd: "/my/workspace", stateDir });
@@ -827,7 +829,9 @@ describe("WebSocket Server", () => {
     expect(response.result).toEqual({
       cwd: "/my/workspace",
       keybindingsConfigPath: keybindingsPath,
+      customSlashCommandsDirectoryPath: slashCommandsPath,
       keybindings: DEFAULT_RESOLVED_KEYBINDINGS,
+      customSlashCommands: [],
       issues: [],
       providers: defaultProviderStatuses,
       availableEditors: expect.any(Array),
@@ -838,6 +842,7 @@ describe("WebSocket Server", () => {
   it("bootstraps default keybindings file when missing", async () => {
     const stateDir = makeTempDir("t3code-state-bootstrap-keybindings-");
     const keybindingsPath = path.join(stateDir, "keybindings.json");
+    const slashCommandsPath = path.join(stateDir, "slash-commands");
     expect(fs.existsSync(keybindingsPath)).toBe(false);
 
     server = await createTestServer({ cwd: "/my/workspace", stateDir });
@@ -852,7 +857,9 @@ describe("WebSocket Server", () => {
     expect(response.result).toEqual({
       cwd: "/my/workspace",
       keybindingsConfigPath: keybindingsPath,
+      customSlashCommandsDirectoryPath: slashCommandsPath,
       keybindings: DEFAULT_RESOLVED_KEYBINDINGS,
+      customSlashCommands: [],
       issues: [],
       providers: defaultProviderStatuses,
       availableEditors: expect.any(Array),
@@ -868,6 +875,7 @@ describe("WebSocket Server", () => {
   it("falls back to defaults and reports malformed keybindings config issues", async () => {
     const stateDir = makeTempDir("t3code-state-malformed-keybindings-");
     const keybindingsPath = path.join(stateDir, "keybindings.json");
+    const slashCommandsPath = path.join(stateDir, "slash-commands");
     fs.writeFileSync(keybindingsPath, "{ not-json", "utf8");
 
     server = await createTestServer({ cwd: "/my/workspace", stateDir });
@@ -882,7 +890,9 @@ describe("WebSocket Server", () => {
     expect(response.result).toEqual({
       cwd: "/my/workspace",
       keybindingsConfigPath: keybindingsPath,
+      customSlashCommandsDirectoryPath: slashCommandsPath,
       keybindings: DEFAULT_RESOLVED_KEYBINDINGS,
+      customSlashCommands: [],
       issues: [
         {
           kind: "keybindings.malformed-config",
@@ -921,13 +931,17 @@ describe("WebSocket Server", () => {
     const result = response.result as {
       cwd: string;
       keybindingsConfigPath: string;
+      customSlashCommandsDirectoryPath: string;
       keybindings: ResolvedKeybindingsConfig;
+      customSlashCommands: unknown[];
       issues: Array<{ kind: string; index?: number; message: string }>;
       providers: ReadonlyArray<ServerProviderStatus>;
       availableEditors: unknown;
     };
     expect(result.cwd).toBe("/my/workspace");
     expect(result.keybindingsConfigPath).toBe(keybindingsPath);
+    expect(result.customSlashCommandsDirectoryPath).toBe(path.join(stateDir, "slash-commands"));
+    expect(result.customSlashCommands).toEqual([]);
     expect(result.issues).toEqual([
       {
         kind: "keybindings.invalid-entry",
@@ -964,22 +978,95 @@ describe("WebSocket Server", () => {
       keybindingsPath,
       "{ not-json",
       (push) =>
-        Array.isArray(push.data.issues) &&
-        Boolean(push.data.issues[0]) &&
-        push.data.issues[0]!.kind === "keybindings.malformed-config",
+        Array.isArray((push.data as { issues?: unknown[] }).issues) &&
+        Array.isArray((push.data as { sources?: unknown[] }).sources) &&
+        (push.data as { sources: string[] }).sources.includes("keybindings") &&
+        Boolean((push.data as { issues: Array<{ kind: string }> }).issues[0]) &&
+        (push.data as { issues: Array<{ kind: string }> }).issues[0]!.kind ===
+          "keybindings.malformed-config",
     );
     expect(malformedPush.data).toEqual({
       issues: [{ kind: "keybindings.malformed-config", message: expect.any(String) }],
       providers: defaultProviderStatuses,
+      sources: ["keybindings"],
+      updatedAt: expect.any(String),
     });
 
     const successPush = await rewriteKeybindingsAndWaitForPush(
       ws,
       keybindingsPath,
       "[]",
-      (push) => Array.isArray(push.data.issues) && push.data.issues.length === 0,
+      (push) =>
+        Array.isArray((push.data as { issues?: unknown[] }).issues) &&
+        Array.isArray((push.data as { sources?: unknown[] }).sources) &&
+        (push.data as { sources: string[] }).sources.includes("keybindings") &&
+        (push.data as { issues: unknown[] }).issues.length === 0,
     );
-    expect(successPush.data).toEqual({ issues: [], providers: defaultProviderStatuses });
+    expect(successPush.data).toEqual({
+      issues: [],
+      providers: defaultProviderStatuses,
+      sources: ["keybindings"],
+      updatedAt: expect.any(String),
+    });
+  });
+
+  it("loads custom slash commands from markdown files and pushes updates", async () => {
+    const stateDir = makeTempDir("t3code-state-custom-slash-commands-");
+    const keybindingsPath = path.join(stateDir, "keybindings.json");
+    const slashCommandsPath = path.join(stateDir, "slash-commands");
+    const deployPath = path.join(slashCommandsPath, "deploy.md");
+    fs.mkdirSync(slashCommandsPath, { recursive: true });
+    fs.writeFileSync(keybindingsPath, "[]", "utf8");
+    fs.writeFileSync(deployPath, "# Deploy\nShip the current project.", "utf8");
+
+    server = await createTestServer({ cwd: "/my/workspace", stateDir });
+    const addr = server.address();
+    const port = typeof addr === "object" && addr !== null ? addr.port : 0;
+
+    const ws = await connectWs(port);
+    connections.push(ws);
+    await waitForMessage(ws);
+
+    const response = await sendRequest(ws, WS_METHODS.serverGetConfig);
+    expect(response.error).toBeUndefined();
+    expect(response.result).toEqual({
+      cwd: "/my/workspace",
+      keybindingsConfigPath: keybindingsPath,
+      customSlashCommandsDirectoryPath: slashCommandsPath,
+      keybindings: DEFAULT_RESOLVED_KEYBINDINGS,
+      customSlashCommands: [
+        {
+          command: "deploy",
+          description: "Deploy",
+          prompt: "# Deploy\nShip the current project.",
+          sourcePath: deployPath,
+        },
+      ],
+      issues: [],
+      providers: defaultProviderStatuses,
+      availableEditors: expect.any(Array),
+    });
+
+    fs.writeFileSync(path.join(slashCommandsPath, "review.md"), "# Illegal\nReserved name.", "utf8");
+    const invalidPush = await waitForPush(
+      ws,
+      WS_CHANNELS.serverConfigUpdated,
+      (push) =>
+        Array.isArray((push.data as { sources?: unknown[] }).sources) &&
+        (push.data as { sources: string[] }).sources.includes("custom-slash-commands"),
+    );
+    expect(invalidPush.data).toEqual({
+      issues: [
+        {
+          kind: "custom-slash-commands.invalid-entry",
+          path: path.join(slashCommandsPath, "review.md"),
+          message: expect.stringContaining("/review is reserved"),
+        },
+      ],
+      providers: defaultProviderStatuses,
+      sources: ["custom-slash-commands"],
+      updatedAt: expect.any(String),
+    });
   });
 
   it("routes shell.openInEditor through the injected open service", async () => {
@@ -1010,6 +1097,7 @@ describe("WebSocket Server", () => {
   it("reads keybindings from the configured state directory", async () => {
     const stateDir = makeTempDir("t3code-state-keybindings-");
     const keybindingsPath = path.join(stateDir, "keybindings.json");
+    const slashCommandsPath = path.join(stateDir, "slash-commands");
     fs.writeFileSync(
       keybindingsPath,
       JSON.stringify([
@@ -1034,7 +1122,9 @@ describe("WebSocket Server", () => {
     expect(response.result).toEqual({
       cwd: "/my/workspace",
       keybindingsConfigPath: keybindingsPath,
+      customSlashCommandsDirectoryPath: slashCommandsPath,
       keybindings: compileKeybindings(persistedConfig),
+      customSlashCommands: [],
       issues: [],
       providers: defaultProviderStatuses,
       availableEditors: expect.any(Array),
@@ -1045,6 +1135,7 @@ describe("WebSocket Server", () => {
   it("upserts keybinding rules and updates cached server config", async () => {
     const stateDir = makeTempDir("t3code-state-upsert-keybinding-");
     const keybindingsPath = path.join(stateDir, "keybindings.json");
+    const slashCommandsPath = path.join(stateDir, "slash-commands");
     fs.writeFileSync(
       keybindingsPath,
       JSON.stringify([{ key: "mod+j", command: "terminal.toggle" }]),
@@ -1081,7 +1172,9 @@ describe("WebSocket Server", () => {
     expect(configResponse.result).toEqual({
       cwd: "/my/workspace",
       keybindingsConfigPath: keybindingsPath,
+      customSlashCommandsDirectoryPath: slashCommandsPath,
       keybindings: compileKeybindings(persistedConfig),
+      customSlashCommands: [],
       issues: [],
       providers: defaultProviderStatuses,
       availableEditors: expect.any(Array),

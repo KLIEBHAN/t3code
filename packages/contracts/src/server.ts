@@ -15,9 +15,23 @@ const KeybindingsInvalidEntryIssue = Schema.Struct({
   index: Schema.Number,
 });
 
+const CustomSlashCommandsReadFailedIssue = Schema.Struct({
+  kind: Schema.Literal("custom-slash-commands.read-failed"),
+  message: TrimmedNonEmptyString,
+  path: TrimmedNonEmptyString,
+});
+
+const CustomSlashCommandsInvalidEntryIssue = Schema.Struct({
+  kind: Schema.Literal("custom-slash-commands.invalid-entry"),
+  message: TrimmedNonEmptyString,
+  path: TrimmedNonEmptyString,
+});
+
 export const ServerConfigIssue = Schema.Union([
   KeybindingsMalformedConfigIssue,
   KeybindingsInvalidEntryIssue,
+  CustomSlashCommandsReadFailedIssue,
+  CustomSlashCommandsInvalidEntryIssue,
 ]);
 export type ServerConfigIssue = typeof ServerConfigIssue.Type;
 
@@ -45,10 +59,23 @@ export type ServerProviderStatus = typeof ServerProviderStatus.Type;
 
 const ServerProviderStatuses = Schema.Array(ServerProviderStatus);
 
+export const ServerCustomSlashCommand = Schema.Struct({
+  command: TrimmedNonEmptyString,
+  description: TrimmedNonEmptyString,
+  prompt: TrimmedNonEmptyString,
+  sourcePath: TrimmedNonEmptyString,
+});
+export type ServerCustomSlashCommand = typeof ServerCustomSlashCommand.Type;
+
+const ServerConfigUpdateSource = Schema.Literals(["keybindings", "custom-slash-commands"]);
+export type ServerConfigUpdateSource = typeof ServerConfigUpdateSource.Type;
+
 export const ServerConfig = Schema.Struct({
   cwd: TrimmedNonEmptyString,
   keybindingsConfigPath: TrimmedNonEmptyString,
+  customSlashCommandsDirectoryPath: TrimmedNonEmptyString,
   keybindings: ResolvedKeybindingsConfig,
+  customSlashCommands: Schema.Array(ServerCustomSlashCommand),
   issues: ServerConfigIssues,
   providers: ServerProviderStatuses,
   availableEditors: Schema.Array(EditorId),
@@ -67,5 +94,7 @@ export type ServerUpsertKeybindingResult = typeof ServerUpsertKeybindingResult.T
 export const ServerConfigUpdatedPayload = Schema.Struct({
   issues: ServerConfigIssues,
   providers: ServerProviderStatuses,
+  sources: Schema.Array(ServerConfigUpdateSource),
+  updatedAt: IsoDateTime,
 });
 export type ServerConfigUpdatedPayload = typeof ServerConfigUpdatedPayload.Type;

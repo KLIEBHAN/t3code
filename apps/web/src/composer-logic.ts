@@ -1,12 +1,13 @@
+import type { ServerCustomSlashCommand } from "@t3tools/contracts";
+
 import { splitPromptIntoComposerSegments } from "./composer-editor-mentions";
 import {
   hasSlashCommandPrefix,
   parseStandaloneSlashCommand,
-  type ChatSlashCommand,
+  type ExecutableSlashCommandDefinition,
 } from "./slashCommands";
 
 export type ComposerTriggerKind = "path" | "slash-command" | "slash-model";
-export type ComposerSlashCommand = ChatSlashCommand;
 
 export interface ComposerTrigger {
   kind: ComposerTriggerKind;
@@ -153,7 +154,11 @@ export function isCollapsedCursorAdjacentToMention(
   return false;
 }
 
-export function detectComposerTrigger(text: string, cursorInput: number): ComposerTrigger | null {
+export function detectComposerTrigger(
+  text: string,
+  cursorInput: number,
+  customCommands: readonly ServerCustomSlashCommand[] = [],
+): ComposerTrigger | null {
   const cursor = clampCursor(text, cursorInput);
   const lineStart = text.lastIndexOf("\n", Math.max(0, cursor - 1)) + 1;
   const linePrefix = text.slice(lineStart, cursor);
@@ -170,7 +175,7 @@ export function detectComposerTrigger(text: string, cursorInput: number): Compos
           rangeEnd: cursor,
         };
       }
-      if (hasSlashCommandPrefix(commandQuery)) {
+      if (hasSlashCommandPrefix(commandQuery, customCommands)) {
         return {
           kind: "slash-command",
           query: commandQuery,
@@ -206,11 +211,11 @@ export function detectComposerTrigger(text: string, cursorInput: number): Compos
   };
 }
 
-export function parseStandaloneComposerSlashCommand(text: string): Exclude<
-  ComposerSlashCommand,
-  "model"
-> | null {
-  return parseStandaloneSlashCommand(text);
+export function parseStandaloneComposerSlashCommand(
+  text: string,
+  customCommands: readonly ServerCustomSlashCommand[] = [],
+): ExecutableSlashCommandDefinition | null {
+  return parseStandaloneSlashCommand(text, customCommands);
 }
 
 export function replaceTextRange(

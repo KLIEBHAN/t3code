@@ -99,7 +99,9 @@ function createBaseServerConfig(): ServerConfig {
   return {
     cwd: "/repo/project",
     keybindingsConfigPath: "/repo/project/.t3code-keybindings.json",
+    customSlashCommandsDirectoryPath: "/repo/project/.config/t3code/slash-commands",
     keybindings: [],
+    customSlashCommands: [],
     issues: [],
     providers: [
       {

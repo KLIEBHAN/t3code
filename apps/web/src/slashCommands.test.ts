@@ -6,6 +6,15 @@ import {
   parseStandaloneSlashCommand,
 } from "./slashCommands";
 
+const CUSTOM_COMMANDS = [
+  {
+    command: "deploy",
+    description: "Deploy the current project",
+    prompt: "# Deploy\nRun the deployment workflow for this repo.",
+    sourcePath: "/tmp/slash-commands/deploy.md",
+  },
+] as const;
+
 describe("findMatchingSlashCommands", () => {
   it("returns built-in slash commands for an empty query", () => {
     expect(findMatchingSlashCommands("").map((command) => command.id)).toEqual([
@@ -31,6 +40,15 @@ describe("findMatchingSlashCommands", () => {
     expect(findMatchingSlashCommands("handoff").map((command) => command.id)).toContain("compact");
     expect(findMatchingSlashCommands("git").map((command) => command.id)).toContain("init");
   });
+
+  it("includes custom commands in search results", () => {
+    expect(findMatchingSlashCommands("deploy", CUSTOM_COMMANDS).map((command) => command.id)).toEqual([
+      "custom:deploy",
+    ]);
+    expect(
+      findMatchingSlashCommands("current project", CUSTOM_COMMANDS).map((command) => command.id),
+    ).toContain("custom:deploy");
+  });
 });
 
 describe("hasSlashCommandPrefix", () => {
@@ -41,19 +59,29 @@ describe("hasSlashCommandPrefix", () => {
     expect(hasSlashCommandPrefix("new-l")).toBe(true);
     expect(hasSlashCommandPrefix("zzz")).toBe(false);
   });
+
+  it("accepts custom command prefixes", () => {
+    expect(hasSlashCommandPrefix("dep", CUSTOM_COMMANDS)).toBe(true);
+  });
 });
 
 describe("parseStandaloneSlashCommand", () => {
   it("parses standalone execute commands", () => {
-    expect(parseStandaloneSlashCommand("/terminal")).toBe("terminal");
-    expect(parseStandaloneSlashCommand(" /new-local ")).toBe("new-local");
-    expect(parseStandaloneSlashCommand("/review")).toBe("review");
-    expect(parseStandaloneSlashCommand("/compact")).toBe("compact");
-    expect(parseStandaloneSlashCommand("/init")).toBe("init");
+    expect(parseStandaloneSlashCommand("/terminal")?.id).toBe("terminal");
+    expect(parseStandaloneSlashCommand(" /new-local ")?.id).toBe("new-local");
+    expect(parseStandaloneSlashCommand("/review")?.id).toBe("review");
+    expect(parseStandaloneSlashCommand("/compact")?.id).toBe("compact");
+    expect(parseStandaloneSlashCommand("/init")?.id).toBe("init");
   });
 
   it("accepts aliases for execute commands", () => {
-    expect(parseStandaloneSlashCommand("/open")).toBe("editor");
+    expect(parseStandaloneSlashCommand("/open")?.id).toBe("editor");
+  });
+
+  it("parses custom commands", () => {
+    const parsed = parseStandaloneSlashCommand("/deploy", CUSTOM_COMMANDS);
+    expect(parsed?.id).toBe("custom:deploy");
+    expect(parsed?.source).toBe("custom");
   });
 
   it("rejects commands that require arguments or trailing text", () => {
