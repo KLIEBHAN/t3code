@@ -479,6 +479,13 @@ interface ToolWorkLogState {
   changedFiles: string[];
 }
 
+interface ToolPayloadContext {
+  data: Record<string, unknown> | null;
+  item: Record<string, unknown> | null;
+  itemResult: Record<string, unknown> | null;
+  itemInput: Record<string, unknown> | null;
+}
+
 function isVisibleWorkLogActivity(
   activity: OrchestrationThreadActivity,
   latestTurnId: TurnId | undefined,
@@ -591,25 +598,7 @@ function asTrimmedString(value: unknown): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
-function asTrimmedText(value: unknown): string | null {
-  const direct = asTrimmedString(value);
-  if (direct) {
-    return direct;
-  }
-  if (!Array.isArray(value)) {
-    return null;
-  }
-
-  const joined = value
-    .map((entry) => asTrimmedString(entry))
-    .filter((entry): entry is string => entry !== null)
-    .join("\n")
-    .trim();
-
-  return joined.length > 0 ? joined : null;
-}
-
-function normalizeCommandValue(value: unknown): string | null {
+function joinTrimmedStrings(value: unknown, separator: string): string | null {
   const direct = asTrimmedString(value);
   if (direct) {
     return direct;
@@ -620,21 +609,40 @@ function normalizeCommandValue(value: unknown): string | null {
   const parts = value
     .map((entry) => asTrimmedString(entry))
     .filter((entry): entry is string => entry !== null);
-  return parts.length > 0 ? parts.join(" ") : null;
+  return parts.length > 0 ? parts.join(separator) : null;
+}
+
+function asTrimmedText(value: unknown): string | null {
+  return joinTrimmedStrings(value, "\n");
+}
+
+function normalizeCommandValue(value: unknown): string | null {
+  return joinTrimmedStrings(value, " ");
+}
+
+function firstPresentString(candidates: ReadonlyArray<string | null>): string | null {
+  return candidates.find((candidate) => candidate !== null) ?? null;
+}
+
+function toolPayloadContext(payload: Record<string, unknown> | null): ToolPayloadContext {
+  const data = asRecord(payload?.data);
+  const item = asRecord(data?.item);
+  return {
+    data,
+    item,
+    itemResult: asRecord(item?.result),
+    itemInput: asRecord(item?.input),
+  };
 }
 
 function extractToolCommand(payload: Record<string, unknown> | null): string | null {
-  const data = asRecord(payload?.data);
-  const item = asRecord(data?.item);
-  const itemResult = asRecord(item?.result);
-  const itemInput = asRecord(item?.input);
-  const candidates = [
+  const { data, item, itemInput, itemResult } = toolPayloadContext(payload);
+  return firstPresentString([
     normalizeCommandValue(item?.command),
     normalizeCommandValue(itemInput?.command),
     normalizeCommandValue(itemResult?.command),
     normalizeCommandValue(data?.command),
-  ];
-  return candidates.find((candidate) => candidate !== null) ?? null;
+  ]);
 }
 
 function extractToolTitle(payload: Record<string, unknown> | null): string | null {
@@ -685,10 +693,16 @@ function extractWorkLogRequestKind(
 }
 
 function extractToolOutput(payload: Record<string, unknown> | null): string | null {
-  const data = asRecord(payload?.data);
-  const item = asRecord(data?.item);
-  const itemResult = asRecord(item?.result);
-  const candidates = [
+  const { data, item, itemResult } = toolPayloadContext(payload);
+  const combinedStdoutAndStderr = [
+    asTrimmedText(itemResult?.stdout),
+    asTrimmedText(itemResult?.stderr),
+  ]
+    .filter((value): value is string => value !== null)
+    .join("\n\n");
+
+  return firstPresentString([
+    combinedStdoutAndStderr.length > 0 ? combinedStdoutAndStderr : null,
     asTrimmedText(payload?.output),
     asTrimmedText(payload?.stdout),
     asTrimmedText(payload?.stderr),
@@ -702,19 +716,7 @@ function extractToolOutput(payload: Record<string, unknown> | null): string | nu
     asTrimmedText(data?.output),
     asTrimmedText(data?.stdout),
     asTrimmedText(data?.stderr),
-  ];
-
-  const combinedStdoutStderr = [
-    asTrimmedText(itemResult?.stdout),
-    asTrimmedText(itemResult?.stderr),
-  ]
-    .filter((value): value is string => value !== null)
-    .join("\n\n");
-  if (combinedStdoutStderr.length > 0) {
-    candidates.unshift(combinedStdoutStderr);
-  }
-
-  return candidates.find((candidate) => candidate !== null) ?? null;
+  ]);
 }
 function extractToolActivityKey(
   activity: OrchestrationThreadActivity,
@@ -722,11 +724,8 @@ function extractToolActivityKey(
   command: string | null,
   changedFiles: ReadonlyArray<string>,
 ): string | null {
-  const data = asRecord(payload?.data);
-  const item = asRecord(data?.item);
-  const itemResult = asRecord(item?.result);
-  const itemInput = asRecord(item?.input);
-  const explicitItemId = [
+  const { data, item, itemInput, itemResult } = toolPayloadContext(payload);
+  const explicitItemId = firstPresentString([
     asTrimmedString(payload?.itemId),
     asTrimmedString(item?.id),
     asTrimmedString(data?.itemId),
@@ -735,7 +734,7 @@ function extractToolActivityKey(
     asTrimmedString(itemResult?.id),
     asTrimmedString(item?.toolUseId),
     asTrimmedString(data?.toolUseId),
-  ].find((candidate) => candidate !== null);
+  ]);
   if (explicitItemId) {
     return `${activity.turnId ?? "no-turn"}:item:${explicitItemId}`;
   }
