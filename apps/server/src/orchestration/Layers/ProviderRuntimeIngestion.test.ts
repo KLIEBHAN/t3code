@@ -5,6 +5,7 @@ import path from "node:path";
 import type { OrchestrationReadModel, ProviderRuntimeEvent } from "@t3tools/contracts";
 import {
   ApprovalRequestId,
+  CheckpointRef,
   CommandId,
   DEFAULT_PROVIDER_INTERACTION_MODE,
   EventId,
@@ -1465,6 +1466,68 @@ describe("ProviderRuntimeIngestion", () => {
         deletions: 0,
       },
     ]);
+  });
+
+  it("allocates provider fallback checkpoint counts from the highest existing turn count", async () => {
+    const harness = await createHarness();
+    const now = new Date().toISOString();
+
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.turn.diff.complete",
+        commandId: CommandId.makeUnsafe("cmd-existing-diff-1"),
+        threadId: asThreadId("thread-1"),
+        turnId: asTurnId("turn-existing-1"),
+        completedAt: now,
+        checkpointRef: CheckpointRef.makeUnsafe("provider-diff:existing-1"),
+        status: "missing",
+        files: [],
+        checkpointTurnCount: 1,
+        createdAt: now,
+      }),
+    );
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.turn.diff.complete",
+        commandId: CommandId.makeUnsafe("cmd-existing-diff-3"),
+        threadId: asThreadId("thread-1"),
+        turnId: asTurnId("turn-existing-3"),
+        completedAt: now,
+        checkpointRef: CheckpointRef.makeUnsafe("provider-diff:existing-3"),
+        status: "missing",
+        files: [],
+        checkpointTurnCount: 3,
+        createdAt: now,
+      }),
+    );
+
+    harness.emit({
+      type: "turn.diff.updated",
+      eventId: asEventId("evt-turn-diff-updated-sparse"),
+      provider: "codex",
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      turnId: asTurnId("turn-new"),
+      itemId: asItemId("item-new"),
+      payload: {
+        unifiedDiff:
+          "diff --git a/file.txt b/file.txt\n--- a/file.txt\n+++ b/file.txt\n@@ -0,0 +1 @@\n+hello\n",
+      },
+    });
+
+    const thread = await waitForThread(
+      harness.engine,
+      (entry) =>
+        entry.checkpoints.some(
+          (checkpoint: ProviderRuntimeTestCheckpoint) =>
+            checkpoint.turnId === "turn-new" && checkpoint.checkpointTurnCount === 4,
+        ),
+    );
+
+    const checkpoint = thread.checkpoints.find(
+      (entry: ProviderRuntimeTestCheckpoint) => entry.turnId === "turn-new",
+    );
+    expect(checkpoint?.checkpointTurnCount).toBe(4);
   });
 
   it("projects Codex task lifecycle chunks into thread activities", async () => {

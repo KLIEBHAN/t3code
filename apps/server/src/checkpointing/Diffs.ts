@@ -1,3 +1,4 @@
+import type { OrchestrationCheckpointFile } from "@t3tools/contracts";
 import { parsePatchFiles } from "@pierre/diffs";
 
 export interface TurnDiffFileSummary {
@@ -24,4 +25,15 @@ export function parseTurnDiffFilesFromUnifiedDiff(
   );
 
   return files.toSorted((left, right) => left.path.localeCompare(right.path));
+}
+
+export function checkpointFilesFromUnifiedDiff(
+  diff: string,
+): ReadonlyArray<OrchestrationCheckpointFile> {
+  return parseTurnDiffFilesFromUnifiedDiff(diff).map((file) => ({
+    path: file.path,
+    kind: "modified",
+    additions: file.additions,
+    deletions: file.deletions,
+  }));
 }

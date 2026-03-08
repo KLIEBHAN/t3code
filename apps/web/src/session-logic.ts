@@ -445,8 +445,8 @@ export function deriveWorkLogEntries(
   latestTurnId: TurnId | undefined,
 ): WorkLogEntry[] {
   // Tool output can arrive on an update before the final completed event.
-  // Remember the latest usable tool state so completed rows stay inspectable.
-  const rememberedToolStateByKey = new Map<string, ToolWorkLogState>();
+  // Only merge rows when the runtime gives us a stable item identity.
+  const rememberedToolStateByItemKey = new Map<string, ToolWorkLogState>();
 
   return [...activities]
     .toSorted(compareActivitiesByOrder)
@@ -454,19 +454,14 @@ export function deriveWorkLogEntries(
     .map((activity) => {
       const payload = activityPayloadRecord(activity);
       const derivedToolState = deriveToolWorkLogState(payload);
-      const toolActivityKey = extractToolActivityKey(
-        activity,
-        payload,
-        derivedToolState.command,
-        derivedToolState.changedFiles,
-      );
-      const rememberedToolState = toolActivityKey
-        ? rememberedToolStateByKey.get(toolActivityKey)
+      const rememberedToolStateKey = stableToolStateKeyForActivity(activity, payload);
+      const rememberedToolState = rememberedToolStateKey
+        ? rememberedToolStateByItemKey.get(rememberedToolStateKey)
         : undefined;
       const mergedToolState = mergeToolWorkLogState(derivedToolState, rememberedToolState);
 
-      if (toolActivityKey) {
-        rememberedToolStateByKey.set(toolActivityKey, mergedToolState);
+      if (rememberedToolStateKey) {
+        rememberedToolStateByItemKey.set(rememberedToolStateKey, mergedToolState);
       }
       return buildWorkLogEntry(activity, payload, mergedToolState);
     });
@@ -475,7 +470,6 @@ export function deriveWorkLogEntries(
 interface ToolWorkLogState {
   command: string | null;
   result: string | null;
-  output: string | null;
   changedFiles: string[];
 }
 
@@ -485,6 +479,29 @@ interface ToolPayloadContext {
   itemResult: Record<string, unknown> | null;
   itemInput: Record<string, unknown> | null;
 }
+
+const MAX_CHANGED_FILE_DEPTH = 4;
+const MAX_CHANGED_FILE_COUNT = 12;
+const CHANGED_FILE_VALUE_KEYS = [
+  "path",
+  "filePath",
+  "relativePath",
+  "filename",
+  "newPath",
+  "oldPath",
+] as const;
+const CHANGED_FILE_NESTED_KEYS = [
+  "item",
+  "result",
+  "input",
+  "data",
+  "changes",
+  "files",
+  "edits",
+  "patch",
+  "patches",
+  "operations",
+] as const;
 
 function isVisibleWorkLogActivity(
   activity: OrchestrationThreadActivity,
@@ -512,10 +529,8 @@ function activityPayloadRecord(
 
 function deriveToolWorkLogState(payload: Record<string, unknown> | null): ToolWorkLogState {
   const command = extractToolCommand(payload);
-  const output = extractToolOutput(payload);
   return {
     command,
-    output,
     result: extractToolResult(payload, command),
     changedFiles: extractChangedFiles(payload),
   };
@@ -532,7 +547,6 @@ function mergeToolWorkLogState(
   return {
     command: current.command ?? remembered.command,
     result: current.result ?? remembered.result,
-    output: current.output ?? remembered.output,
     changedFiles: current.changedFiles.length > 0 ? current.changedFiles : remembered.changedFiles,
   };
 }
@@ -563,9 +577,7 @@ function buildWorkLogEntry(
   }
   if (toolState.result) {
     entry.result = toolState.result;
-  }
-  if (toolState.output) {
-    entry.output = toolState.output;
+    entry.output = toolState.result;
   }
   if (toolState.changedFiles.length > 0) {
     entry.changedFiles = toolState.changedFiles;
@@ -718,14 +730,9 @@ function extractToolOutput(payload: Record<string, unknown> | null): string | nu
     asTrimmedText(data?.stderr),
   ]);
 }
-function extractToolActivityKey(
-  activity: OrchestrationThreadActivity,
-  payload: Record<string, unknown> | null,
-  command: string | null,
-  changedFiles: ReadonlyArray<string>,
-): string | null {
+function extractStableToolItemId(payload: Record<string, unknown> | null): string | null {
   const { data, item, itemInput, itemResult } = toolPayloadContext(payload);
-  const explicitItemId = firstPresentString([
+  return firstPresentString([
     asTrimmedString(payload?.itemId),
     asTrimmedString(item?.id),
     asTrimmedString(data?.itemId),
@@ -735,19 +742,14 @@ function extractToolActivityKey(
     asTrimmedString(item?.toolUseId),
     asTrimmedString(data?.toolUseId),
   ]);
-  if (explicitItemId) {
-    return `${activity.turnId ?? "no-turn"}:item:${explicitItemId}`;
-  }
+}
 
-  if (command) {
-    return `${activity.turnId ?? "no-turn"}:command:${command}`;
-  }
-
-  if (changedFiles.length > 0) {
-    return `${activity.turnId ?? "no-turn"}:files:${changedFiles.join("|")}`;
-  }
-
-  return null;
+function stableToolStateKeyForActivity(
+  activity: OrchestrationThreadActivity,
+  payload: Record<string, unknown> | null,
+): string | null {
+  const stableToolItemId = extractStableToolItemId(payload);
+  return stableToolItemId ? `${activity.turnId ?? "no-turn"}:item:${stableToolItemId}` : null;
 }
 function extractToolResult(
   payload: Record<string, unknown> | null,
@@ -785,12 +787,19 @@ function pushChangedFile(target: string[], seen: Set<string>, value: unknown) {
 
 function collectChangedFiles(value: unknown, target: string[], seen: Set<string>, depth: number) {
   if (depth > 4 || target.length >= 12) {
+function collectChangedFiles(
+  value: unknown,
+  target: string[],
+  seen: Set<string>,
+  depth: number,
+) {
+  if (depth > MAX_CHANGED_FILE_DEPTH || target.length >= MAX_CHANGED_FILE_COUNT) {
     return;
   }
   if (Array.isArray(value)) {
     for (const entry of value) {
       collectChangedFiles(entry, target, seen, depth + 1);
-      if (target.length >= 12) {
+      if (target.length >= MAX_CHANGED_FILE_COUNT) {
         return;
       }
     }
@@ -802,30 +811,16 @@ function collectChangedFiles(value: unknown, target: string[], seen: Set<string>
     return;
   }
 
-  pushChangedFile(target, seen, record.path);
-  pushChangedFile(target, seen, record.filePath);
-  pushChangedFile(target, seen, record.relativePath);
-  pushChangedFile(target, seen, record.filename);
-  pushChangedFile(target, seen, record.newPath);
-  pushChangedFile(target, seen, record.oldPath);
+  for (const key of CHANGED_FILE_VALUE_KEYS) {
+    pushChangedFile(target, seen, record[key]);
+  }
 
-  for (const nestedKey of [
-    "item",
-    "result",
-    "input",
-    "data",
-    "changes",
-    "files",
-    "edits",
-    "patch",
-    "patches",
-    "operations",
-  ]) {
+  for (const nestedKey of CHANGED_FILE_NESTED_KEYS) {
     if (!(nestedKey in record)) {
       continue;
     }
     collectChangedFiles(record[nestedKey], target, seen, depth + 1);
-    if (target.length >= 12) {
+    if (target.length >= MAX_CHANGED_FILE_COUNT) {
       return;
     }
   }

@@ -538,7 +538,6 @@ describe("deriveWorkLogEntries", () => {
 
     const [entry] = deriveWorkLogEntries(activities, undefined);
     expect(entry?.result).toBe("line 1\nline 2\n\nwarning line");
-    expect(entry?.output).toBe("line 1\nline 2\n\nwarning line");
   });
 
   it("extracts command output text when the provider returns string arrays", () => {
@@ -562,7 +561,6 @@ describe("deriveWorkLogEntries", () => {
 
     const [entry] = deriveWorkLogEntries(activities, undefined);
     expect(entry?.result).toBe("line 1\nline 2");
-    expect(entry?.output).toBe("line 1\nline 2");
   });
 
   it("extracts command output text from top-level tool payload output", () => {
@@ -580,7 +578,6 @@ describe("deriveWorkLogEntries", () => {
 
     const [entry] = deriveWorkLogEntries(activities, undefined);
     expect(entry?.result).toBe("line 1\nline 2");
-    expect(entry?.output).toBe("line 1\nline 2");
   });
 
   it("reuses earlier tool output for the matching completed tool entry", () => {
@@ -618,8 +615,47 @@ describe("deriveWorkLogEntries", () => {
     const entries = deriveWorkLogEntries(activities, undefined);
     const completedEntry = entries.find((entry) => entry.id === "command-tool-completed-without-output");
     expect(completedEntry?.result).toBe("line 1\nline 2");
-    expect(completedEntry?.output).toBe("line 1\nline 2");
     expect(completedEntry?.command).toBe("/bin/zsh -lc rg -n diff apps/web/src/components/ChatView.tsx");
+  });
+
+  it("does not merge tool output across distinct activities without a stable item id", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "first-command-update",
+        createdAt: "2026-02-23T00:00:01.000Z",
+        kind: "tool.updated",
+        summary: "First command",
+        turnId: "turn-1",
+        payload: {
+          itemType: "command_execution",
+          output: "line 1\nline 2",
+          data: {
+            item: {
+              command: ["rg", "-n", "diff", "apps/web/src/components/ChatView.tsx"],
+            },
+          },
+        },
+      }),
+      makeActivity({
+        id: "second-command-completed",
+        createdAt: "2026-02-23T00:00:02.000Z",
+        kind: "tool.completed",
+        summary: "Second command complete",
+        turnId: "turn-1",
+        payload: {
+          itemType: "command_execution",
+          data: {
+            item: {
+              command: ["rg", "-n", "diff", "apps/web/src/components/ChatView.tsx"],
+            },
+          },
+        },
+      }),
+    ];
+
+    const entries = deriveWorkLogEntries(activities, undefined);
+    const completedEntry = entries.find((entry) => entry.id === "second-command-completed");
+    expect(completedEntry?.result).toBeUndefined();
   });
 
   it("promotes command detail to a result when no structured output is available", () => {

@@ -11,9 +11,11 @@ import {
 import { Cause, Effect, Layer, Option, Stream } from "effect";
 import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
 
-import { parseTurnDiffFilesFromUnifiedDiff } from "../../checkpointing/Diffs.ts";
+import { checkpointFilesFromUnifiedDiff } from "../../checkpointing/Diffs.ts";
 import {
   checkpointRefForThreadTurn,
+  isProviderFallbackCheckpointRef,
+  nextCheckpointTurnCount,
   resolveThreadWorkspaceCwd,
 } from "../../checkpointing/Utils.ts";
 import { clearWorkspaceIndexCache } from "../../workspaceEntries.ts";
@@ -184,6 +186,28 @@ const make = Effect.gen(function* () {
     return cwd;
   });
 
+  const resolveNearestAvailableCheckpointRef = Effect.fnUntraced(function* (input: {
+    readonly cwd: string;
+    readonly threadId: ThreadId;
+    readonly preferredTurnCount: number;
+  }) {
+    for (let turnCount = input.preferredTurnCount; turnCount >= 0; turnCount -= 1) {
+      const checkpointRef = checkpointRefForThreadTurn(input.threadId, turnCount);
+      const exists = yield* checkpointStore.hasCheckpointRef({
+        cwd: input.cwd,
+        checkpointRef,
+      });
+      if (exists) {
+        return Option.some({
+          checkpointRef,
+          checkpointTurnCount: turnCount,
+        });
+      }
+    }
+
+    return Option.none();
+  });
+
   // Shared tail for both capture paths: creates the git checkpoint ref, diffs
   // it against the previous turn, then dispatches the domain events to update
   // the orchestration read model.
@@ -203,21 +227,38 @@ const make = Effect.gen(function* () {
     readonly assistantMessageId: MessageId | undefined;
     readonly createdAt: string;
   }) {
-    const fromTurnCount = Math.max(0, input.turnCount - 1);
-    const fromCheckpointRef = checkpointRefForThreadTurn(input.threadId, fromTurnCount);
+    const requestedFromTurnCount = Math.max(0, input.turnCount - 1);
+    const requestedFromCheckpointRef = checkpointRefForThreadTurn(
+      input.threadId,
+      requestedFromTurnCount,
+    );
     const targetCheckpointRef = checkpointRefForThreadTurn(input.threadId, input.turnCount);
 
-    const fromCheckpointExists = yield* checkpointStore.hasCheckpointRef({
+    const availableDiffBase = yield* resolveNearestAvailableCheckpointRef({
       cwd: input.cwd,
-      checkpointRef: fromCheckpointRef,
+      threadId: input.threadId,
+      preferredTurnCount: requestedFromTurnCount,
     });
-    if (!fromCheckpointExists) {
+
+    if (Option.isNone(availableDiffBase)) {
       yield* Effect.logWarning("checkpoint capture missing pre-turn baseline", {
         threadId: input.threadId,
         turnId: input.turnId,
-        fromTurnCount,
+        fromTurnCount: requestedFromTurnCount,
+      });
+    } else if (availableDiffBase.value.checkpointTurnCount !== requestedFromTurnCount) {
+      yield* Effect.logWarning("checkpoint capture rebasing diff base to nearest checkpoint", {
+        threadId: input.threadId,
+        turnId: input.turnId,
+        requestedFromTurnCount,
+        resolvedFromTurnCount: availableDiffBase.value.checkpointTurnCount,
       });
     }
+
+    const fromCheckpointRef = Option.match(availableDiffBase, {
+      onNone: () => requestedFromCheckpointRef,
+      onSome: (checkpoint) => checkpoint.checkpointRef,
+    });
 
     yield* checkpointStore.captureCheckpoint({
       cwd: input.cwd,
@@ -238,12 +279,7 @@ const make = Effect.gen(function* () {
       .pipe(
         Effect.map((unifiedDiff) => ({
           unifiedDiff,
-          files: parseTurnDiffFilesFromUnifiedDiff(unifiedDiff).map((file) => ({
-            path: file.path,
-            kind: "modified" as const,
-            additions: file.additions,
-            deletions: file.deletions,
-          })),
+          files: checkpointFilesFromUnifiedDiff(unifiedDiff),
         })),
         Effect.tapError((error) =>
           appendCaptureFailureActivity({

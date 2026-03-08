@@ -14,9 +14,9 @@ import {
 import { Cache, Cause, Duration, Effect, Layer, Option, Ref, Stream } from "effect";
 import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
 
-import { parseTurnDiffFilesFromUnifiedDiff } from "../../checkpointing/Diffs.ts";
+import { checkpointFilesFromUnifiedDiff } from "../../checkpointing/Diffs.ts";
 import { ProviderService } from "../../provider/Services/ProviderService.ts";
-import { resolveThreadWorkspaceCwd } from "../../checkpointing/Utils.ts";
+import { nextCheckpointTurnCount, resolveThreadWorkspaceCwd } from "../../checkpointing/Utils.ts";
 import { isGitRepository } from "../../git/isRepo.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import {
@@ -1206,10 +1206,6 @@ const make = Effect.gen(function* () {
             const assistantMessageId = MessageId.makeUnsafe(
               `assistant:${event.itemId ?? event.turnId ?? event.eventId}`,
             );
-            const maxTurnCount = thread.checkpoints.reduce(
-              (max, c) => Math.max(max, c.checkpointTurnCount),
-              0,
-            );
             yield* orchestrationEngine.dispatch({
               type: "thread.turn.diff.complete",
               commandId: providerCommandId(event, "thread-turn-diff-complete"),
@@ -1226,7 +1222,7 @@ const make = Effect.gen(function* () {
               })),
               ...(unifiedDiff.length > 0 ? { unifiedDiff } : {}),
               assistantMessageId,
-              checkpointTurnCount: maxTurnCount + 1,
+              checkpointTurnCount: nextCheckpointTurnCount(thread.checkpoints),
               createdAt: now,
             });
           }
