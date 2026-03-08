@@ -33,6 +33,7 @@ export const PROVIDER_OPTIONS: Array<{
 export interface WorkLogEntry {
   id: string;
   createdAt: string;
+  turnId?: TurnId;
   label: string;
   detail?: string;
   command?: string;
@@ -463,6 +464,9 @@ export function deriveWorkLogEntries(
       };
       const itemType = extractWorkLogItemType(payload);
       const requestKind = extractWorkLogRequestKind(payload);
+      if (activity.turnId) {
+        entry.turnId = activity.turnId;
+      }
       if (payload && typeof payload.detail === "string" && payload.detail.length > 0) {
         const detail = stripTrailingExitCode(payload.detail).output;
         if (detail) {
