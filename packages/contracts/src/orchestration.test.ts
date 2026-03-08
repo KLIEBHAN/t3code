@@ -8,6 +8,8 @@ import {
   OrchestrationGetTurnDiffInput,
   OrchestrationSession,
   ProjectCreateCommand,
+  ThreadCompactStartCommand,
+  ThreadReviewStartCommand,
   ThreadTurnStartCommand,
   ThreadCreatedPayload,
   ThreadTurnDiff,
@@ -17,6 +19,8 @@ import {
 const decodeTurnDiffInput = Schema.decodeUnknownEffect(OrchestrationGetTurnDiffInput);
 const decodeThreadTurnDiff = Schema.decodeUnknownEffect(ThreadTurnDiff);
 const decodeProjectCreateCommand = Schema.decodeUnknownEffect(ProjectCreateCommand);
+const decodeThreadCompactStartCommand = Schema.decodeUnknownEffect(ThreadCompactStartCommand);
+const decodeThreadReviewStartCommand = Schema.decodeUnknownEffect(ThreadReviewStartCommand);
 const decodeThreadTurnStartCommand = Schema.decodeUnknownEffect(ThreadTurnStartCommand);
 const decodeThreadTurnStartRequestedPayload = Schema.decodeUnknownEffect(
   ThreadTurnStartRequestedPayload,
@@ -136,6 +140,36 @@ it.effect("preserves explicit provider and runtime mode in thread.turn.start", (
     });
     assert.strictEqual(parsed.provider, "codex");
     assert.strictEqual(parsed.runtimeMode, "full-access");
+    assert.strictEqual(parsed.interactionMode, DEFAULT_PROVIDER_INTERACTION_MODE);
+  }),
+);
+
+it.effect("decodes thread.review.start defaults for provider and runtime mode", () =>
+  Effect.gen(function* () {
+    const parsed = yield* decodeThreadReviewStartCommand({
+      type: "thread.review.start",
+      commandId: "cmd-review-1",
+      threadId: "thread-1",
+      messageId: "msg-review-1",
+      createdAt: "2026-01-01T00:00:00.000Z",
+    });
+    assert.strictEqual(parsed.provider, undefined);
+    assert.strictEqual(parsed.runtimeMode, DEFAULT_RUNTIME_MODE);
+    assert.strictEqual(parsed.interactionMode, DEFAULT_PROVIDER_INTERACTION_MODE);
+  }),
+);
+
+it.effect("decodes thread.compact.start defaults for provider and runtime mode", () =>
+  Effect.gen(function* () {
+    const parsed = yield* decodeThreadCompactStartCommand({
+      type: "thread.compact.start",
+      commandId: "cmd-compact-1",
+      threadId: "thread-1",
+      messageId: "msg-compact-1",
+      createdAt: "2026-01-01T00:00:00.000Z",
+    });
+    assert.strictEqual(parsed.provider, undefined);
+    assert.strictEqual(parsed.runtimeMode, DEFAULT_RUNTIME_MODE);
     assert.strictEqual(parsed.interactionMode, DEFAULT_PROVIDER_INTERACTION_MODE);
   }),
 );

@@ -1,7 +1,12 @@
 import { splitPromptIntoComposerSegments } from "./composer-editor-mentions";
+import {
+  hasSlashCommandPrefix,
+  parseStandaloneSlashCommand,
+  type ChatSlashCommand,
+} from "./slashCommands";
 
 export type ComposerTriggerKind = "path" | "slash-command" | "slash-model";
-export type ComposerSlashCommand = "model" | "plan" | "default";
+export type ComposerSlashCommand = ChatSlashCommand;
 
 export interface ComposerTrigger {
   kind: ComposerTriggerKind;
@@ -9,9 +14,6 @@ export interface ComposerTrigger {
   rangeStart: number;
   rangeEnd: number;
 }
-
-const SLASH_COMMANDS: readonly ComposerSlashCommand[] = ["model", "plan", "default"];
-
 function clampCursor(text: string, cursor: number): number {
   if (!Number.isFinite(cursor)) return text.length;
   return Math.max(0, Math.min(text.length, Math.floor(cursor)));
@@ -168,7 +170,7 @@ export function detectComposerTrigger(text: string, cursorInput: number): Compos
           rangeEnd: cursor,
         };
       }
-      if (SLASH_COMMANDS.some((command) => command.startsWith(commandQuery.toLowerCase()))) {
+      if (hasSlashCommandPrefix(commandQuery)) {
         return {
           kind: "slash-command",
           query: commandQuery,
@@ -204,16 +206,11 @@ export function detectComposerTrigger(text: string, cursorInput: number): Compos
   };
 }
 
-export function parseStandaloneComposerSlashCommand(
-  text: string,
-): Exclude<ComposerSlashCommand, "model"> | null {
-  const match = /^\/(plan|default)\s*$/i.exec(text.trim());
-  if (!match) {
-    return null;
-  }
-  const command = match[1]?.toLowerCase();
-  if (command === "plan") return "plan";
-  return "default";
+export function parseStandaloneComposerSlashCommand(text: string): Exclude<
+  ComposerSlashCommand,
+  "model"
+> | null {
+  return parseStandaloneSlashCommand(text);
 }
 
 export function replaceTextRange(

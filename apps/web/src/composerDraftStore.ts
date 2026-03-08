@@ -122,7 +122,7 @@ export interface DraftThreadState {
   envMode: DraftThreadEnvMode;
 }
 
-interface ProjectDraftThread extends DraftThreadState {
+export interface ProjectDraftThread extends DraftThreadState {
   threadId: ThreadId;
 }
 

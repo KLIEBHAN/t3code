@@ -1,4 +1,5 @@
 import type {
+  MessageId,
   OrchestrationCommand,
   OrchestrationEvent,
   OrchestrationReadModel,
@@ -27,6 +28,18 @@ const defaultMetadata: Omit<OrchestrationEvent, "sequence" | "type" | "payload">
   metadata: {},
 };
 
+const REVIEW_COMMAND_PROMPT =
+  "Review the current changes in this project. Focus on correctness, regressions, missing tests, and notable risks. Use the relevant diff and files as needed.";
+const COMPACT_COMMAND_PROMPT =
+  "Create a compact handoff summary for this thread so work can continue with less context. Preserve the goal, current state, important constraints, files touched, open questions, and the next concrete steps. Keep it concise and actionable.";
+
+type SystemGeneratedTurnCommand = Extract<
+  OrchestrationCommand,
+  {
+    type: "thread.review.start" | "thread.compact.start";
+  }
+>;
+
 function withEventBase(
   input: Pick<OrchestrationCommand, "commandId"> & {
     readonly aggregateKind: OrchestrationEvent["aggregateKind"];
@@ -45,6 +58,65 @@ function withEventBase(
     correlationId: input.commandId,
     metadata: input.metadata ?? {},
   };
+}
+
+function buildTurnStartEvents(input: {
+  readonly command: Extract<OrchestrationCommand, { type: "thread.turn.start" }> | SystemGeneratedTurnCommand;
+  readonly readModel: OrchestrationReadModel;
+  readonly messageId: MessageId;
+  readonly messageText: string;
+  readonly attachments: Extract<
+    OrchestrationCommand,
+    { type: "thread.turn.start" }
+  >["message"]["attachments"];
+}) {
+  const thread = input.readModel.threads.find((entry) => entry.id === input.command.threadId);
+  const userMessageEvent: Omit<OrchestrationEvent, "sequence"> = {
+    ...withEventBase({
+      aggregateKind: "thread",
+      aggregateId: input.command.threadId,
+      occurredAt: input.command.createdAt,
+      commandId: input.command.commandId,
+    }),
+    type: "thread.message-sent",
+    payload: {
+      threadId: input.command.threadId,
+      messageId: input.messageId,
+      role: "user",
+      text: input.messageText,
+      attachments: input.attachments,
+      turnId: null,
+      streaming: false,
+      createdAt: input.command.createdAt,
+      updatedAt: input.command.createdAt,
+    },
+  };
+  const turnStartRequestedEvent: Omit<OrchestrationEvent, "sequence"> = {
+    ...withEventBase({
+      aggregateKind: "thread",
+      aggregateId: input.command.threadId,
+      occurredAt: input.command.createdAt,
+      commandId: input.command.commandId,
+    }),
+    causationEventId: userMessageEvent.eventId,
+    type: "thread.turn-start-requested",
+    payload: {
+      threadId: input.command.threadId,
+      messageId: input.messageId,
+      ...(input.command.provider !== undefined ? { provider: input.command.provider } : {}),
+      ...(input.command.model !== undefined ? { model: input.command.model } : {}),
+      ...(input.command.modelOptions !== undefined ? { modelOptions: input.command.modelOptions } : {}),
+      ...("providerOptions" in input.command && input.command.providerOptions !== undefined
+        ? { providerOptions: input.command.providerOptions }
+        : {}),
+      assistantDeliveryMode:
+        input.command.assistantDeliveryMode ?? DEFAULT_ASSISTANT_DELIVERY_MODE,
+      runtimeMode: thread?.runtimeMode ?? input.command.runtimeMode,
+      interactionMode: thread?.interactionMode ?? input.command.interactionMode,
+      createdAt: input.command.createdAt,
+    },
+  };
+  return [userMessageEvent, turnStartRequestedEvent] as const;
 }
 
 export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand")(function* ({
@@ -267,55 +339,51 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         command,
         threadId: command.threadId,
       });
-      const userMessageEvent: Omit<OrchestrationEvent, "sequence"> = {
-        ...withEventBase({
-          aggregateKind: "thread",
-          aggregateId: command.threadId,
-          occurredAt: command.createdAt,
-          commandId: command.commandId,
-        }),
-        type: "thread.message-sent",
-        payload: {
-          threadId: command.threadId,
-          messageId: command.message.messageId,
-          role: "user",
-          text: command.message.text,
-          attachments: command.message.attachments,
-          turnId: null,
-          streaming: false,
-          createdAt: command.createdAt,
-          updatedAt: command.createdAt,
-        },
-      };
-      const turnStartRequestedEvent: Omit<OrchestrationEvent, "sequence"> = {
-        ...withEventBase({
-          aggregateKind: "thread",
-          aggregateId: command.threadId,
-          occurredAt: command.createdAt,
-          commandId: command.commandId,
-        }),
-        causationEventId: userMessageEvent.eventId,
-        type: "thread.turn-start-requested",
-        payload: {
-          threadId: command.threadId,
-          messageId: command.message.messageId,
-          ...(command.provider !== undefined ? { provider: command.provider } : {}),
-          ...(command.model !== undefined ? { model: command.model } : {}),
-          ...(command.modelOptions !== undefined ? { modelOptions: command.modelOptions } : {}),
-          ...(command.providerOptions !== undefined
-            ? { providerOptions: command.providerOptions }
-            : {}),
-          assistantDeliveryMode: command.assistantDeliveryMode ?? DEFAULT_ASSISTANT_DELIVERY_MODE,
-          runtimeMode:
-            readModel.threads.find((entry) => entry.id === command.threadId)?.runtimeMode ??
-            command.runtimeMode,
-          interactionMode:
-            readModel.threads.find((entry) => entry.id === command.threadId)?.interactionMode ??
-            command.interactionMode,
-          createdAt: command.createdAt,
-        },
-      };
-      return [userMessageEvent, turnStartRequestedEvent];
+      return buildTurnStartEvents({
+        command,
+        readModel,
+        messageId: command.message.messageId,
+        messageText: command.message.text,
+        attachments: command.message.attachments,
+      });
+    }
+
+    case "thread.review.start": {
+      yield* requireThread({
+        readModel,
+        command,
+        threadId: command.threadId,
+      });
+      return buildTurnStartEvents({
+        command,
+        readModel,
+        messageId: command.messageId,
+        messageText: buildSystemGeneratedPrompt(
+          REVIEW_COMMAND_PROMPT,
+          command.instructions,
+          "Additional review instructions",
+        ),
+        attachments: [],
+      });
+    }
+
+    case "thread.compact.start": {
+      yield* requireThread({
+        readModel,
+        command,
+        threadId: command.threadId,
+      });
+      return buildTurnStartEvents({
+        command,
+        readModel,
+        messageId: command.messageId,
+        messageText: buildSystemGeneratedPrompt(
+          COMPACT_COMMAND_PROMPT,
+          command.instructions,
+          "Additional compaction instructions",
+        ),
+        attachments: [],
+      });
     }
 
     case "thread.turn.interrupt": {
