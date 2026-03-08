@@ -37,6 +37,7 @@ export interface WorkLogEntry {
   label: string;
   detail?: string;
   command?: string;
+  output?: string;
   changedFiles?: ReadonlyArray<string>;
   tone: "thinking" | "tool" | "info" | "error";
   toolTitle?: string;
@@ -476,6 +477,10 @@ export function deriveWorkLogEntries(
       if (command) {
         entry.command = command;
       }
+      const output = extractToolOutput(payload);
+      if (output) {
+        entry.output = output;
+      }
       if (changedFiles.length > 0) {
         entry.changedFiles = changedFiles;
       }
@@ -579,6 +584,35 @@ function extractWorkLogRequestKind(
   return requestKindFromRequestType(payload?.requestType) ?? undefined;
 }
 
+function extractToolOutput(payload: Record<string, unknown> | null): string | null {
+  const data = asRecord(payload?.data);
+  const item = asRecord(data?.item);
+  const itemResult = asRecord(item?.result);
+  const candidates = [
+    asTrimmedString(itemResult?.output),
+    asTrimmedString(itemResult?.stdout),
+    asTrimmedString(itemResult?.stderr),
+    asTrimmedString(itemResult?.text),
+    asTrimmedString(item?.output),
+    asTrimmedString(item?.stdout),
+    asTrimmedString(item?.stderr),
+    asTrimmedString(data?.output),
+    asTrimmedString(data?.stdout),
+    asTrimmedString(data?.stderr),
+  ];
+
+  const combinedStdoutStderr = [
+    asTrimmedString(itemResult?.stdout),
+    asTrimmedString(itemResult?.stderr),
+  ]
+    .filter((value): value is string => value !== null)
+    .join("\n\n");
+  if (combinedStdoutStderr.length > 0) {
+    candidates.unshift(combinedStdoutStderr);
+  }
+
+  return candidates.find((candidate) => candidate !== null) ?? null;
+}
 function pushChangedFile(target: string[], seen: Set<string>, value: unknown) {
   const normalized = asTrimmedString(value);
   if (!normalized || seen.has(normalized)) {

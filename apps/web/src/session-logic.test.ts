@@ -515,6 +515,30 @@ describe("deriveWorkLogEntries", () => {
       "apps/web/src/session-logic.ts",
     ]);
   });
+
+  it("extracts command output text for completed command tool activities", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "command-tool-output",
+        kind: "tool.completed",
+        summary: "Command run complete",
+        payload: {
+          itemType: "command_execution",
+          data: {
+            item: {
+              result: {
+                stdout: "line 1\nline 2",
+                stderr: "warning line",
+              },
+            },
+          },
+        },
+      }),
+    ];
+
+    const [entry] = deriveWorkLogEntries(activities, undefined);
+    expect(entry?.output).toBe("line 1\nline 2\n\nwarning line");
+  });
 });
 
 describe("deriveTimelineEntries", () => {
