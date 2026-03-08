@@ -9,6 +9,17 @@ function normalizePath(value: string): string {
   return value.replaceAll("\\", "/");
 }
 
+export function pathsReferToSameFileChange(leftPath: string, rightPath: string): boolean {
+  const normalizedLeftPath = normalizePath(leftPath);
+  const normalizedRightPath = normalizePath(rightPath);
+
+  return (
+    normalizedLeftPath === normalizedRightPath ||
+    normalizedLeftPath.endsWith(`/${normalizedRightPath}`) ||
+    normalizedRightPath.endsWith(`/${normalizedLeftPath}`)
+  );
+}
+
 function readFileStat(file: TurnDiffFileChange | undefined): WorkLogFileStat | null {
   if (!file) {
     return null;
@@ -36,13 +47,7 @@ export function findWorkLogFileStat(
     return readFileStat(exactMatch);
   }
 
-  const suffixMatches = summary.files.filter((file) => {
-    const normalizedFilePath = normalizePath(file.path);
-    return (
-      normalizedTargetPath.endsWith(`/${normalizedFilePath}`) ||
-      normalizedFilePath.endsWith(`/${normalizedTargetPath}`)
-    );
-  });
+  const suffixMatches = summary.files.filter((file) => pathsReferToSameFileChange(file.path, filePath));
   if (suffixMatches.length !== 1) {
     return null;
   }

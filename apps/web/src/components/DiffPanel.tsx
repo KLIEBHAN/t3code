@@ -29,6 +29,7 @@ import {
   isTurnDiffOpenable,
   resolveCheckpointTurnCount,
 } from "../turnDiffSummary";
+import { pathsReferToSameFileChange } from "../workLogFileStats";
 import { useStore } from "../store";
 import { useAppSettings } from "../appSettings";
 import { formatShortTimestamp } from "../timestampFormat";
@@ -350,8 +351,11 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
     }
     const target = Array.from(
       patchViewportRef.current.querySelectorAll<HTMLElement>("[data-diff-file-path]"),
-    ).find((element) => element.dataset.diffFilePath === selectedFilePath);
-    target?.scrollIntoView({ block: "nearest" });
+    ).find((element) => {
+      const diffFilePath = element.dataset.diffFilePath;
+      return diffFilePath ? pathsReferToSameFileChange(diffFilePath, selectedFilePath) : false;
+    });
+    target?.scrollIntoView({ block: "start", inline: "nearest" });
   }, [selectedFilePath, renderableFiles]);
 
   const openDiffFileInEditor = useCallback(

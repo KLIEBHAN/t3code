@@ -2,7 +2,7 @@ import { TurnId } from "@t3tools/contracts";
 import { describe, expect, it } from "vitest";
 
 import type { TurnDiffSummary } from "./types";
-import { findWorkLogFileStat } from "./workLogFileStats";
+import { findWorkLogFileStat, pathsReferToSameFileChange } from "./workLogFileStats";
 
 function makeSummary(files: TurnDiffSummary["files"]): TurnDiffSummary {
   return {
@@ -50,5 +50,25 @@ describe("findWorkLogFileStat", () => {
     );
 
     expect(stat).toBeNull();
+  });
+});
+
+describe("pathsReferToSameFileChange", () => {
+  it("matches absolute and relative paths that refer to the same file", () => {
+    expect(
+      pathsReferToSameFileChange(
+        "/Users/fabi/Documents/workspace/t3code/apps/web/src/components/ChatView.tsx",
+        "apps/web/src/components/ChatView.tsx",
+      ),
+    ).toBe(true);
+  });
+
+  it("does not match unrelated files that only share a suffix fragment", () => {
+    expect(
+      pathsReferToSameFileChange(
+        "/Users/fabi/Documents/workspace/t3code/apps/web/src/components/ChatView.tsx",
+        "src/components/OtherView.tsx",
+      ),
+    ).toBe(false);
   });
 });
