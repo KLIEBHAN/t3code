@@ -2,6 +2,7 @@
 import "../index.css";
 
 import {
+  CheckpointRef,
   EventId,
   ORCHESTRATION_WS_METHODS,
   type MessageId,
@@ -431,6 +432,74 @@ function createToolCallSnapshot(): OrchestrationReadModel {
   };
 }
 
+function createFileChangeDiffSnapshot(): OrchestrationReadModel {
+  const snapshot = createSnapshotForTargetUser({
+    targetMessageId: "msg-user-target-diff-open" as MessageId,
+    targetText: "x".repeat(3_200),
+  });
+  const thread = snapshot.threads[0];
+  if (!thread) {
+    return snapshot;
+  }
+
+  return {
+    ...snapshot,
+    threads: [
+      {
+        ...thread,
+        activities: [
+          {
+            id: EventId.makeUnsafe("activity-file-change"),
+            createdAt: isoAt(140),
+            kind: "tool.completed",
+            summary: "File change complete",
+            tone: "tool",
+            turnId: TurnId.makeUnsafe("turn-file-change"),
+            payload: {
+              itemType: "file_change",
+              data: {
+                item: {
+                  changes: [
+                    { path: "/repo/project/apps/web/src/components/ChatView.tsx" },
+                  ],
+                },
+              },
+            },
+          },
+        ],
+        checkpoints: [
+          {
+            turnId: TurnId.makeUnsafe("turn-file-change"),
+            checkpointTurnCount: 1,
+            checkpointRef: CheckpointRef.makeUnsafe("refs/t3/checkpoints/thread-browser-test/turn/1"),
+            status: "ready",
+            assistantMessageId: null,
+            files: [
+              {
+                path: "apps/web/src/components/ChatView.tsx",
+                kind: "modified",
+                additions: 2,
+                deletions: 1,
+              },
+            ],
+            completedAt: isoAt(141),
+            unifiedDiff: [
+              "diff --git a/apps/web/src/components/ChatView.tsx b/apps/web/src/components/ChatView.tsx",
+              "index 1111111..2222222 100644",
+              "--- a/apps/web/src/components/ChatView.tsx",
+              "+++ b/apps/web/src/components/ChatView.tsx",
+              "@@ -1 +1,2 @@",
+              "-old line",
+              "+new line",
+              "+second line",
+            ].join("\n"),
+          },
+        ],
+      },
+    ],
+  };
+}
+
 function resolveWsRpc(body: WsRequestEnvelope["body"]): unknown {
   const tag = body._tag;
   if (tag === ORCHESTRATION_WS_METHODS.getSnapshot) {
@@ -606,9 +675,24 @@ async function waitForComposerEditor(): Promise<HTMLElement> {
   );
 }
 
-async function waitForInteractionModeButton(
-  expectedLabel: "Chat" | "Plan",
-): Promise<HTMLButtonElement> {
+async function waitForMessageScrollContainer(): Promise<HTMLDivElement> {
+  return waitForElement(
+    () => document.querySelector<HTMLDivElement>("div.overflow-y-auto.overscroll-y-contain"),
+    "Unable to find ChatView message scroll container.",
+  );
+}
+
+async function waitForCommandPaletteInput(): Promise<HTMLInputElement> {
+  return waitForElement(
+    () =>
+      document.querySelector<HTMLInputElement>(
+        'input[placeholder="Search commands, models, scripts..."]',
+      ),
+    "Unable to find command palette input.",
+  );
+}
+
+async function waitForInteractionModeButton(expectedLabel: "Chat" | "Plan"): Promise<HTMLButtonElement> {
   return waitForElement(
     () =>
       Array.from(document.querySelectorAll("button")).find(
@@ -1455,23 +1539,29 @@ describe("ChatView timeline estimator parity (full app)", () => {
     }
   });
 
-  it("lets users expand a tool call to inspect its result", async () => {
+  it("lets users expand a tool call to inspect its result by clicking the header content", async () => {
     const mounted = await mountChatView({
       viewport: DEFAULT_VIEWPORT,
       snapshot: createToolCallSnapshot(),
     });
 
     try {
-      const trigger = await waitForElement(
+      const triggerContent = await waitForElement(
         () =>
-          Array.from(document.querySelectorAll<HTMLButtonElement>("button")).find((button) =>
-            button.textContent?.includes('rg -n diff apps/web/src/components/ChatView.tsx'),
-          ) ?? null,
-        "Unable to find tool call trigger button.",
+          Array.from(document.querySelectorAll<HTMLElement>("div, p, span")).find((element) => {
+            if (element instanceof HTMLButtonElement) {
+              return false;
+            }
+            return (
+              element.textContent?.trim() ===
+              "/bin/zsh -lc rg -n diff apps/web/src/components/ChatView.tsx"
+            );
+          }) ?? null,
+        "Unable to find tool call trigger content.",
       );
 
       expect(document.body.textContent).not.toContain("line 1");
-      trigger.click();
+      triggerContent.click();
 
       await vi.waitFor(
         () => {
@@ -1490,7 +1580,7 @@ describe("ChatView timeline estimator parity (full app)", () => {
       expect(document.body.textContent).toContain("line 1");
       expect(document.body.textContent).toContain("line 2");
 
-      trigger.click();
+      triggerContent.click();
 
       await vi.waitFor(
         () => {
@@ -1499,6 +1589,57 @@ describe("ChatView timeline estimator parity (full app)", () => {
         },
         { timeout: 8_000, interval: 16 },
       );
+    } finally {
+      await mounted.cleanup();
+    }
+  });
+
+  it("opens a file-change diff without shifting the main message scroll position", async () => {
+    const mounted = await mountChatView({
+      viewport: DEFAULT_VIEWPORT,
+      snapshot: createFileChangeDiffSnapshot(),
+    });
+
+    try {
+      const scrollContainer = await waitForMessageScrollContainer();
+      const filePill = await waitForElement(
+        () =>
+          Array.from(document.querySelectorAll<HTMLButtonElement>("button")).find((button) =>
+            button.textContent?.includes("ChatView.tsx"),
+          ) ?? null,
+        "Unable to find changed-file pill button.",
+      );
+
+      const containerRect = scrollContainer.getBoundingClientRect();
+      const pillRect = filePill.getBoundingClientRect();
+      const targetScrollTop = Math.max(
+        0,
+        scrollContainer.scrollTop + (pillRect.top - containerRect.top) - 120,
+      );
+      scrollContainer.scrollTop = targetScrollTop;
+      scrollContainer.dispatchEvent(new Event("scroll"));
+      await waitForLayout();
+      const beforeScrollTop = scrollContainer.scrollTop;
+
+      filePill.dispatchEvent(
+        new MouseEvent("mousedown", {
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+      filePill.click();
+
+      await vi.waitFor(
+        () => {
+          expect(
+            document.querySelector('[data-diff-file-path="apps/web/src/components/ChatView.tsx"]'),
+          ).toBeTruthy();
+        },
+        { timeout: 8_000, interval: 16 },
+      );
+      await waitForLayout();
+
+      expect(Math.abs(scrollContainer.scrollTop - beforeScrollTop)).toBeLessThanOrEqual(2);
     } finally {
       await mounted.cleanup();
     }
