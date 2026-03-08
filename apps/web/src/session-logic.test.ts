@@ -141,6 +141,7 @@ describe("derivePendingApprovals", () => {
 describe("resolveTurnDiffSummaryForAssistantMessage", () => {
   it("prefers turn-based lookup when assistantMessageId is unavailable", () => {
     const turnId = TurnId.makeUnsafe("turn-1");
+    const messageId = MessageId.makeUnsafe("assistant:message-1");
     const summary = {
       turnId,
       completedAt: "2026-02-23T00:00:01.000Z",
@@ -150,12 +151,13 @@ describe("resolveTurnDiffSummaryForAssistantMessage", () => {
     expect(
       resolveTurnDiffSummaryForAssistantMessage({
         message: {
-          id: MessageId.makeUnsafe("assistant:message-1"),
+          id: messageId,
           role: "assistant",
           turnId,
         },
         turnDiffSummaryByAssistantMessageId: new Map(),
         turnDiffSummaryByTurnId: new Map([[turnId, summary]]),
+        latestAssistantMessageIdByTurnId: new Map([[turnId, messageId]]),
       }),
     ).toEqual(summary);
   });
@@ -178,8 +180,56 @@ describe("resolveTurnDiffSummaryForAssistantMessage", () => {
         },
         turnDiffSummaryByAssistantMessageId: new Map([[messageId, summary]]),
         turnDiffSummaryByTurnId: new Map(),
+        latestAssistantMessageIdByTurnId: new Map(),
       }),
     ).toEqual(summary);
+  });
+
+  it("does not attach a turn-based summary to earlier assistant updates in the same turn", () => {
+    const turnId = TurnId.makeUnsafe("turn-3");
+    const latestMessageId = MessageId.makeUnsafe("assistant:message-3-final");
+    const summary = {
+      turnId,
+      completedAt: "2026-02-23T00:00:01.000Z",
+      files: [],
+    };
+
+    expect(
+      resolveTurnDiffSummaryForAssistantMessage({
+        message: {
+          id: MessageId.makeUnsafe("assistant:message-3-commentary"),
+          role: "assistant",
+          turnId,
+        },
+        turnDiffSummaryByAssistantMessageId: new Map(),
+        turnDiffSummaryByTurnId: new Map([[turnId, summary]]),
+        latestAssistantMessageIdByTurnId: new Map([[turnId, latestMessageId]]),
+      }),
+    ).toBeUndefined();
+  });
+
+  it("suppresses turn-based summaries while the turn is still active", () => {
+    const turnId = TurnId.makeUnsafe("turn-4");
+    const messageId = MessageId.makeUnsafe("assistant:message-4");
+    const summary = {
+      turnId,
+      completedAt: "2026-02-23T00:00:01.000Z",
+      files: [],
+    };
+
+    expect(
+      resolveTurnDiffSummaryForAssistantMessage({
+        message: {
+          id: messageId,
+          role: "assistant",
+          turnId,
+        },
+        turnDiffSummaryByAssistantMessageId: new Map(),
+        turnDiffSummaryByTurnId: new Map([[turnId, summary]]),
+        latestAssistantMessageIdByTurnId: new Map([[turnId, messageId]]),
+        activeTurnId: turnId,
+      }),
+    ).toBeUndefined();
   });
 });
 

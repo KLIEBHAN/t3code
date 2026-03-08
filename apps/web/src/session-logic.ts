@@ -885,23 +885,64 @@ export function deriveTimelineEntries(
   );
 }
 
+export function buildLatestAssistantMessageIdByTurnId(
+  messages: ReadonlyArray<Pick<ChatMessage, "id" | "role" | "turnId">>,
+): Map<TurnId, MessageId> {
+  const latestMessageIdByTurnId = new Map<TurnId, MessageId>();
+
+  for (const message of messages) {
+    if (message.role !== "assistant" || !message.turnId) {
+      continue;
+    }
+    latestMessageIdByTurnId.set(message.turnId, message.id);
+  }
+
+  return latestMessageIdByTurnId;
+}
+
+function canUseTurnLevelDiffSummary(input: {
+  message: Pick<ChatMessage, "id" | "turnId">;
+  latestAssistantMessageIdByTurnId?: ReadonlyMap<TurnId, MessageId>;
+  activeTurnId?: TurnId | null;
+}): input is {
+  message: Pick<ChatMessage, "id" | "turnId"> & { turnId: TurnId };
+  latestAssistantMessageIdByTurnId?: ReadonlyMap<TurnId, MessageId>;
+  activeTurnId?: TurnId | null;
+} {
+  const { turnId } = input.message;
+  if (!turnId) {
+    return false;
+  }
+  if (input.activeTurnId === turnId) {
+    return false;
+  }
+
+  // Turn-level fallback summaries are only safe on the final assistant message for a settled turn.
+  const latestAssistantMessageId = input.latestAssistantMessageIdByTurnId?.get(turnId);
+  return latestAssistantMessageId === undefined || latestAssistantMessageId === input.message.id;
+}
+
 export function resolveTurnDiffSummaryForAssistantMessage(input: {
   message: Pick<ChatMessage, "id" | "role" | "turnId">;
   turnDiffSummaryByAssistantMessageId: ReadonlyMap<MessageId, TurnDiffSummary>;
   turnDiffSummaryByTurnId: ReadonlyMap<TurnId, TurnDiffSummary>;
+  latestAssistantMessageIdByTurnId?: ReadonlyMap<TurnId, MessageId>;
+  activeTurnId?: TurnId | null;
 }): TurnDiffSummary | undefined {
   if (input.message.role !== "assistant") {
     return undefined;
   }
 
-  if (input.message.turnId) {
-    const byTurnId = input.turnDiffSummaryByTurnId.get(input.message.turnId);
-    if (byTurnId) {
-      return byTurnId;
-    }
+  const byAssistantMessageId = input.turnDiffSummaryByAssistantMessageId.get(input.message.id);
+  if (byAssistantMessageId) {
+    return byAssistantMessageId;
   }
 
-  return input.turnDiffSummaryByAssistantMessageId.get(input.message.id);
+  if (canUseTurnLevelDiffSummary(input)) {
+    return input.turnDiffSummaryByTurnId.get(input.message.turnId);
+  }
+
+  return undefined;
 }
 
 export function inferCheckpointTurnCountByTurnId(

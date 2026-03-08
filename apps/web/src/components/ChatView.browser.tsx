@@ -143,12 +143,17 @@ function createUserMessage(options: {
   };
 }
 
-function createAssistantMessage(options: { id: MessageId; text: string; offsetSeconds: number }) {
+function createAssistantMessage(options: {
+  id: MessageId;
+  text: string;
+  offsetSeconds: number;
+  turnId?: TurnId | null;
+}) {
   return {
     id: options.id,
     role: "assistant" as const,
     text: options.text,
-    turnId: null,
+    turnId: options.turnId ?? null,
     streaming: false,
     createdAt: isoAt(options.offsetSeconds),
     updatedAt: isoAt(options.offsetSeconds + 1),
@@ -512,6 +517,111 @@ function createFileChangeDiffSnapshot(): OrchestrationReadModel {
             ].join("\n"),
           },
         ],
+      },
+    ],
+  };
+}
+
+function createTurnFallbackDiffSnapshotWithInterimAssistantUpdate(): OrchestrationReadModel {
+  const turnId = TurnId.makeUnsafe("turn-commentary-repeat");
+
+  return {
+    snapshotSequence: 1,
+    updatedAt: NOW_ISO,
+    projects: [
+      {
+        id: PROJECT_ID,
+        title: "Project",
+        workspaceRoot: "/repo/project",
+        defaultModel: "gpt-5",
+        scripts: [],
+        createdAt: NOW_ISO,
+        updatedAt: NOW_ISO,
+        deletedAt: null,
+      },
+    ],
+    threads: [
+      {
+        id: THREAD_ID,
+        projectId: PROJECT_ID,
+        title: "Browser test thread",
+        model: "gpt-5",
+        interactionMode: "default",
+        runtimeMode: "full-access",
+        branch: "main",
+        worktreePath: null,
+        latestTurn: {
+          turnId,
+          state: "completed",
+          requestedAt: isoAt(1),
+          startedAt: isoAt(1),
+          completedAt: isoAt(4),
+          assistantMessageId: null,
+        },
+        createdAt: NOW_ISO,
+        updatedAt: NOW_ISO,
+        deletedAt: null,
+        messages: [
+          createUserMessage({
+            id: "msg-user-commentary-repeat" as MessageId,
+            text: "Please fix the issue.",
+            offsetSeconds: 0,
+          }),
+          createAssistantMessage({
+            id: "msg-assistant-commentary-repeat" as MessageId,
+            text: "Ich prüfe jetzt die betroffene Stelle.",
+            offsetSeconds: 1,
+            turnId,
+          }),
+          createAssistantMessage({
+            id: "msg-assistant-final-repeat" as MessageId,
+            text: "Der Fix ist umgesetzt.",
+            offsetSeconds: 3,
+            turnId,
+          }),
+        ],
+        activities: [],
+        proposedPlans: [],
+        checkpoints: [
+          {
+            turnId,
+            checkpointTurnCount: 1,
+            checkpointRef: CheckpointRef.makeUnsafe(
+              "refs/t3/checkpoints/thread-browser-test/turn/commentary-repeat",
+            ),
+            status: "ready",
+            // Leave the message id empty to exercise the turn-level fallback path.
+            assistantMessageId: null,
+            files: [
+              {
+                path: "apps/web/src/components/ChatView.tsx",
+                kind: "modified",
+                additions: 3,
+                deletions: 1,
+              },
+            ],
+            completedAt: isoAt(4),
+            unifiedDiff: [
+              "diff --git a/apps/web/src/components/ChatView.tsx b/apps/web/src/components/ChatView.tsx",
+              "index 1111111..2222222 100644",
+              "--- a/apps/web/src/components/ChatView.tsx",
+              "+++ b/apps/web/src/components/ChatView.tsx",
+              "@@ -1 +1,2 @@",
+              "-old line",
+              "+new line",
+              "+second line",
+            ].join("\n"),
+          },
+        ],
+        session: {
+          threadId: THREAD_ID,
+          status: "ready",
+          providerName: "codex",
+          runtimeMode: "full-access",
+          activeTurnId: null,
+          lastError: null,
+          updatedAt: NOW_ISO,
+        },
       },
     ],
   };
@@ -1750,6 +1860,28 @@ describe("ChatView timeline estimator parity (full app)", () => {
 
       expect(Math.abs(scrollContainer.scrollTop - beforeScrollTop)).toBeLessThanOrEqual(2);
       expect(Math.abs(reopenedFilePill.getBoundingClientRect().top - beforePillTop)).toBeLessThanOrEqual(4);
+    } finally {
+      await mounted.cleanup();
+    }
+  });
+
+  it("shows turn-level changed files only once for the final assistant message in a turn", async () => {
+    const mounted = await mountChatView({
+      viewport: DEFAULT_VIEWPORT,
+      snapshot: createTurnFallbackDiffSnapshotWithInterimAssistantUpdate(),
+    });
+
+    try {
+      await vi.waitFor(
+        () => {
+          const changedFileHeadings = document.body.textContent?.match(/Changed files \(1\)/g) ?? [];
+          expect(changedFileHeadings).toHaveLength(1);
+        },
+        { timeout: 8_000, interval: 16 },
+      );
+
+      expect(document.body.textContent).toContain("Ich prüfe jetzt die betroffene Stelle.");
+      expect(document.body.textContent).toContain("Der Fix ist umgesetzt.");
     } finally {
       await mounted.cleanup();
     }
