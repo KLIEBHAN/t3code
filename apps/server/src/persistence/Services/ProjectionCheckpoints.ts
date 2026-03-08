@@ -28,6 +28,7 @@ export const ProjectionCheckpoint = Schema.Struct({
   checkpointRef: CheckpointRef,
   status: OrchestrationCheckpointStatus,
   files: Schema.Array(OrchestrationCheckpointFile),
+  unifiedDiff: Schema.NullOr(Schema.String),
   assistantMessageId: Schema.NullOr(MessageId),
   completedAt: IsoDateTime,
 });

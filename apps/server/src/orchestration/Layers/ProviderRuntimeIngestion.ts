@@ -14,6 +14,7 @@ import {
 import { Cache, Cause, Duration, Effect, Layer, Option, Ref, Stream } from "effect";
 import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
 
+import { parseTurnDiffFilesFromUnifiedDiff } from "../../checkpointing/Diffs.ts";
 import { ProviderService } from "../../provider/Services/ProviderService.ts";
 import { resolveThreadWorkspaceCwd } from "../../checkpointing/Utils.ts";
 import { isGitRepository } from "../../git/isRepo.ts";
@@ -1061,6 +1062,7 @@ const make = Effect.gen(function* () {
           if (thread.checkpoints.some((c) => c.turnId === turnId)) {
             // Already tracked; no-op.
           } else {
+            const unifiedDiff = event.payload.unifiedDiff.trim();
             const assistantMessageId = MessageId.makeUnsafe(
               `assistant:${event.itemId ?? event.turnId ?? event.eventId}`,
             );
@@ -1076,7 +1078,13 @@ const make = Effect.gen(function* () {
               completedAt: now,
               checkpointRef: CheckpointRef.makeUnsafe(`provider-diff:${event.eventId}`),
               status: "missing",
-              files: [],
+              files: parseTurnDiffFilesFromUnifiedDiff(unifiedDiff).map((file) => ({
+                path: file.path,
+                kind: "modified",
+                additions: file.additions,
+                deletions: file.deletions,
+              })),
+              ...(unifiedDiff.length > 0 ? { unifiedDiff } : {}),
               assistantMessageId,
               checkpointTurnCount: maxTurnCount + 1,
               createdAt: now,

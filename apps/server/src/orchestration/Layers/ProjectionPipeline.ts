@@ -835,6 +835,7 @@ const makeOrchestrationProjectionPipeline = Effect.gen(function* () {
               checkpointRef: null,
               checkpointStatus: null,
               checkpointFiles: [],
+              checkpointUnifiedDiff: null,
             });
           }
 
@@ -880,13 +881,14 @@ const makeOrchestrationProjectionPipeline = Effect.gen(function* () {
             requestedAt: event.payload.createdAt,
             startedAt: event.payload.createdAt,
             completedAt: event.payload.streaming ? null : event.payload.updatedAt,
-            checkpointTurnCount: null,
-            checkpointRef: null,
-            checkpointStatus: null,
-            checkpointFiles: [],
-          });
-          return;
-        }
+              checkpointTurnCount: null,
+              checkpointRef: null,
+              checkpointStatus: null,
+              checkpointFiles: [],
+              checkpointUnifiedDiff: null,
+            });
+            return;
+          }
 
         case "thread.turn-interrupt-requested": {
           if (event.payload.turnId === undefined) {
@@ -915,11 +917,12 @@ const makeOrchestrationProjectionPipeline = Effect.gen(function* () {
             requestedAt: event.payload.createdAt,
             startedAt: event.payload.createdAt,
             completedAt: event.payload.createdAt,
-            checkpointTurnCount: null,
-            checkpointRef: null,
-            checkpointStatus: null,
-            checkpointFiles: [],
-          });
+              checkpointTurnCount: null,
+              checkpointRef: null,
+              checkpointStatus: null,
+              checkpointFiles: [],
+              checkpointUnifiedDiff: null,
+            });
           return;
         }
 
@@ -944,6 +947,7 @@ const makeOrchestrationProjectionPipeline = Effect.gen(function* () {
               checkpointRef: event.payload.checkpointRef,
               checkpointStatus: event.payload.status,
               checkpointFiles: event.payload.files,
+              checkpointUnifiedDiff: event.payload.unifiedDiff ?? null,
               startedAt: existingTurn.value.startedAt ?? event.payload.completedAt,
               requestedAt: existingTurn.value.requestedAt ?? event.payload.completedAt,
               completedAt: event.payload.completedAt,
@@ -963,6 +967,7 @@ const makeOrchestrationProjectionPipeline = Effect.gen(function* () {
             checkpointRef: event.payload.checkpointRef,
             checkpointStatus: event.payload.status,
             checkpointFiles: event.payload.files,
+            checkpointUnifiedDiff: event.payload.unifiedDiff ?? null,
           });
           return;
         }

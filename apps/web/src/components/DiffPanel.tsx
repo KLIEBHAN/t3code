@@ -23,7 +23,12 @@ import { useTheme } from "../hooks/useTheme";
 import { buildPatchCacheKey } from "../lib/diffRendering";
 import { resolveDiffThemeName } from "../lib/diffRendering";
 import { useTurnDiffSummaries } from "../hooks/useTurnDiffSummaries";
-import { isTurnDiffNavigable, resolveCheckpointTurnCount } from "../turnDiffSummary";
+import {
+  hasTurnDiffFallbackPatch,
+  isTurnDiffNavigable,
+  isTurnDiffOpenable,
+  resolveCheckpointTurnCount,
+} from "../turnDiffSummary";
 import { useStore } from "../store";
 import { useAppSettings } from "../appSettings";
 import { formatShortTimestamp } from "../timestampFormat";
@@ -199,6 +204,15 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
       ),
     [inferredCheckpointTurnCountByTurnId, turnDiffSummaryByCheckpointTurnCount],
   );
+  const isSummaryOpenable = useCallback(
+    (summary: (typeof turnDiffSummaries)[number] | undefined): boolean =>
+      isTurnDiffOpenable(
+        summary,
+        turnDiffSummaryByCheckpointTurnCount,
+        inferredCheckpointTurnCountByTurnId,
+      ),
+    [inferredCheckpointTurnCountByTurnId, turnDiffSummaryByCheckpointTurnCount],
+  );
   const orderedTurnDiffSummaries = useMemo(
     () =>
       [...turnDiffSummaries].toSorted((left, right) => {
@@ -221,11 +235,13 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
       ? undefined
       : (() => {
           const summary = turnDiffSummaryByTurnId.get(selectedTurnId);
-          return isSummaryNavigable(summary) ? summary : undefined;
+          return isSummaryOpenable(summary) ? summary : undefined;
         })();
   const selectedFilePath = selectedTurn ? (diffSearch.diffFilePath ?? null) : null;
   const selectedCheckpointTurnCount =
-    selectedTurn && resolveCheckpointTurnCount(selectedTurn, inferredCheckpointTurnCountByTurnId);
+    selectedTurn && isSummaryNavigable(selectedTurn)
+      ? resolveCheckpointTurnCount(selectedTurn, inferredCheckpointTurnCountByTurnId)
+      : undefined;
   const selectedCheckpointRange = useMemo(
     () =>
       typeof selectedCheckpointTurnCount === "number"
@@ -290,7 +306,9 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
         ? "Failed to load checkpoint diff."
         : null;
 
-  const selectedPatch = hasSelectedTurnRequest ? selectedTurnCheckpointDiff : conversationCheckpointDiff;
+  const selectedPatch = hasSelectedTurnRequest
+    ? selectedTurnCheckpointDiff ?? selectedTurn?.unifiedDiff
+    : conversationCheckpointDiff;
   const hasResolvedPatch = typeof selectedPatch === "string";
   const hasNoNetChanges = hasResolvedPatch && selectedPatch.trim().length === 0;
   const selectedTurnUnavailableMessage = useMemo(() => {
@@ -301,12 +319,12 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
     if (!summary) {
       return "This turn diff is unavailable.";
     }
-    if (isSummaryNavigable(summary)) {
+    if (isSummaryOpenable(summary)) {
       return null;
     }
     return "This turn diff is unavailable because the required checkpoint history is incomplete.";
   }, [
-    isSummaryNavigable,
+    isSummaryOpenable,
     selectedTurnId,
     turnDiffSummaryByTurnId,
   ]);
@@ -491,20 +509,21 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
             </div>
           </button>
           {orderedTurnDiffSummaries.map((summary) => {
-            const isNavigable = isSummaryNavigable(summary);
+            const isOpenable = isSummaryOpenable(summary);
+            const isFallbackDiff = hasTurnDiffFallbackPatch(summary) && !isSummaryNavigable(summary);
             const chipButton = (
               <button
                 key={summary.turnId}
                 type="button"
                 className="shrink-0 rounded-md"
                 onClick={() => {
-                  if (!isNavigable) {
+                  if (!isOpenable) {
                     return;
                   }
                   selectTurn(summary.turnId);
                 }}
                 title={summary.turnId}
-                aria-disabled={!isNavigable || undefined}
+                aria-disabled={!isOpenable || undefined}
                 data-turn-chip-selected={summary.turnId === selectedTurnId}
               >
                 <div
@@ -513,7 +532,7 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
                     summary.turnId === selectedTurnId
                       ? "border-border bg-accent text-accent-foreground"
                       : "border-border/70 bg-background/70 text-muted-foreground/80 hover:border-border hover:text-foreground/80",
-                    !isNavigable &&
+                    !isOpenable &&
                       "cursor-not-allowed opacity-50 hover:border-border/70 hover:text-muted-foreground/80",
                   )}
                 >
@@ -532,8 +551,16 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
               </button>
             );
 
-            if (isNavigable) {
-              return chipButton;
+            if (isOpenable) {
+              if (!isFallbackDiff) {
+                return chipButton;
+              }
+              return (
+                <Tooltip key={`${summary.turnId}:provider-diff`}>
+                  <TooltipTrigger render={chipButton} />
+                  <TooltipPopup side="top">Showing provider diff preview until checkpoint diff is ready.</TooltipPopup>
+                </Tooltip>
+              );
             }
 
             return (

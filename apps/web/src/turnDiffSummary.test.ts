@@ -3,7 +3,9 @@ import { describe, expect, it } from "vitest";
 import type { TurnDiffSummary } from "./types";
 import {
   buildTurnDiffSummaryByCheckpointTurnCount,
+  hasTurnDiffFallbackPatch,
   isTurnDiffNavigable,
+  isTurnDiffOpenable,
   resolveCheckpointTurnCount,
 } from "./turnDiffSummary";
 
@@ -68,5 +70,15 @@ describe("turnDiffSummary", () => {
     const byTurnCount = buildTurnDiffSummaryByCheckpointTurnCount([previousSummary, summary], {});
 
     expect(isTurnDiffNavigable(summary, byTurnCount, {})).toBe(true);
+  });
+
+  it("treats provider unified diffs as openable without checkpoint history", () => {
+    const summary = makeSummary({
+      turnId: TurnId.makeUnsafe("turn-provider-diff"),
+      unifiedDiff: "diff --git a/file.ts b/file.ts\n+hello\n",
+    });
+
+    expect(hasTurnDiffFallbackPatch(summary)).toBe(true);
+    expect(isTurnDiffOpenable(summary, new Map(), {})).toBe(true);
   });
 });

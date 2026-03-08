@@ -228,7 +228,7 @@ const make = Effect.gen(function* () {
     // reflects files created or deleted during this turn.
     clearWorkspaceIndexCache(input.cwd);
 
-    const files = yield* checkpointStore
+    const checkpointDiff = yield* checkpointStore
       .diffCheckpoints({
         cwd: input.cwd,
         fromCheckpointRef,
@@ -236,14 +236,15 @@ const make = Effect.gen(function* () {
         fallbackFromToHead: false,
       })
       .pipe(
-        Effect.map((diff) =>
-          parseTurnDiffFilesFromUnifiedDiff(diff).map((file) => ({
+        Effect.map((unifiedDiff) => ({
+          unifiedDiff,
+          files: parseTurnDiffFilesFromUnifiedDiff(unifiedDiff).map((file) => ({
             path: file.path,
             kind: "modified" as const,
             additions: file.additions,
             deletions: file.deletions,
           })),
-        ),
+        })),
         Effect.tapError((error) =>
           appendCaptureFailureActivity({
             threadId: input.threadId,
@@ -258,7 +259,7 @@ const make = Effect.gen(function* () {
             turnId: input.turnId,
             turnCount: input.turnCount,
             detail: error.message,
-          }).pipe(Effect.as([])),
+          }).pipe(Effect.as({ unifiedDiff: "", files: [] })),
         ),
       );
 
@@ -277,7 +278,10 @@ const make = Effect.gen(function* () {
       completedAt: input.createdAt,
       checkpointRef: targetCheckpointRef,
       status: input.status,
-      files,
+      files: checkpointDiff.files,
+      ...(checkpointDiff.unifiedDiff.trim().length > 0
+        ? { unifiedDiff: checkpointDiff.unifiedDiff }
+        : {}),
       assistantMessageId,
       checkpointTurnCount: input.turnCount,
       createdAt: input.createdAt,

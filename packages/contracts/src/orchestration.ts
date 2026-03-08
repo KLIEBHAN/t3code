@@ -207,6 +207,7 @@ export const OrchestrationCheckpointSummary = Schema.Struct({
   checkpointRef: CheckpointRef,
   status: OrchestrationCheckpointStatus,
   files: Schema.Array(OrchestrationCheckpointFile),
+  unifiedDiff: Schema.optional(Schema.String),
   assistantMessageId: Schema.NullOr(MessageId),
   completedAt: IsoDateTime,
 });
@@ -557,6 +558,7 @@ const ThreadTurnDiffCompleteCommand = Schema.Struct({
   checkpointRef: CheckpointRef,
   status: OrchestrationCheckpointStatus,
   files: Schema.Array(OrchestrationCheckpointFile),
+  unifiedDiff: Schema.optional(Schema.String),
   assistantMessageId: Schema.optional(MessageId),
   checkpointTurnCount: NonNegativeInt,
   createdAt: IsoDateTime,
@@ -770,6 +772,7 @@ export const ThreadTurnDiffCompletedPayload = Schema.Struct({
   checkpointRef: CheckpointRef,
   status: OrchestrationCheckpointStatus,
   files: Schema.Array(OrchestrationCheckpointFile),
+  unifiedDiff: Schema.optional(Schema.String),
   assistantMessageId: Schema.NullOr(MessageId),
   completedAt: IsoDateTime,
 });

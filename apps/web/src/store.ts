@@ -321,6 +321,7 @@ export function syncServerReadModel(state: AppState, readModel: OrchestrationRea
           assistantMessageId: checkpoint.assistantMessageId ?? undefined,
           checkpointTurnCount: checkpoint.checkpointTurnCount,
           checkpointRef: checkpoint.checkpointRef,
+          unifiedDiff: checkpoint.unifiedDiff,
           files: checkpoint.files.map((file) => ({ ...file })),
         })),
         activities: thread.activities.map((activity) => ({ ...activity })),

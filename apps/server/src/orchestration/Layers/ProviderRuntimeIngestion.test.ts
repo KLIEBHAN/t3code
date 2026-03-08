@@ -1319,7 +1319,8 @@ describe("ProviderRuntimeIngestion", () => {
       turnId: asTurnId("turn-p1"),
       itemId: asItemId("item-p1-assistant"),
       payload: {
-        unifiedDiff: "diff --git a/file.txt b/file.txt\n+hello\n",
+        unifiedDiff:
+          "diff --git a/file.txt b/file.txt\n--- a/file.txt\n+++ b/file.txt\n@@ -0,0 +1 @@\n+hello\n",
       },
     });
 
@@ -1380,6 +1381,17 @@ describe("ProviderRuntimeIngestion", () => {
     expect(checkpoint?.status).toBe("missing");
     expect(checkpoint?.assistantMessageId).toBe("assistant:item-p1-assistant");
     expect(checkpoint?.checkpointRef).toBe("provider-diff:evt-turn-diff-updated");
+    expect(checkpoint?.unifiedDiff).toBe(
+      "diff --git a/file.txt b/file.txt\n--- a/file.txt\n+++ b/file.txt\n@@ -0,0 +1 @@\n+hello",
+    );
+    expect(checkpoint?.files).toEqual([
+      {
+        path: "file.txt",
+        kind: "modified",
+        additions: 1,
+        deletions: 0,
+      },
+    ]);
   });
 
   it("projects Codex task lifecycle chunks into thread activities", async () => {

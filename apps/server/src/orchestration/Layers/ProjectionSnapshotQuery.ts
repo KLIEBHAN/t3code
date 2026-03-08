@@ -264,6 +264,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           checkpoint_ref AS "checkpointRef",
           checkpoint_status AS "status",
           checkpoint_files_json AS "files",
+          checkpoint_unified_diff AS "unifiedDiff",
           assistant_message_id AS "assistantMessageId",
           completed_at AS "completedAt"
         FROM projection_turns
@@ -466,6 +467,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
               checkpointRef: row.checkpointRef,
               status: row.status,
               files: row.files,
+              ...(row.unifiedDiff !== null ? { unifiedDiff: row.unifiedDiff } : {}),
               assistantMessageId: row.assistantMessageId,
               completedAt: row.completedAt,
             });

@@ -41,3 +41,18 @@ export function isTurnDiffNavigable(
 
   return Boolean(summaryByCheckpointTurnCount.get(checkpointTurnCount - 1)?.checkpointRef);
 }
+
+export function hasTurnDiffFallbackPatch(summary: TurnDiffSummary | undefined): boolean {
+  return typeof summary?.unifiedDiff === "string" && summary.unifiedDiff.trim().length > 0;
+}
+
+export function isTurnDiffOpenable(
+  summary: TurnDiffSummary | undefined,
+  summaryByCheckpointTurnCount: ReadonlyMap<number, TurnDiffSummary>,
+  inferredCheckpointTurnCountByTurnId: Record<TurnId, number>,
+): summary is TurnDiffSummary {
+  return (
+    hasTurnDiffFallbackPatch(summary) ||
+    isTurnDiffNavigable(summary, summaryByCheckpointTurnCount, inferredCheckpointTurnCountByTurnId)
+  );
+}
