@@ -565,6 +565,63 @@ describe("deriveWorkLogEntries", () => {
     expect(entry?.output).toBe("line 1\nline 2");
   });
 
+  it("extracts command output text from top-level tool payload output", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "command-tool-top-level-output",
+        kind: "tool.completed",
+        summary: "Command run complete",
+        payload: {
+          itemType: "command_execution",
+          output: "line 1\nline 2",
+        },
+      }),
+    ];
+
+    const [entry] = deriveWorkLogEntries(activities, undefined);
+    expect(entry?.result).toBe("line 1\nline 2");
+    expect(entry?.output).toBe("line 1\nline 2");
+  });
+
+  it("reuses earlier tool output for the matching completed tool entry", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "command-tool-updated-with-output",
+        createdAt: "2026-02-23T00:00:01.000Z",
+        kind: "tool.updated",
+        summary: "Command run",
+        turnId: "turn-1",
+        payload: {
+          itemType: "command_execution",
+          itemId: "item-1",
+          output: "line 1\nline 2",
+          data: {
+            item: {
+              command: ["/bin/zsh", "-lc", "rg -n diff apps/web/src/components/ChatView.tsx"],
+            },
+          },
+        },
+      }),
+      makeActivity({
+        id: "command-tool-completed-without-output",
+        createdAt: "2026-02-23T00:00:02.000Z",
+        kind: "tool.completed",
+        summary: "Command run complete",
+        turnId: "turn-1",
+        payload: {
+          itemType: "command_execution",
+          itemId: "item-1",
+        },
+      }),
+    ];
+
+    const entries = deriveWorkLogEntries(activities, undefined);
+    const completedEntry = entries.find((entry) => entry.id === "command-tool-completed-without-output");
+    expect(completedEntry?.result).toBe("line 1\nline 2");
+    expect(completedEntry?.output).toBe("line 1\nline 2");
+    expect(completedEntry?.command).toBe("/bin/zsh -lc rg -n diff apps/web/src/components/ChatView.tsx");
+  });
+
   it("promotes command detail to a result when no structured output is available", () => {
     const activities: OrchestrationThreadActivity[] = [
       makeActivity({

@@ -396,21 +396,38 @@ function createToolCallSnapshot(): OrchestrationReadModel {
         messages: [],
         activities: [
           {
-            id: EventId.makeUnsafe("activity-tool-output"),
+            id: EventId.makeUnsafe("activity-tool-output-update"),
             createdAt: isoAt(1),
+            kind: "tool.updated",
+            summary: "Command run",
+            tone: "tool",
+            turnId: TurnId.makeUnsafe("turn-tool-output"),
+            payload: {
+              itemType: "command_execution",
+              itemId: "item-tool-output",
+              output: "line 1\nline 2",
+              data: {
+                item: {
+                  id: "item-tool-output",
+                  command: ["/bin/zsh", "-lc", "rg -n diff apps/web/src/components/ChatView.tsx"],
+                },
+              },
+            },
+          },
+          {
+            id: EventId.makeUnsafe("activity-tool-output"),
+            createdAt: isoAt(2),
             kind: "tool.completed",
             summary: "Command run complete",
             tone: "tool",
             turnId: TurnId.makeUnsafe("turn-tool-output"),
             payload: {
               itemType: "command_execution",
-              detail: "2 matches found",
+              itemId: "item-tool-output",
               data: {
                 item: {
+                  id: "item-tool-output",
                   command: ["/bin/zsh", "-lc", "rg -n diff apps/web/src/components/ChatView.tsx"],
-                  result: {
-                    output: ["line 1", "line 2"],
-                  },
                 },
               },
             },
@@ -1539,29 +1556,27 @@ describe("ChatView timeline estimator parity (full app)", () => {
     }
   });
 
-  it("lets users expand a tool call to inspect its result by clicking the header content", async () => {
+  it("lets users expand a completed tool call to inspect merged output by clicking its header", async () => {
     const mounted = await mountChatView({
       viewport: DEFAULT_VIEWPORT,
       snapshot: createToolCallSnapshot(),
     });
 
     try {
-      const triggerContent = await waitForElement(
+      const triggerButton = await waitForElement(
         () =>
-          Array.from(document.querySelectorAll<HTMLElement>("div, p, span")).find((element) => {
-            if (element instanceof HTMLButtonElement) {
-              return false;
-            }
+          Array.from(document.querySelectorAll<HTMLButtonElement>("button")).find((button) => {
+            const text = button.textContent?.replace(/\s+/g, " ").trim() ?? "";
             return (
-              element.textContent?.trim() ===
-              "/bin/zsh -lc rg -n diff apps/web/src/components/ChatView.tsx"
+              text.includes("Command run complete") &&
+              text.includes("/bin/zsh -lc rg -n diff apps/web/src/components/ChatView.tsx")
             );
           }) ?? null,
-        "Unable to find tool call trigger content.",
+        "Unable to find completed tool call trigger button.",
       );
 
       expect(document.body.textContent).not.toContain("line 1");
-      triggerContent.click();
+      triggerButton.click();
 
       await vi.waitFor(
         () => {
@@ -1580,7 +1595,7 @@ describe("ChatView timeline estimator parity (full app)", () => {
       expect(document.body.textContent).toContain("line 1");
       expect(document.body.textContent).toContain("line 2");
 
-      triggerContent.click();
+      triggerButton.click();
 
       await vi.waitFor(
         () => {
@@ -1620,6 +1635,7 @@ describe("ChatView timeline estimator parity (full app)", () => {
       scrollContainer.dispatchEvent(new Event("scroll"));
       await waitForLayout();
       const beforeScrollTop = scrollContainer.scrollTop;
+      const beforePillTop = filePill.getBoundingClientRect().top;
 
       filePill.dispatchEvent(
         new MouseEvent("mousedown", {
@@ -1638,8 +1654,16 @@ describe("ChatView timeline estimator parity (full app)", () => {
         { timeout: 8_000, interval: 16 },
       );
       await waitForLayout();
+      const reopenedFilePill = await waitForElement(
+        () =>
+          Array.from(document.querySelectorAll<HTMLButtonElement>("button")).find((button) =>
+            button.textContent?.includes("ChatView.tsx"),
+          ) ?? null,
+        "Unable to find changed-file pill button after opening the diff.",
+      );
 
       expect(Math.abs(scrollContainer.scrollTop - beforeScrollTop)).toBeLessThanOrEqual(2);
+      expect(Math.abs(reopenedFilePill.getBoundingClientRect().top - beforePillTop)).toBeLessThanOrEqual(4);
     } finally {
       await mounted.cleanup();
     }

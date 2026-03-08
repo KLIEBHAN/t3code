@@ -33,9 +33,13 @@ const TURN_MESSAGE_IDS_BY_TURN_CACHE_CAPACITY = 10_000;
 const TURN_MESSAGE_IDS_BY_TURN_TTL = Duration.minutes(120);
 const BUFFERED_MESSAGE_TEXT_BY_MESSAGE_ID_CACHE_CAPACITY = 20_000;
 const BUFFERED_MESSAGE_TEXT_BY_MESSAGE_ID_TTL = Duration.minutes(120);
+const BUFFERED_TOOL_OUTPUT_BY_ITEM_KEY_CACHE_CAPACITY = 20_000;
+const BUFFERED_TOOL_OUTPUT_BY_ITEM_KEY_TTL = Duration.minutes(120);
 const BUFFERED_PROPOSED_PLAN_BY_ID_CACHE_CAPACITY = 10_000;
 const BUFFERED_PROPOSED_PLAN_BY_ID_TTL = Duration.minutes(120);
 const MAX_BUFFERED_ASSISTANT_CHARS = 24_000;
+const MAX_BUFFERED_TOOL_OUTPUT_CHARS = 24_000;
+const BUFFERED_TOOL_OUTPUT_TRUNCATION_NOTICE = "\n[output truncated]";
 const STRICT_PROVIDER_LIFECYCLE_GUARD = process.env.T3CODE_STRICT_PROVIDER_LIFECYCLE_GUARD !== "0";
 
 type TurnStartRequestedDomainEvent = Extract<
@@ -105,6 +109,33 @@ function runtimePayloadRecord(event: ProviderRuntimeEvent): Record<string, unkno
     return undefined;
   }
   return payload as Record<string, unknown>;
+}
+
+function toolOutputBufferKey(
+  event: ProviderRuntimeEvent,
+): string | undefined {
+  if (!event.itemId) {
+    return undefined;
+  }
+  return `${event.threadId}:${event.itemId}`;
+}
+
+function mergeToolOutput(existing: string | undefined, buffered: string | undefined): string | undefined {
+  const normalizedExisting = existing?.trim();
+  const normalizedBuffered = buffered?.trim();
+  if (!normalizedExisting) {
+    return normalizedBuffered || undefined;
+  }
+  if (!normalizedBuffered) {
+    return normalizedExisting;
+  }
+  if (normalizedExisting.includes(normalizedBuffered)) {
+    return normalizedExisting;
+  }
+  if (normalizedBuffered.includes(normalizedExisting)) {
+    return normalizedBuffered;
+  }
+  return `${normalizedBuffered}\n\n${normalizedExisting}`;
 }
 
 function normalizeRuntimeTurnState(
@@ -419,8 +450,10 @@ function runtimeEventToActivities(
           summary: event.payload.title ?? "Tool updated",
           payload: {
             itemType: event.payload.itemType,
+            ...(event.itemId ? { itemId: event.itemId } : {}),
             ...(event.payload.status ? { status: event.payload.status } : {}),
             ...(event.payload.detail ? { detail: truncateDetail(event.payload.detail) } : {}),
+            ...(event.payload.output ? { output: event.payload.output } : {}),
             ...(event.payload.data !== undefined ? { data: event.payload.data } : {}),
           },
           turnId: toTurnId(event.turnId) ?? null,
@@ -442,7 +475,9 @@ function runtimeEventToActivities(
           summary: event.payload.title ?? "Tool",
           payload: {
             itemType: event.payload.itemType,
+            ...(event.itemId ? { itemId: event.itemId } : {}),
             ...(event.payload.detail ? { detail: truncateDetail(event.payload.detail) } : {}),
+            ...(event.payload.output ? { output: event.payload.output } : {}),
             ...(event.payload.data !== undefined ? { data: event.payload.data } : {}),
           },
           turnId: toTurnId(event.turnId) ?? null,
@@ -464,6 +499,7 @@ function runtimeEventToActivities(
           summary: `${event.payload.title ?? "Tool"} started`,
           payload: {
             itemType: event.payload.itemType,
+            ...(event.itemId ? { itemId: event.itemId } : {}),
             ...(event.payload.detail ? { detail: truncateDetail(event.payload.detail) } : {}),
           },
           turnId: toTurnId(event.turnId) ?? null,
@@ -496,6 +532,12 @@ const make = Effect.gen(function* () {
   const bufferedAssistantTextByMessageId = yield* Cache.make<MessageId, string>({
     capacity: BUFFERED_MESSAGE_TEXT_BY_MESSAGE_ID_CACHE_CAPACITY,
     timeToLive: BUFFERED_MESSAGE_TEXT_BY_MESSAGE_ID_TTL,
+    lookup: () => Effect.succeed(""),
+  });
+
+  const bufferedToolOutputByItemKey = yield* Cache.make<string, string>({
+    capacity: BUFFERED_TOOL_OUTPUT_BY_ITEM_KEY_CACHE_CAPACITY,
+    timeToLive: BUFFERED_TOOL_OUTPUT_BY_ITEM_KEY_TTL,
     lookup: () => Effect.succeed(""),
   });
 
@@ -597,6 +639,44 @@ const make = Effect.gen(function* () {
 
   const clearBufferedAssistantText = (messageId: MessageId) =>
     Cache.invalidate(bufferedAssistantTextByMessageId, messageId);
+
+  const appendBufferedToolOutput = (bufferKey: string, delta: string) =>
+    Cache.getOption(bufferedToolOutputByItemKey, bufferKey).pipe(
+      Effect.flatMap((existingText) =>
+        Effect.gen(function* () {
+          const nextText = Option.match(existingText, {
+            onNone: () => delta,
+            onSome: (text) => `${text}${delta}`,
+          });
+
+          if (nextText.length <= MAX_BUFFERED_TOOL_OUTPUT_CHARS) {
+            yield* Cache.set(bufferedToolOutputByItemKey, bufferKey, nextText);
+            return;
+          }
+
+          const availableChars = Math.max(
+            0,
+            MAX_BUFFERED_TOOL_OUTPUT_CHARS - BUFFERED_TOOL_OUTPUT_TRUNCATION_NOTICE.length,
+          );
+          const truncatedText = `${nextText.slice(0, availableChars)}${BUFFERED_TOOL_OUTPUT_TRUNCATION_NOTICE}`;
+          yield* Cache.set(bufferedToolOutputByItemKey, bufferKey, truncatedText);
+        }),
+      ),
+    );
+
+  const getBufferedToolOutput = (bufferKey: string) =>
+    Cache.getOption(bufferedToolOutputByItemKey, bufferKey).pipe(
+      Effect.map((existingText) => Option.getOrElse(existingText, () => "")),
+    );
+
+  const takeBufferedToolOutput = (bufferKey: string) =>
+    Cache.getOption(bufferedToolOutputByItemKey, bufferKey).pipe(
+      Effect.flatMap((existingText) =>
+        Cache.invalidate(bufferedToolOutputByItemKey, bufferKey).pipe(
+          Effect.as(Option.getOrElse(existingText, () => "")),
+        ),
+      ),
+    );
 
   const appendBufferedProposedPlan = (planId: string, delta: string, createdAt: string) =>
     Cache.getOption(bufferedProposedPlanById, planId).pipe(
@@ -878,6 +958,13 @@ const make = Effect.gen(function* () {
         event.type === "content.delta" && event.payload.streamKind === "assistant_text"
           ? event.payload.delta
           : undefined;
+      let toolOutputDelta: string | undefined;
+      if (event.type === "content.delta") {
+        const streamKind = event.payload.streamKind;
+        if (streamKind === "command_output" || streamKind === "file_change_output") {
+          toolOutputDelta = event.payload.delta;
+        }
+      }
       const proposedPlanDelta =
         event.type === "turn.proposed.delta" ? event.payload.delta : undefined;
 
@@ -917,10 +1004,48 @@ const make = Effect.gen(function* () {
         }
       }
 
+      if (toolOutputDelta && toolOutputDelta.length > 0) {
+        const bufferKey = toolOutputBufferKey(event);
+        if (bufferKey) {
+          yield* appendBufferedToolOutput(bufferKey, toolOutputDelta);
+        }
+      }
+
       if (proposedPlanDelta && proposedPlanDelta.length > 0) {
         const planId = proposedPlanIdFromEvent(event, thread.id);
         yield* appendBufferedProposedPlan(planId, proposedPlanDelta, now);
       }
+
+      const activityEvent = yield* Effect.gen(function* () {
+        if (
+          (event.type !== "item.updated" && event.type !== "item.completed") ||
+          !isToolLifecycleItemType(event.payload.itemType)
+        ) {
+          return event;
+        }
+
+        const bufferKey = toolOutputBufferKey(event);
+        if (!bufferKey) {
+          return event;
+        }
+
+        const bufferedOutput =
+          event.type === "item.completed"
+            ? yield* takeBufferedToolOutput(bufferKey)
+            : yield* getBufferedToolOutput(bufferKey);
+        const mergedOutput = mergeToolOutput(event.payload.output, bufferedOutput);
+        if (!mergedOutput || mergedOutput === event.payload.output) {
+          return event;
+        }
+
+        return {
+          ...event,
+          payload: {
+            ...event.payload,
+            output: mergedOutput,
+          },
+        } satisfies ProviderRuntimeEvent;
+      });
 
       const assistantCompletion =
         event.type === "item.completed" && event.payload.itemType === "assistant_message"
@@ -1093,7 +1218,7 @@ const make = Effect.gen(function* () {
         }
       }
 
-      const activities = runtimeEventToActivities(event);
+      const activities = runtimeEventToActivities(activityEvent);
       yield* Effect.forEach(activities, (activity) =>
         orchestrationEngine.dispatch({
           type: "thread.activity.append",

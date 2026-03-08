@@ -445,6 +445,16 @@ export function deriveWorkLogEntries(
   latestTurnId: TurnId | undefined,
 ): WorkLogEntry[] {
   const ordered = [...activities].toSorted(compareActivitiesByOrder);
+  const toolStateByKey = new Map<
+    string,
+    {
+      command?: string;
+      result?: string;
+      output?: string;
+      changedFiles?: string[];
+    }
+  >();
+
   return ordered
     .filter((activity) => (latestTurnId ? activity.turnId === latestTurnId : true))
     .filter((activity) => activity.kind !== "tool.started")
@@ -455,9 +465,34 @@ export function deriveWorkLogEntries(
         activity.payload && typeof activity.payload === "object"
           ? (activity.payload as Record<string, unknown>)
           : null;
-      const command = extractToolCommand(payload);
+      let command = extractToolCommand(payload);
       const changedFiles = extractChangedFiles(payload);
       const title = extractToolTitle(payload);
+      let output = extractToolOutput(payload);
+      let result = extractToolResult(payload, command);
+      const toolActivityKey = extractToolActivityKey(activity, payload, command, changedFiles);
+      const knownToolState = toolActivityKey ? toolStateByKey.get(toolActivityKey) : undefined;
+
+      if (!command && knownToolState?.command) {
+        command = knownToolState.command;
+      }
+      if (!output && knownToolState?.output) {
+        output = knownToolState.output;
+      }
+      if (!result && knownToolState?.result) {
+        result = knownToolState.result;
+      }
+      const effectiveChangedFiles =
+        changedFiles.length > 0 ? changedFiles : (knownToolState?.changedFiles ?? []);
+
+      if (toolActivityKey) {
+        toolStateByKey.set(toolActivityKey, {
+          ...(command ? { command } : knownToolState?.command ? { command: knownToolState.command } : {}),
+          ...(result ? { result } : knownToolState?.result ? { result: knownToolState.result } : {}),
+          ...(output ? { output } : knownToolState?.output ? { output: knownToolState.output } : {}),
+          ...(effectiveChangedFiles.length > 0 ? { changedFiles: effectiveChangedFiles } : {}),
+        });
+      }
       const entry: WorkLogEntry = {
         id: activity.id,
         createdAt: activity.createdAt,
@@ -478,16 +513,14 @@ export function deriveWorkLogEntries(
       if (command) {
         entry.command = command;
       }
-      const result = extractToolResult(payload, command);
       if (result) {
         entry.result = result;
       }
-      const output = extractToolOutput(payload);
       if (output) {
         entry.output = output;
       }
-      if (changedFiles.length > 0) {
-        entry.changedFiles = changedFiles;
+      if (effectiveChangedFiles.length > 0) {
+        entry.changedFiles = effectiveChangedFiles;
       }
       if (title) {
         entry.toolTitle = title;
@@ -612,6 +645,9 @@ function extractToolOutput(payload: Record<string, unknown> | null): string | nu
   const item = asRecord(data?.item);
   const itemResult = asRecord(item?.result);
   const candidates = [
+    asTrimmedText(payload?.output),
+    asTrimmedText(payload?.stdout),
+    asTrimmedText(payload?.stderr),
     asTrimmedText(itemResult?.output),
     asTrimmedText(itemResult?.stdout),
     asTrimmedText(itemResult?.stderr),
@@ -635,6 +671,40 @@ function extractToolOutput(payload: Record<string, unknown> | null): string | nu
   }
 
   return candidates.find((candidate) => candidate !== null) ?? null;
+}
+function extractToolActivityKey(
+  activity: OrchestrationThreadActivity,
+  payload: Record<string, unknown> | null,
+  command: string | null,
+  changedFiles: ReadonlyArray<string>,
+): string | null {
+  const data = asRecord(payload?.data);
+  const item = asRecord(data?.item);
+  const itemResult = asRecord(item?.result);
+  const itemInput = asRecord(item?.input);
+  const explicitItemId = [
+    asTrimmedString(payload?.itemId),
+    asTrimmedString(item?.id),
+    asTrimmedString(data?.itemId),
+    asTrimmedString(data?.id),
+    asTrimmedString(itemInput?.id),
+    asTrimmedString(itemResult?.id),
+    asTrimmedString(item?.toolUseId),
+    asTrimmedString(data?.toolUseId),
+  ].find((candidate) => candidate !== null);
+  if (explicitItemId) {
+    return `${activity.turnId ?? "no-turn"}:item:${explicitItemId}`;
+  }
+
+  if (command) {
+    return `${activity.turnId ?? "no-turn"}:command:${command}`;
+  }
+
+  if (changedFiles.length > 0) {
+    return `${activity.turnId ?? "no-turn"}:files:${changedFiles.join("|")}`;
+  }
+
+  return null;
 }
 function extractToolResult(
   payload: Record<string, unknown> | null,

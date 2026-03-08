@@ -310,6 +310,79 @@ describe("ProviderRuntimeIngestion", () => {
     });
   });
 
+  it("attaches buffered command output to the matching completed tool activity", async () => {
+    const harness = await createHarness();
+    const now = new Date().toISOString();
+
+    harness.emit({
+      type: "content.delta",
+      eventId: asEventId("evt-command-output-delta-1"),
+      provider: "codex",
+      threadId: asThreadId("thread-1"),
+      createdAt: now,
+      turnId: asTurnId("turn-tool-output"),
+      itemId: asItemId("item-command-output"),
+      payload: {
+        streamKind: "command_output",
+        delta: "line 1\n",
+      },
+    });
+
+    harness.emit({
+      type: "content.delta",
+      eventId: asEventId("evt-command-output-delta-2"),
+      provider: "codex",
+      threadId: asThreadId("thread-1"),
+      createdAt: new Date(Date.parse(now) + 50).toISOString(),
+      turnId: asTurnId("turn-tool-output"),
+      itemId: asItemId("item-command-output"),
+      payload: {
+        streamKind: "command_output",
+        delta: "line 2",
+      },
+    });
+
+    harness.emit({
+      type: "item.completed",
+      eventId: asEventId("evt-command-output-completed"),
+      provider: "codex",
+      threadId: asThreadId("thread-1"),
+      createdAt: new Date(Date.parse(now) + 100).toISOString(),
+      turnId: asTurnId("turn-tool-output"),
+      itemId: asItemId("item-command-output"),
+      payload: {
+        itemType: "command_execution",
+        title: "Command run",
+        detail: "rg -n diff apps/web/src/components/ChatView.tsx",
+        data: {
+          item: {
+            command: ["/bin/zsh", "-lc", "rg -n diff apps/web/src/components/ChatView.tsx"],
+          },
+        },
+      },
+    });
+
+    const thread = await waitForThread(
+      harness.engine,
+      (entry) =>
+        entry.activities.some(
+          (activity: ProviderRuntimeTestActivity) => activity.id === "evt-command-output-completed",
+        ),
+    );
+
+    const activity = thread.activities.find(
+      (entry: ProviderRuntimeTestActivity) => entry.id === "evt-command-output-completed",
+    );
+    const payload =
+      activity?.payload && typeof activity.payload === "object"
+        ? (activity.payload as Record<string, unknown>)
+        : undefined;
+
+    expect(activity?.kind).toBe("tool.completed");
+    expect(payload?.itemId).toBe("item-command-output");
+    expect(payload?.output).toBe("line 1\nline 2");
+  });
+
   it("applies provider session.state.changed transitions directly", async () => {
     const harness = await createHarness();
     const waitingAt = new Date().toISOString();
