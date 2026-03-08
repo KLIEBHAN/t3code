@@ -2,6 +2,7 @@ import type {
   ServerConfigIssue,
   ServerCustomSlashCommand,
 } from "@t3tools/contracts";
+import { RESERVED_SLASH_COMMAND_NAMES } from "@t3tools/shared/slashCommands";
 import { Cache, Effect, FileSystem, Layer, Path, PubSub, ServiceMap, Stream } from "effect";
 
 import { ServerConfig } from "./config";
@@ -27,19 +28,6 @@ export class CustomSlashCommands extends ServiceMap.Service<
 >()("t3/customSlashCommands") {}
 
 const CUSTOM_COMMAND_NAME_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/;
-const RESERVED_COMMAND_NAMES = new Set([
-  "model",
-  "review",
-  "compact",
-  "plan",
-  "default",
-  "new",
-  "new-local",
-  "terminal",
-  "diff",
-  "editor",
-  "init",
-]);
 const resolvedConfigCacheKey = "resolved" as const;
 
 function customSlashCommandsReadFailedIssue(
@@ -129,11 +117,11 @@ const makeCustomSlashCommands = Effect.gen(function* () {
         continue;
       }
 
-      if (RESERVED_COMMAND_NAMES.has(command)) {
+      if (RESERVED_SLASH_COMMAND_NAMES.has(command)) {
         issues.push(
           customSlashCommandsInvalidEntryIssue(
             absolutePath,
-            `/${command} is reserved by a built-in slash command`,
+            `/${command} is reserved by a built-in slash command or alias`,
           ),
         );
         continue;

@@ -31,6 +31,10 @@
     "./schemaJson": {
       "types": "./src/schemaJson.ts",
       "import": "./src/schemaJson.ts"
+    },
+    "./slashCommands": {
+      "types": "./src/slashCommands.ts",
+      "import": "./src/slashCommands.ts"
     }
   },
   "scripts": {

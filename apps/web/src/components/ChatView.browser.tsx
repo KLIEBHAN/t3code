@@ -1501,6 +1501,92 @@ describe("ChatView timeline estimator parity (full app)", () => {
       await mounted.cleanup();
     }
   });
+  it("promotes a local draft before running review and clears the draft mapping", async () => {
+    localStorage.setItem(
+      "t3code:app-settings:v1",
+      JSON.stringify({
+        codexServiceTier: "fast",
+      }),
+    );
+    useComposerDraftStore.setState({
+      draftThreadsByThreadId: {
+        [THREAD_ID]: {
+          projectId: PROJECT_ID,
+          createdAt: NOW_ISO,
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          branch: null,
+          worktreePath: null,
+          envMode: "local",
+        },
+      },
+      projectDraftThreadIdByProjectId: {
+        [PROJECT_ID]: THREAD_ID,
+      },
+    });
+
+    const mounted = await mountChatView({
+      viewport: DEFAULT_VIEWPORT,
+      snapshot: createDraftOnlySnapshot(),
+    });
+
+    try {
+      await waitForComposerEditor();
+      const useMetaKey = navigator.platform.toLowerCase().includes("mac");
+      window.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "k",
+          ctrlKey: !useMetaKey,
+          metaKey: useMetaKey,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+
+      const paletteInput = await waitForCommandPaletteInput();
+      const nativeSetter = Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        "value",
+      )?.set;
+      nativeSetter?.call(paletteInput, "review");
+      paletteInput.dispatchEvent(new Event("input", { bubbles: true }));
+      paletteInput.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "Enter",
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+
+      await vi.waitFor(
+        () => {
+          expect(wsRequests).toEqual(
+            expect.arrayContaining([
+              expect.objectContaining({
+                _tag: ORCHESTRATION_WS_METHODS.dispatchCommand,
+                command: expect.objectContaining({
+                  type: "thread.create",
+                  threadId: THREAD_ID,
+                }),
+              }),
+              expect.objectContaining({
+                _tag: ORCHESTRATION_WS_METHODS.dispatchCommand,
+                command: expect.objectContaining({
+                  type: "thread.review.start",
+                  threadId: THREAD_ID,
+                }),
+              }),
+            ]),
+          );
+          expect(useComposerDraftStore.getState().getDraftThreadByProjectId(PROJECT_ID)).toBeNull();
+          expect(useComposerDraftStore.getState().getDraftThread(THREAD_ID)).toBeNull();
+        },
+        { timeout: 8_000, interval: 16 },
+      );
+    } finally {
+      await mounted.cleanup();
+    }
+  });
   it("reorders sidebar projects by drag-and-drop without collapsing the dragged project on release", async () => {
     const mounted = await mountChatView({
       viewport: DEFAULT_VIEWPORT,

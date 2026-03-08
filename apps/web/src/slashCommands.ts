@@ -1,17 +1,10 @@
-import type { KeybindingCommand, ServerCustomSlashCommand } from "@t3tools/contracts";
-
-export type BuiltinChatSlashCommand =
-  | "model"
-  | "review"
-  | "compact"
-  | "plan"
-  | "default"
-  | "new"
-  | "new-local"
-  | "terminal"
-  | "diff"
-  | "editor"
-  | "init";
+import type { ServerCustomSlashCommand } from "@t3tools/contracts";
+import {
+  BUILTIN_CHAT_SLASH_COMMANDS,
+  slashCommandNames,
+  type BuiltinChatSlashCommand,
+  type BuiltinSlashCommandSpec,
+} from "@t3tools/shared/slashCommands";
 
 export interface BuiltinSlashCommandDefinition {
   source: "builtin";
@@ -19,7 +12,7 @@ export interface BuiltinSlashCommandDefinition {
   label: `/${string}`;
   description: string;
   mode: "insert" | "execute";
-  keybindingCommand?: KeybindingCommand;
+  keybindingCommand?: BuiltinSlashCommandSpec["keybindingCommand"];
   aliases?: readonly string[];
   searchTerms?: readonly string[];
 }
@@ -41,112 +34,34 @@ export type ExecutableSlashCommandDefinition = Exclude<
   { mode: "insert" }
 >;
 
-const BUILTIN_SLASH_COMMANDS: readonly BuiltinSlashCommandDefinition[] = [
-  {
-    source: "builtin",
-    id: "model",
-    label: "/model",
-    description: "Switch response model for this thread",
-    mode: "insert",
-    searchTerms: ["models"],
+const BUILTIN_SLASH_COMMANDS: readonly BuiltinSlashCommandDefinition[] = BUILTIN_CHAT_SLASH_COMMANDS.map(
+  (command) => {
+    const definition: BuiltinSlashCommandDefinition = {
+      source: "builtin",
+      id: command.id,
+      label: `/${command.id}`,
+      description: command.description,
+      mode: command.mode,
+    };
+    if (command.keybindingCommand) {
+      definition.keybindingCommand = command.keybindingCommand;
+    }
+    if (command.aliases) {
+      definition.aliases = command.aliases;
+    }
+    if (command.searchTerms) {
+      definition.searchTerms = command.searchTerms;
+    }
+    return definition;
   },
-  {
-    source: "builtin",
-    id: "review",
-    label: "/review",
-    description: "Start a structured code review turn for the current thread",
-    mode: "execute",
-    searchTerms: ["audit", "bugs", "risks"],
-  },
-  {
-    source: "builtin",
-    id: "compact",
-    label: "/compact",
-    description: "Generate a compact handoff summary for the current thread",
-    mode: "execute",
-    searchTerms: ["summary", "handoff", "context"],
-  },
-  {
-    source: "builtin",
-    id: "plan",
-    label: "/plan",
-    description: "Switch this thread into plan mode",
-    mode: "execute",
-    searchTerms: ["planning"],
-  },
-  {
-    source: "builtin",
-    id: "default",
-    label: "/default",
-    description: "Switch this thread back to normal chat mode",
-    mode: "execute",
-    aliases: ["chat"],
-  },
-  {
-    source: "builtin",
-    id: "new",
-    label: "/new",
-    description: "Create a new thread in the current project",
-    mode: "execute",
-    keybindingCommand: "chat.new",
-    aliases: ["new-chat"],
-    searchTerms: ["thread", "chat"],
-  },
-  {
-    source: "builtin",
-    id: "new-local",
-    label: "/new-local",
-    description: "Create a new local thread without worktree context",
-    mode: "execute",
-    keybindingCommand: "chat.newLocal",
-    aliases: ["newlocal", "local"],
-    searchTerms: ["thread", "chat", "worktree"],
-  },
-  {
-    source: "builtin",
-    id: "terminal",
-    label: "/terminal",
-    description: "Toggle the thread terminal",
-    mode: "execute",
-    keybindingCommand: "terminal.toggle",
-    aliases: ["term"],
-    searchTerms: ["shell"],
-  },
-  {
-    source: "builtin",
-    id: "diff",
-    label: "/diff",
-    description: "Toggle the latest changes diff",
-    mode: "execute",
-    keybindingCommand: "diff.toggle",
-    searchTerms: ["changes", "patch"],
-  },
-  {
-    source: "builtin",
-    id: "editor",
-    label: "/editor",
-    description: "Open the current workspace in your favorite editor",
-    mode: "execute",
-    keybindingCommand: "editor.openFavorite",
-    aliases: ["open"],
-    searchTerms: ["vscode", "cursor", "zed"],
-  },
-  {
-    source: "builtin",
-    id: "init",
-    label: "/init",
-    description: "Initialize Git in the current project",
-    mode: "execute",
-    searchTerms: ["git", "repository"],
-  },
-];
+);
 
 function normalizeQuery(value: string): string {
   return value.trim().toLowerCase();
 }
 
-function commandName(command: SlashCommandDefinition): string {
-  return command.source === "custom" ? command.name : command.label.slice(1);
+function commandNames(command: SlashCommandDefinition): readonly string[] {
+  return command.source === "custom" ? [command.name] : slashCommandNames(command);
 }
 
 function commandTokens(command: SlashCommandDefinition): readonly string[] {
@@ -207,7 +122,7 @@ export function hasSlashCommandPrefix(
   }
 
   return getSlashCommandDefinitions(customCommands).some((command) =>
-    commandName(command).startsWith(normalizedQuery),
+    commandNames(command).some((name) => name.startsWith(normalizedQuery)),
   );
 }
 
@@ -234,7 +149,7 @@ export function parseStandaloneSlashCommand(
     if (candidate.source === "custom") {
       return candidate.name === normalizedName;
     }
-    return [candidate.label.slice(1), ...(candidate.aliases ?? [])].includes(normalizedName);
+    return commandNames(candidate).includes(normalizedName);
   });
   if (!command || command.mode !== "execute") {
     return null;

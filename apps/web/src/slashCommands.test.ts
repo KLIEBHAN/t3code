@@ -57,6 +57,9 @@ describe("hasSlashCommandPrefix", () => {
     expect(hasSlashCommandPrefix("rev")).toBe(true);
     expect(hasSlashCommandPrefix("comp")).toBe(true);
     expect(hasSlashCommandPrefix("new-l")).toBe(true);
+    expect(hasSlashCommandPrefix("op")).toBe(true);
+    expect(hasSlashCommandPrefix("ter")).toBe(true);
+    expect(hasSlashCommandPrefix("cha")).toBe(true);
     expect(hasSlashCommandPrefix("zzz")).toBe(false);
   });
 

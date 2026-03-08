@@ -1,6 +1,7 @@
 import { EDITORS, EditorId, NativeApi } from "@t3tools/contracts";
 import { useMemo } from "react";
-import { getLocalStorageItem, setLocalStorageItem, useLocalStorage } from "./hooks/useLocalStorage";
+import { useLocalStorage } from "./hooks/useLocalStorage";
+import { getSafeLocalStorage } from "./lib/browserStorage";
 
 const LAST_EDITOR_KEY = "t3code:last-editor";
 
@@ -16,11 +17,24 @@ export function usePreferredEditor(availableEditors: ReadonlyArray<EditorId>) {
 }
 
 export function readStoredPreferredEditor(): EditorId | null {
-  return getLocalStorageItem(LAST_EDITOR_KEY, EditorId);
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  const stored = getSafeLocalStorage().getItem(LAST_EDITOR_KEY);
+  if (!stored) {
+    return null;
+  }
+
+  return EDITORS.some((editor) => editor.id === stored) ? (stored as EditorId) : null;
 }
 
 export function writeStoredPreferredEditor(editor: EditorId): void {
-  setLocalStorageItem(LAST_EDITOR_KEY, editor, EditorId);
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  getSafeLocalStorage().setItem(LAST_EDITOR_KEY, editor);
 }
 
 export function resolveAndPersistPreferredEditor(

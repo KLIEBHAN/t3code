@@ -64,6 +64,7 @@ describe("customSlashCommands", () => {
       yield* fs.makeDirectory(customSlashCommandsDirectoryPath, { recursive: true });
       yield* fs.writeFileString(join(customSlashCommandsDirectoryPath, "bad_name.md"), "# Bad");
       yield* fs.writeFileString(join(customSlashCommandsDirectoryPath, "review.md"), "# Reserved");
+      yield* fs.writeFileString(join(customSlashCommandsDirectoryPath, "open.md"), "# Alias");
       yield* fs.writeFileString(join(customSlashCommandsDirectoryPath, "empty.md"), "   ");
 
       return yield* customSlashCommands.loadConfigState;
@@ -74,7 +75,7 @@ describe("customSlashCommands", () => {
     );
 
     expect(result.commands).toEqual([]);
-    expect(result.issues).toHaveLength(3);
+    expect(result.issues).toHaveLength(4);
     expect(result.issues).toEqual(
       expect.arrayContaining([
         {
@@ -91,6 +92,11 @@ describe("customSlashCommands", () => {
           kind: "custom-slash-commands.invalid-entry",
           path: expect.stringMatching(/review\.md$/),
           message: expect.stringContaining("/review is reserved"),
+        },
+        {
+          kind: "custom-slash-commands.invalid-entry",
+          path: expect.stringMatching(/open\.md$/),
+          message: expect.stringContaining("/open is reserved"),
         },
       ]),
     );
