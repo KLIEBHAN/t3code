@@ -29,6 +29,7 @@
     "dev:desktop": "node scripts/dev-runner.ts dev:desktop",
     "start": "turbo run start --filter=t3",
     "start:desktop": "turbo run start --filter=@t3tools/desktop",
+    "start:desktop:fresh": "turbo run start:fresh --filter=@t3tools/desktop",
     "start:marketing": "turbo run preview --filter=@t3tools/marketing",
     "build": "turbo run build",
     "build:marketing": "turbo run build --filter=@t3tools/marketing",

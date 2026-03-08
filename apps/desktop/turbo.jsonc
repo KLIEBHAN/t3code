@@ -15,6 +15,11 @@
       "cache": false,
       "persistent": true,
     },
+    "start:fresh": {
+      "dependsOn": ["build", "@t3tools/web#build", "t3#build"],
+      "cache": false,
+      "persistent": true,
+    },
     "smoke-test": {
       "dependsOn": ["build", "@t3tools/web#build", "t3#build"],
       "cache": false,

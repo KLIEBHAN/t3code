@@ -56,8 +56,9 @@ const UPDATE_STATE_CHANNEL = "desktop:update-state";
 const UPDATE_GET_STATE_CHANNEL = "desktop:update-get-state";
 const UPDATE_DOWNLOAD_CHANNEL = "desktop:update-download";
 const UPDATE_INSTALL_CHANNEL = "desktop:update-install";
-const STATE_DIR =
-  process.env.T3CODE_STATE_DIR?.trim() || Path.join(OS.homedir(), ".t3", "userdata");
+const DESKTOP_STATE_DIR_ENV_VAR = "T3CODE_STATE_DIR";
+const DEFAULT_DESKTOP_STATE_DIR = Path.join(OS.homedir(), ".t3", "userdata");
+const ELECTRON_SESSION_DATA_DIRNAME = "session-data";
 const DESKTOP_SCHEME = "t3";
 const ROOT_DIR = Path.resolve(__dirname, "../../..");
 const isDevelopment = Boolean(process.env.VITE_DEV_SERVER_URL);
@@ -67,7 +68,6 @@ const USER_DATA_DIR_NAME = isDevelopment ? "t3code-dev" : "t3code";
 const LEGACY_USER_DATA_DIR_NAME = isDevelopment ? "T3 Code (Dev)" : "T3 Code (Alpha)";
 const COMMIT_HASH_PATTERN = /^[0-9a-f]{7,40}$/i;
 const COMMIT_HASH_DISPLAY_LENGTH = 12;
-const LOG_DIR = Path.join(STATE_DIR, "logs");
 const LOG_FILE_MAX_BYTES = 10 * 1024 * 1024;
 const LOG_FILE_MAX_FILES = 10;
 const APP_RUN_ID = Crypto.randomBytes(6).toString("hex");
@@ -75,6 +75,21 @@ const AUTO_UPDATE_STARTUP_DELAY_MS = 15_000;
 const AUTO_UPDATE_POLL_INTERVAL_MS = 4 * 60 * 60 * 1000;
 const DESKTOP_UPDATE_CHANNEL = "latest";
 const DESKTOP_UPDATE_ALLOW_PRERELEASE = false;
+
+function resolveDesktopStateDir(): string {
+  const configuredStateDir = process.env[DESKTOP_STATE_DIR_ENV_VAR]?.trim();
+  return configuredStateDir || DEFAULT_DESKTOP_STATE_DIR;
+}
+
+function configureElectronDataPaths(stateDir: string): void {
+  // Keep Electron profile data under the same root as backend persistence so fresh starts reset everything together.
+  app.setPath("userData", stateDir);
+  app.setPath("sessionData", Path.join(stateDir, ELECTRON_SESSION_DATA_DIRNAME));
+}
+
+const desktopStateDir = resolveDesktopStateDir();
+const LOG_DIR = Path.join(desktopStateDir, "logs");
+configureElectronDataPaths(desktopStateDir);
 
 type DesktopUpdateErrorContext = DesktopUpdateState["errorContext"];
 
@@ -924,7 +939,7 @@ function backendEnv(): NodeJS.ProcessEnv {
     T3CODE_MODE: "desktop",
     T3CODE_NO_BROWSER: "1",
     T3CODE_PORT: String(backendPort),
-    T3CODE_STATE_DIR: STATE_DIR,
+    T3CODE_STATE_DIR: desktopStateDir,
     T3CODE_AUTH_TOKEN: backendAuthToken,
   };
 }
