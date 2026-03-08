@@ -678,6 +678,60 @@ const make = Effect.gen(function* () {
       ),
     );
 
+  const bufferToolOutputDeltaIfPresent = (event: ProviderRuntimeEvent) =>
+    Effect.gen(function* () {
+      if (event.type !== "content.delta") {
+        return;
+      }
+
+      const { streamKind, delta } = event.payload;
+      if (
+        (streamKind !== "command_output" && streamKind !== "file_change_output") ||
+        delta.length === 0
+      ) {
+        return;
+      }
+
+      const bufferKey = toolOutputBufferKey(event);
+      if (!bufferKey) {
+        return;
+      }
+
+      yield* appendBufferedToolOutput(bufferKey, delta);
+    });
+
+  const withBufferedToolOutput = (event: ProviderRuntimeEvent) =>
+    Effect.gen(function* () {
+      if (
+        (event.type !== "item.updated" && event.type !== "item.completed") ||
+        !isToolLifecycleItemType(event.payload.itemType)
+      ) {
+        return event;
+      }
+
+      const bufferKey = toolOutputBufferKey(event);
+      if (!bufferKey) {
+        return event;
+      }
+
+      const bufferedOutput =
+        event.type === "item.completed"
+          ? yield* takeBufferedToolOutput(bufferKey)
+          : yield* getBufferedToolOutput(bufferKey);
+      const mergedOutput = mergeToolOutput(event.payload.output, bufferedOutput);
+      if (!mergedOutput || mergedOutput === event.payload.output) {
+        return event;
+      }
+
+      return {
+        ...event,
+        payload: {
+          ...event.payload,
+          output: mergedOutput,
+        },
+      } satisfies ProviderRuntimeEvent;
+    });
+
   const appendBufferedProposedPlan = (planId: string, delta: string, createdAt: string) =>
     Cache.getOption(bufferedProposedPlanById, planId).pipe(
       Effect.flatMap((existingEntry) => {
@@ -958,13 +1012,6 @@ const make = Effect.gen(function* () {
         event.type === "content.delta" && event.payload.streamKind === "assistant_text"
           ? event.payload.delta
           : undefined;
-      let toolOutputDelta: string | undefined;
-      if (event.type === "content.delta") {
-        const streamKind = event.payload.streamKind;
-        if (streamKind === "command_output" || streamKind === "file_change_output") {
-          toolOutputDelta = event.payload.delta;
-        }
-      }
       const proposedPlanDelta =
         event.type === "turn.proposed.delta" ? event.payload.delta : undefined;
 
@@ -1004,48 +1051,16 @@ const make = Effect.gen(function* () {
         }
       }
 
-      if (toolOutputDelta && toolOutputDelta.length > 0) {
-        const bufferKey = toolOutputBufferKey(event);
-        if (bufferKey) {
-          yield* appendBufferedToolOutput(bufferKey, toolOutputDelta);
-        }
-      }
+      yield* bufferToolOutputDeltaIfPresent(event);
 
       if (proposedPlanDelta && proposedPlanDelta.length > 0) {
         const planId = proposedPlanIdFromEvent(event, thread.id);
         yield* appendBufferedProposedPlan(planId, proposedPlanDelta, now);
       }
 
-      const activityEvent = yield* Effect.gen(function* () {
-        if (
-          (event.type !== "item.updated" && event.type !== "item.completed") ||
-          !isToolLifecycleItemType(event.payload.itemType)
-        ) {
-          return event;
-        }
-
-        const bufferKey = toolOutputBufferKey(event);
-        if (!bufferKey) {
-          return event;
-        }
-
-        const bufferedOutput =
-          event.type === "item.completed"
-            ? yield* takeBufferedToolOutput(bufferKey)
-            : yield* getBufferedToolOutput(bufferKey);
-        const mergedOutput = mergeToolOutput(event.payload.output, bufferedOutput);
-        if (!mergedOutput || mergedOutput === event.payload.output) {
-          return event;
-        }
-
-        return {
-          ...event,
-          payload: {
-            ...event.payload,
-            output: mergedOutput,
-          },
-        } satisfies ProviderRuntimeEvent;
-      });
+      // Keep the final thread activity self-contained so the web client does
+      // not need to reconstruct tool output from a separate delta stream.
+      const activityEvent = yield* withBufferedToolOutput(event);
 
       const assistantCompletion =
         event.type === "item.completed" && event.payload.itemType === "assistant_message"

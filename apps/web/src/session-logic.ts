@@ -444,95 +444,139 @@ export function deriveWorkLogEntries(
   activities: ReadonlyArray<OrchestrationThreadActivity>,
   latestTurnId: TurnId | undefined,
 ): WorkLogEntry[] {
-  const ordered = [...activities].toSorted(compareActivitiesByOrder);
-  const toolStateByKey = new Map<
-    string,
-    {
-      command?: string;
-      result?: string;
-      output?: string;
-      changedFiles?: string[];
-    }
-  >();
+  // Tool output can arrive on an update before the final completed event.
+  // Remember the latest usable tool state so completed rows stay inspectable.
+  const rememberedToolStateByKey = new Map<string, ToolWorkLogState>();
 
-  return ordered
-    .filter((activity) => (latestTurnId ? activity.turnId === latestTurnId : true))
-    .filter((activity) => activity.kind !== "tool.started")
-    .filter((activity) => activity.kind !== "task.started" && activity.kind !== "task.completed")
-    .filter((activity) => activity.summary !== "Checkpoint captured")
+  return [...activities]
+    .toSorted(compareActivitiesByOrder)
+    .filter((activity) => isVisibleWorkLogActivity(activity, latestTurnId))
     .map((activity) => {
-      const payload =
-        activity.payload && typeof activity.payload === "object"
-          ? (activity.payload as Record<string, unknown>)
-          : null;
-      let command = extractToolCommand(payload);
-      const changedFiles = extractChangedFiles(payload);
-      const title = extractToolTitle(payload);
-      let output = extractToolOutput(payload);
-      let result = extractToolResult(payload, command);
-      const toolActivityKey = extractToolActivityKey(activity, payload, command, changedFiles);
-      const knownToolState = toolActivityKey ? toolStateByKey.get(toolActivityKey) : undefined;
-
-      if (!command && knownToolState?.command) {
-        command = knownToolState.command;
-      }
-      if (!output && knownToolState?.output) {
-        output = knownToolState.output;
-      }
-      if (!result && knownToolState?.result) {
-        result = knownToolState.result;
-      }
-      const effectiveChangedFiles =
-        changedFiles.length > 0 ? changedFiles : (knownToolState?.changedFiles ?? []);
+      const payload = activityPayloadRecord(activity);
+      const derivedToolState = deriveToolWorkLogState(payload);
+      const toolActivityKey = extractToolActivityKey(
+        activity,
+        payload,
+        derivedToolState.command,
+        derivedToolState.changedFiles,
+      );
+      const rememberedToolState = toolActivityKey
+        ? rememberedToolStateByKey.get(toolActivityKey)
+        : undefined;
+      const mergedToolState = mergeToolWorkLogState(derivedToolState, rememberedToolState);
 
       if (toolActivityKey) {
-        toolStateByKey.set(toolActivityKey, {
-          ...(command ? { command } : knownToolState?.command ? { command: knownToolState.command } : {}),
-          ...(result ? { result } : knownToolState?.result ? { result: knownToolState.result } : {}),
-          ...(output ? { output } : knownToolState?.output ? { output: knownToolState.output } : {}),
-          ...(effectiveChangedFiles.length > 0 ? { changedFiles: effectiveChangedFiles } : {}),
-        });
+        rememberedToolStateByKey.set(toolActivityKey, mergedToolState);
       }
-      const entry: WorkLogEntry = {
-        id: activity.id,
-        createdAt: activity.createdAt,
-        label: activity.summary,
-        tone: activity.tone === "approval" ? "info" : activity.tone,
-      };
-      const itemType = extractWorkLogItemType(payload);
-      const requestKind = extractWorkLogRequestKind(payload);
-      if (activity.turnId) {
-        entry.turnId = activity.turnId;
-      }
-      if (payload && typeof payload.detail === "string" && payload.detail.length > 0) {
-        const detail = stripTrailingExitCode(payload.detail).output;
-        if (detail) {
-          entry.detail = detail;
-        }
-      }
-      if (command) {
-        entry.command = command;
-      }
-      if (result) {
-        entry.result = result;
-      }
-      if (output) {
-        entry.output = output;
-      }
-      if (effectiveChangedFiles.length > 0) {
-        entry.changedFiles = effectiveChangedFiles;
-      }
-      if (title) {
-        entry.toolTitle = title;
-      }
-      if (itemType) {
-        entry.itemType = itemType;
-      }
-      if (requestKind) {
-        entry.requestKind = requestKind;
-      }
-      return entry;
+      return buildWorkLogEntry(activity, payload, mergedToolState);
     });
+}
+
+interface ToolWorkLogState {
+  command: string | null;
+  result: string | null;
+  output: string | null;
+  changedFiles: string[];
+}
+
+function isVisibleWorkLogActivity(
+  activity: OrchestrationThreadActivity,
+  latestTurnId: TurnId | undefined,
+): boolean {
+  if (latestTurnId && activity.turnId !== latestTurnId) {
+    return false;
+  }
+  if (activity.kind === "tool.started") {
+    return false;
+  }
+  if (activity.kind === "task.started" || activity.kind === "task.completed") {
+    return false;
+  }
+  return activity.summary !== "Checkpoint captured";
+}
+
+function activityPayloadRecord(
+  activity: OrchestrationThreadActivity,
+): Record<string, unknown> | null {
+  return activity.payload && typeof activity.payload === "object"
+    ? (activity.payload as Record<string, unknown>)
+    : null;
+}
+
+function deriveToolWorkLogState(payload: Record<string, unknown> | null): ToolWorkLogState {
+  const command = extractToolCommand(payload);
+  const output = extractToolOutput(payload);
+  return {
+    command,
+    output,
+    result: extractToolResult(payload, command),
+    changedFiles: extractChangedFiles(payload),
+  };
+}
+
+function mergeToolWorkLogState(
+  current: ToolWorkLogState,
+  remembered: ToolWorkLogState | undefined,
+): ToolWorkLogState {
+  if (!remembered) {
+    return current;
+  }
+
+  return {
+    command: current.command ?? remembered.command,
+    result: current.result ?? remembered.result,
+    output: current.output ?? remembered.output,
+    changedFiles: current.changedFiles.length > 0 ? current.changedFiles : remembered.changedFiles,
+  };
+}
+
+function buildWorkLogEntry(
+  activity: OrchestrationThreadActivity,
+  payload: Record<string, unknown> | null,
+  toolState: ToolWorkLogState,
+): WorkLogEntry {
+  const entry: WorkLogEntry = {
+    id: activity.id,
+    createdAt: activity.createdAt,
+    label: activity.summary,
+    tone: activity.tone === "approval" ? "info" : activity.tone,
+  };
+
+  if (activity.turnId) {
+    entry.turnId = activity.turnId;
+  }
+  if (payload && typeof payload.detail === "string" && payload.detail.length > 0) {
+    const detail = stripTrailingExitCode(payload.detail).output;
+    if (detail) {
+      entry.detail = detail;
+    }
+  }
+  if (toolState.command) {
+    entry.command = toolState.command;
+  }
+  if (toolState.result) {
+    entry.result = toolState.result;
+  }
+  if (toolState.output) {
+    entry.output = toolState.output;
+  }
+  if (toolState.changedFiles.length > 0) {
+    entry.changedFiles = toolState.changedFiles;
+  }
+  const title = extractToolTitle(payload);
+  if (title) {
+    entry.toolTitle = title;
+  }
+  const itemType = extractWorkLogItemType(payload);
+  if (itemType) {
+    entry.itemType = itemType;
+  }
+  const requestKind = extractWorkLogRequestKind(payload);
+  if (requestKind) {
+    entry.requestKind = requestKind;
+  }
+
+  return entry;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
