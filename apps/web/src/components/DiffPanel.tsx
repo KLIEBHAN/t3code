@@ -29,6 +29,7 @@ import { useAppSettings } from "../appSettings";
 import { formatShortTimestamp } from "../timestampFormat";
 import { DiffPanelLoadingState, DiffPanelShell, type DiffPanelMode } from "./DiffPanelShell";
 import { ToggleGroup, Toggle } from "./ui/toggle-group";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 
 type DiffRenderMode = "stacked" | "split";
 type DiffThemeType = "light" | "dark";
@@ -190,7 +191,7 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
     inferredCheckpointTurnCountByTurnId,
   } = useTurnDiffSummaries(activeThread);
   const isSummaryNavigable = useCallback(
-    (summary: (typeof turnDiffSummaries)[number] | undefined) =>
+    (summary: (typeof turnDiffSummaries)[number] | undefined): boolean =>
       isTurnDiffNavigable(
         summary,
         turnDiffSummaryByCheckpointTurnCount,
@@ -489,45 +490,62 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
               <div className="text-[10px] leading-tight font-medium">All turns</div>
             </div>
           </button>
-          {orderedTurnDiffSummaries.map((summary) => (
-            <button
-              key={summary.turnId}
-              type="button"
-              className="shrink-0 rounded-md"
-              onClick={() => {
-                if (!isSummaryNavigable(summary)) {
-                  return;
-                }
-                selectTurn(summary.turnId);
-              }}
-              title={summary.turnId}
-              disabled={!isSummaryNavigable(summary)}
-              data-turn-chip-selected={summary.turnId === selectedTurnId}
-            >
-              <div
-                className={cn(
-                  "rounded-md border px-2 py-1 text-left transition-colors",
-                  summary.turnId === selectedTurnId
-                    ? "border-border bg-accent text-accent-foreground"
-                    : "border-border/70 bg-background/70 text-muted-foreground/80 hover:border-border hover:text-foreground/80",
-                  !isSummaryNavigable(summary) &&
-                    "cursor-not-allowed opacity-50 hover:border-border/70 hover:text-muted-foreground/80",
-                )}
+          {orderedTurnDiffSummaries.map((summary) => {
+            const isNavigable = isSummaryNavigable(summary);
+            const chipButton = (
+              <button
+                key={summary.turnId}
+                type="button"
+                className="shrink-0 rounded-md"
+                onClick={() => {
+                  if (!isNavigable) {
+                    return;
+                  }
+                  selectTurn(summary.turnId);
+                }}
+                title={summary.turnId}
+                aria-disabled={!isNavigable || undefined}
+                data-turn-chip-selected={summary.turnId === selectedTurnId}
               >
-                <div className="flex items-center gap-1">
-                  <span className="text-[10px] leading-tight font-medium">
-                    Turn{" "}
-                    {summary.checkpointTurnCount ??
-                      inferredCheckpointTurnCountByTurnId[summary.turnId] ??
-                      "?"}
-                  </span>
-                  <span className="text-[9px] leading-tight opacity-70">
-                    {formatShortTimestamp(summary.completedAt, settings.timestampFormat)}
-                  </span>
+                <div
+                  className={cn(
+                    "rounded-md border px-2 py-1 text-left transition-colors",
+                    summary.turnId === selectedTurnId
+                      ? "border-border bg-accent text-accent-foreground"
+                      : "border-border/70 bg-background/70 text-muted-foreground/80 hover:border-border hover:text-foreground/80",
+                    !isNavigable &&
+                      "cursor-not-allowed opacity-50 hover:border-border/70 hover:text-muted-foreground/80",
+                  )}
+                >
+                  <div className="flex items-center gap-1">
+                    <span className="text-[10px] leading-tight font-medium">
+                      Turn{" "}
+                      {summary.checkpointTurnCount ??
+                        inferredCheckpointTurnCountByTurnId[summary.turnId] ??
+                        "?"}
+                    </span>
+                    <span className="text-[9px] leading-tight opacity-70">
+                      {formatShortTimestamp(summary.completedAt, settings.timestampFormat)}
+                    </span>
+                  </div>
                 </div>
-              </div>
-            </button>
-          ))}
+              </button>
+            );
+
+            if (isNavigable) {
+              return chipButton;
+            }
+
+            return (
+              <Tooltip key={`${summary.turnId}:unavailable`}>
+                <TooltipTrigger render={chipButton} />
+                <TooltipPopup side="top">
+                  This turn diff is unavailable because the required checkpoint history is
+                  incomplete.
+                </TooltipPopup>
+              </Tooltip>
+            );
+          })}
         </div>
       </div>
       <ToggleGroup
