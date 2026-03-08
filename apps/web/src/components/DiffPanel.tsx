@@ -23,6 +23,7 @@ import { useTheme } from "../hooks/useTheme";
 import { buildPatchCacheKey } from "../lib/diffRendering";
 import { resolveDiffThemeName } from "../lib/diffRendering";
 import { useTurnDiffSummaries } from "../hooks/useTurnDiffSummaries";
+import { isTurnDiffNavigable, resolveCheckpointTurnCount } from "../turnDiffSummary";
 import { useStore } from "../store";
 import { useAppSettings } from "../appSettings";
 import { formatShortTimestamp } from "../timestampFormat";
@@ -182,15 +183,15 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
   const activeCwd = activeThread?.worktreePath ?? activeProject?.cwd;
   const gitBranchesQuery = useQuery(gitBranchesQueryOptions(activeCwd ?? null));
   const isGitRepo = gitBranchesQuery.data?.isRepo ?? true;
-  const { turnDiffSummaries, inferredCheckpointTurnCountByTurnId } =
+  const { turnDiffSummaries, turnDiffSummaryByTurnId, inferredCheckpointTurnCountByTurnId } =
     useTurnDiffSummaries(activeThread);
   const orderedTurnDiffSummaries = useMemo(
     () =>
       [...turnDiffSummaries].toSorted((left, right) => {
         const leftTurnCount =
-          left.checkpointTurnCount ?? inferredCheckpointTurnCountByTurnId[left.turnId] ?? 0;
+          resolveCheckpointTurnCount(left, inferredCheckpointTurnCountByTurnId) ?? 0;
         const rightTurnCount =
-          right.checkpointTurnCount ?? inferredCheckpointTurnCountByTurnId[right.turnId] ?? 0;
+          resolveCheckpointTurnCount(right, inferredCheckpointTurnCountByTurnId) ?? 0;
         if (leftTurnCount !== rightTurnCount) {
           return rightTurnCount - leftTurnCount;
         }
@@ -200,15 +201,18 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
   );
 
   const selectedTurnId = diffSearch.diffTurnId ?? null;
-  const selectedFilePath = selectedTurnId !== null ? (diffSearch.diffFilePath ?? null) : null;
   const selectedTurn =
     selectedTurnId === null
       ? undefined
-      : (orderedTurnDiffSummaries.find((summary) => summary.turnId === selectedTurnId) ??
-        orderedTurnDiffSummaries[0]);
+      : (() => {
+          const summary = turnDiffSummaryByTurnId.get(selectedTurnId);
+          return isTurnDiffNavigable(summary, inferredCheckpointTurnCountByTurnId)
+            ? summary
+            : undefined;
+        })();
+  const selectedFilePath = selectedTurn ? (diffSearch.diffFilePath ?? null) : null;
   const selectedCheckpointTurnCount =
-    selectedTurn &&
-    (selectedTurn.checkpointTurnCount ?? inferredCheckpointTurnCountByTurnId[selectedTurn.turnId]);
+    selectedTurn && resolveCheckpointTurnCount(selectedTurn, inferredCheckpointTurnCountByTurnId);
   const selectedCheckpointRange = useMemo(
     () =>
       typeof selectedCheckpointTurnCount === "number"
@@ -222,8 +226,7 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
   const conversationCheckpointTurnCount = useMemo(() => {
     const turnCounts = orderedTurnDiffSummaries
       .map(
-        (summary) =>
-          summary.checkpointTurnCount ?? inferredCheckpointTurnCountByTurnId[summary.turnId],
+        (summary) => resolveCheckpointTurnCount(summary, inferredCheckpointTurnCountByTurnId),
       )
       .filter((value): value is number => typeof value === "number");
     if (turnCounts.length === 0) {

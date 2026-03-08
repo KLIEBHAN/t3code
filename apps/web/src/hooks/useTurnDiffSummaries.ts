@@ -10,10 +10,15 @@ export function useTurnDiffSummaries(activeThread: Thread | undefined) {
     return activeThread.turnDiffSummaries;
   }, [activeThread]);
 
+  const turnDiffSummaryByTurnId = useMemo(
+    () => new Map(turnDiffSummaries.map((summary) => [summary.turnId, summary] as const)),
+    [turnDiffSummaries],
+  );
+
   const inferredCheckpointTurnCountByTurnId = useMemo(
     () => inferCheckpointTurnCountByTurnId(turnDiffSummaries),
     [turnDiffSummaries],
   );
 
-  return { turnDiffSummaries, inferredCheckpointTurnCountByTurnId };
+  return { turnDiffSummaries, turnDiffSummaryByTurnId, inferredCheckpointTurnCountByTurnId };
 }
