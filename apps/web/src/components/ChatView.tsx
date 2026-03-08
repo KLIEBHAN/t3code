@@ -85,6 +85,8 @@ import {
   deriveActiveWorkStartedAt,
   shouldResetSendPhase,
   resolveTurnDiffSummaryForAssistantMessage,
+  deriveActivePlanState,
+  findLatestProposedPlan,
   type PendingApproval,
   type PendingUserInput,
   type ProviderPickerKind,
