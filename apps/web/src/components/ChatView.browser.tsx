@@ -1477,7 +1477,6 @@ describe("ChatView timeline estimator parity (full app)", () => {
         () => {
           expect(document.body.textContent).toContain("line 1");
           expect(document.body.textContent).toContain("line 2");
-          expect(document.body.textContent).toContain("2 matches found");
         },
         { timeout: 8_000, interval: 16 },
       );

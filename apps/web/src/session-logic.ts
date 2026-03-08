@@ -37,6 +37,7 @@ export interface WorkLogEntry {
   label: string;
   detail?: string;
   command?: string;
+  result?: string;
   output?: string;
   changedFiles?: ReadonlyArray<string>;
   tone: "thinking" | "tool" | "info" | "error";
@@ -477,6 +478,10 @@ export function deriveWorkLogEntries(
       if (command) {
         entry.command = command;
       }
+      const result = extractToolResult(payload, command);
+      if (result) {
+        entry.result = result;
+      }
       const output = extractToolOutput(payload);
       if (output) {
         entry.output = output;
@@ -630,6 +635,31 @@ function extractToolOutput(payload: Record<string, unknown> | null): string | nu
   }
 
   return candidates.find((candidate) => candidate !== null) ?? null;
+}
+function extractToolResult(
+  payload: Record<string, unknown> | null,
+  command: string | null,
+): string | null {
+  const output = extractToolOutput(payload);
+  if (output) {
+    return output;
+  }
+
+  const detail = asTrimmedString(payload?.detail);
+  if (!detail || detail === command) {
+    return null;
+  }
+
+  const itemType = asTrimmedString(payload?.itemType);
+  if (itemType === "command_execution") {
+    return detail;
+  }
+
+  if (detail.includes("\n")) {
+    return detail;
+  }
+
+  return null;
 }
 function pushChangedFile(target: string[], seen: Set<string>, value: unknown) {
   const normalized = asTrimmedString(value);
