@@ -1249,4 +1249,82 @@ describe("ChatView timeline estimator parity (full app)", () => {
       await mounted.cleanup();
     }
   });
+
+  it("executes a custom slash command from the command palette", async () => {
+    const mounted = await mountChatView({
+      viewport: DEFAULT_VIEWPORT,
+      snapshot: createSnapshotForTargetUser({
+        targetMessageId: "msg-user-target-custom-command" as MessageId,
+        targetText: "custom command target",
+      }),
+      configureFixture: (nextFixture) => {
+        nextFixture.serverConfig = {
+          ...nextFixture.serverConfig,
+          customSlashCommands: [
+            {
+              command: "deploy",
+              description: "Deploy the current project",
+              prompt: "# Deploy\nRun the deployment workflow for this repo.",
+              sourcePath: "/repo/project/.config/t3code/slash-commands/deploy.md",
+            },
+          ],
+        };
+      },
+    });
+
+    try {
+      const useMetaKey = navigator.platform.toLowerCase().includes("mac");
+      window.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "k",
+          ctrlKey: !useMetaKey,
+          metaKey: useMetaKey,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+
+      const paletteInput = await waitForCommandPaletteInput();
+      const nativeSetter = Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        "value",
+      )?.set;
+      nativeSetter?.call(paletteInput, "deploy");
+      paletteInput.dispatchEvent(new Event("input", { bubbles: true }));
+      paletteInput.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "Enter",
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+
+      await vi.waitFor(
+        () => {
+          const turnStartRequest = wsRequests.find(
+            (request) =>
+              request._tag === ORCHESTRATION_WS_METHODS.dispatchCommand &&
+              request.command &&
+              typeof request.command === "object" &&
+              (request.command as { type?: unknown }).type === "thread.turn.start",
+          );
+          expect(turnStartRequest).toMatchObject({
+            _tag: ORCHESTRATION_WS_METHODS.dispatchCommand,
+            command: {
+              type: "thread.turn.start",
+              threadId: THREAD_ID,
+              message: {
+                role: "user",
+                text: "# Deploy\nRun the deployment workflow for this repo.",
+                attachments: [],
+              },
+            },
+          });
+        },
+        { timeout: 8_000, interval: 16 },
+      );
+    } finally {
+      await mounted.cleanup();
+    }
+  });
 });

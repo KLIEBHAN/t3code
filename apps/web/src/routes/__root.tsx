@@ -140,7 +140,7 @@ function EventRouter() {
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const pathnameRef = useRef(pathname);
-  const lastConfigUpdateSignatureRef = useRef<string | null>(null);
+  const lastConfigToastSignatureRef = useRef<string | null>(null);
   const handledBootstrapThreadIdRef = useRef<string | null>(null);
 
   pathnameRef.current = pathname;
@@ -256,22 +256,16 @@ function EventRouter() {
         handledBootstrapThreadIdRef.current = payload.bootstrapThreadId;
       })().catch(() => undefined);
     });
-    // onServerConfigUpdated replays the latest cached value synchronously
-    // during subscribe. Skip the toast for that replay so effect re-runs
-    // don't produce duplicate toasts.
-    let subscribed = false;
     const unsubServerConfigUpdated = onServerConfigUpdated((payload) => {
-      const signature = JSON.stringify({
+      void queryClient.invalidateQueries({ queryKey: serverQueryKeys.config() });
+      const toastSignature = JSON.stringify({
         sources: payload.sources,
-        updatedAt: payload.updatedAt,
         issues: payload.issues,
       });
-      if (lastConfigUpdateSignatureRef.current === signature) {
+      if (lastConfigToastSignatureRef.current === toastSignature) {
         return;
       }
-      lastConfigUpdateSignatureRef.current = signature;
-      void queryClient.invalidateQueries({ queryKey: serverQueryKeys.config() });
-      if (!subscribed) return;
+      lastConfigToastSignatureRef.current = toastSignature;
       if (payload.sources.includes("keybindings")) {
         const issue = payload.issues.find((entry) => entry.kind.startsWith("keybindings."));
         if (!issue) {
@@ -355,7 +349,6 @@ function EventRouter() {
         }
       }
     });
-    subscribed = true;
     return () => {
       disposed = true;
       needsProviderInvalidation = false;
