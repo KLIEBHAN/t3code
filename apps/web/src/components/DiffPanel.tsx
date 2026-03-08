@@ -183,8 +183,21 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
   const activeCwd = activeThread?.worktreePath ?? activeProject?.cwd;
   const gitBranchesQuery = useQuery(gitBranchesQueryOptions(activeCwd ?? null));
   const isGitRepo = gitBranchesQuery.data?.isRepo ?? true;
-  const { turnDiffSummaries, turnDiffSummaryByTurnId, inferredCheckpointTurnCountByTurnId } =
-    useTurnDiffSummaries(activeThread);
+  const {
+    turnDiffSummaries,
+    turnDiffSummaryByTurnId,
+    turnDiffSummaryByCheckpointTurnCount,
+    inferredCheckpointTurnCountByTurnId,
+  } = useTurnDiffSummaries(activeThread);
+  const isSummaryNavigable = useCallback(
+    (summary: (typeof turnDiffSummaries)[number] | undefined) =>
+      isTurnDiffNavigable(
+        summary,
+        turnDiffSummaryByCheckpointTurnCount,
+        inferredCheckpointTurnCountByTurnId,
+      ),
+    [inferredCheckpointTurnCountByTurnId, turnDiffSummaryByCheckpointTurnCount],
+  );
   const orderedTurnDiffSummaries = useMemo(
     () =>
       [...turnDiffSummaries].toSorted((left, right) => {
@@ -201,14 +214,13 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
   );
 
   const selectedTurnId = diffSearch.diffTurnId ?? null;
+  const hasSelectedTurnRequest = selectedTurnId !== null;
   const selectedTurn =
     selectedTurnId === null
       ? undefined
       : (() => {
           const summary = turnDiffSummaryByTurnId.get(selectedTurnId);
-          return isTurnDiffNavigable(summary, inferredCheckpointTurnCountByTurnId)
-            ? summary
-            : undefined;
+          return isSummaryNavigable(summary) ? summary : undefined;
         })();
   const selectedFilePath = selectedTurn ? (diffSearch.diffFilePath ?? null) : null;
   const selectedCheckpointTurnCount =
@@ -237,36 +249,36 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
   }, [inferredCheckpointTurnCountByTurnId, orderedTurnDiffSummaries]);
   const conversationCheckpointRange = useMemo(
     () =>
-      !selectedTurn && typeof conversationCheckpointTurnCount === "number"
+      !hasSelectedTurnRequest && typeof conversationCheckpointTurnCount === "number"
         ? {
             fromTurnCount: 0,
             toTurnCount: conversationCheckpointTurnCount,
           }
         : null,
-    [conversationCheckpointTurnCount, selectedTurn],
+    [conversationCheckpointTurnCount, hasSelectedTurnRequest],
   );
-  const activeCheckpointRange = selectedTurn
+  const activeCheckpointRange = hasSelectedTurnRequest
     ? selectedCheckpointRange
     : conversationCheckpointRange;
   const conversationCacheScope = useMemo(() => {
-    if (selectedTurn || orderedTurnDiffSummaries.length === 0) {
+    if (hasSelectedTurnRequest || orderedTurnDiffSummaries.length === 0) {
       return null;
     }
     return `conversation:${orderedTurnDiffSummaries.map((summary) => summary.turnId).join(",")}`;
-  }, [orderedTurnDiffSummaries, selectedTurn]);
+  }, [hasSelectedTurnRequest, orderedTurnDiffSummaries]);
   const activeCheckpointDiffQuery = useQuery(
     checkpointDiffQueryOptions({
       threadId: activeThreadId,
       fromTurnCount: activeCheckpointRange?.fromTurnCount ?? null,
       toTurnCount: activeCheckpointRange?.toTurnCount ?? null,
-      cacheScope: selectedTurn ? `turn:${selectedTurn.turnId}` : conversationCacheScope,
+      cacheScope: hasSelectedTurnRequest ? `turn:${selectedTurnId}` : conversationCacheScope,
       enabled: isGitRepo,
     }),
   );
-  const selectedTurnCheckpointDiff = selectedTurn
+  const selectedTurnCheckpointDiff = hasSelectedTurnRequest
     ? activeCheckpointDiffQuery.data?.diff
     : undefined;
-  const conversationCheckpointDiff = selectedTurn
+  const conversationCheckpointDiff = hasSelectedTurnRequest
     ? undefined
     : activeCheckpointDiffQuery.data?.diff;
   const isLoadingCheckpointDiff = activeCheckpointDiffQuery.isLoading;
@@ -277,9 +289,26 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
         ? "Failed to load checkpoint diff."
         : null;
 
-  const selectedPatch = selectedTurn ? selectedTurnCheckpointDiff : conversationCheckpointDiff;
+  const selectedPatch = hasSelectedTurnRequest ? selectedTurnCheckpointDiff : conversationCheckpointDiff;
   const hasResolvedPatch = typeof selectedPatch === "string";
   const hasNoNetChanges = hasResolvedPatch && selectedPatch.trim().length === 0;
+  const selectedTurnUnavailableMessage = useMemo(() => {
+    if (selectedTurnId === null) {
+      return null;
+    }
+    const summary = turnDiffSummaryByTurnId.get(selectedTurnId);
+    if (!summary) {
+      return "This turn diff is unavailable.";
+    }
+    if (isSummaryNavigable(summary)) {
+      return null;
+    }
+    return "This turn diff is unavailable because the required checkpoint history is incomplete.";
+  }, [
+    isSummaryNavigable,
+    selectedTurnId,
+    turnDiffSummaryByTurnId,
+  ]);
   const renderablePatch = useMemo(
     () => getRenderablePatch(selectedPatch, `diff-panel:${resolvedTheme}`),
     [resolvedTheme, selectedPatch],
@@ -465,16 +494,24 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
               key={summary.turnId}
               type="button"
               className="shrink-0 rounded-md"
-              onClick={() => selectTurn(summary.turnId)}
+              onClick={() => {
+                if (!isSummaryNavigable(summary)) {
+                  return;
+                }
+                selectTurn(summary.turnId);
+              }}
               title={summary.turnId}
-              data-turn-chip-selected={summary.turnId === selectedTurn?.turnId}
+              disabled={!isSummaryNavigable(summary)}
+              data-turn-chip-selected={summary.turnId === selectedTurnId}
             >
               <div
                 className={cn(
                   "rounded-md border px-2 py-1 text-left transition-colors",
-                  summary.turnId === selectedTurn?.turnId
+                  summary.turnId === selectedTurnId
                     ? "border-border bg-accent text-accent-foreground"
                     : "border-border/70 bg-background/70 text-muted-foreground/80 hover:border-border hover:text-foreground/80",
+                  !isSummaryNavigable(summary) &&
+                    "cursor-not-allowed opacity-50 hover:border-border/70 hover:text-muted-foreground/80",
                 )}
               >
                 <div className="flex items-center gap-1">
@@ -546,9 +583,11 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
               ) : (
                 <div className="flex h-full items-center justify-center px-3 py-2 text-xs text-muted-foreground/70">
                   <p>
-                    {hasNoNetChanges
-                      ? "No net changes in this selection."
-                      : "No patch available for this selection."}
+                    {selectedTurnUnavailableMessage
+                      ? selectedTurnUnavailableMessage
+                      : hasNoNetChanges
+                        ? "No net changes in this selection."
+                        : "No patch available for this selection."}
                   </p>
                 </div>
               )

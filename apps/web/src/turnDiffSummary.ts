@@ -8,12 +8,36 @@ export function resolveCheckpointTurnCount(
   return summary.checkpointTurnCount ?? inferredCheckpointTurnCountByTurnId[summary.turnId];
 }
 
+export function buildTurnDiffSummaryByCheckpointTurnCount(
+  summaries: ReadonlyArray<TurnDiffSummary>,
+  inferredCheckpointTurnCountByTurnId: Record<TurnId, number>,
+): Map<number, TurnDiffSummary> {
+  const byTurnCount = new Map<number, TurnDiffSummary>();
+  for (const summary of summaries) {
+    const checkpointTurnCount = resolveCheckpointTurnCount(summary, inferredCheckpointTurnCountByTurnId);
+    if (typeof checkpointTurnCount !== "number") {
+      continue;
+    }
+    byTurnCount.set(checkpointTurnCount, summary);
+  }
+  return byTurnCount;
+}
+
 export function isTurnDiffNavigable(
   summary: TurnDiffSummary | undefined,
+  summaryByCheckpointTurnCount: ReadonlyMap<number, TurnDiffSummary>,
   inferredCheckpointTurnCountByTurnId: Record<TurnId, number>,
 ): summary is TurnDiffSummary {
   if (!summary?.checkpointRef) {
     return false;
   }
-  return typeof resolveCheckpointTurnCount(summary, inferredCheckpointTurnCountByTurnId) === "number";
+  const checkpointTurnCount = resolveCheckpointTurnCount(summary, inferredCheckpointTurnCountByTurnId);
+  if (typeof checkpointTurnCount !== "number" || checkpointTurnCount < 1) {
+    return false;
+  }
+  if (checkpointTurnCount === 1) {
+    return true;
+  }
+
+  return Boolean(summaryByCheckpointTurnCount.get(checkpointTurnCount - 1)?.checkpointRef);
 }
