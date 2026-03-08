@@ -484,6 +484,105 @@ describe("CheckpointReactor", () => {
     ).toBe(true);
   });
 
+  it("rebases sparse provider fallback histories to the nearest available git checkpoint", async () => {
+    const harness = await createHarness();
+    const createdAt = new Date().toISOString();
+
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.session.set",
+        commandId: CommandId.makeUnsafe("cmd-session-set-sparse-provider-fallback"),
+        threadId: ThreadId.makeUnsafe("thread-1"),
+        session: {
+          threadId: ThreadId.makeUnsafe("thread-1"),
+          status: "ready",
+          providerName: "codex",
+          runtimeMode: "approval-required",
+          activeTurnId: null,
+          lastError: null,
+          updatedAt: createdAt,
+        },
+        createdAt,
+      }),
+    );
+
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.turn.diff.complete",
+        commandId: CommandId.makeUnsafe("cmd-canonical-turn-1"),
+        threadId: ThreadId.makeUnsafe("thread-1"),
+        turnId: asTurnId("turn-1"),
+        completedAt: createdAt,
+        checkpointRef: checkpointRefForThreadTurn(ThreadId.makeUnsafe("thread-1"), 1),
+        status: "ready",
+        files: [],
+        checkpointTurnCount: 1,
+        assistantMessageId: MessageId.makeUnsafe("assistant:turn-1"),
+        createdAt,
+      }),
+    );
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.turn.diff.complete",
+        commandId: CommandId.makeUnsafe("cmd-canonical-turn-2"),
+        threadId: ThreadId.makeUnsafe("thread-1"),
+        turnId: asTurnId("turn-2"),
+        completedAt: createdAt,
+        checkpointRef: checkpointRefForThreadTurn(ThreadId.makeUnsafe("thread-1"), 2),
+        status: "ready",
+        files: [],
+        checkpointTurnCount: 2,
+        assistantMessageId: MessageId.makeUnsafe("assistant:turn-2"),
+        createdAt,
+      }),
+    );
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.turn.diff.complete",
+        commandId: CommandId.makeUnsafe("cmd-provider-fallback-turn-17"),
+        threadId: ThreadId.makeUnsafe("thread-1"),
+        turnId: asTurnId("turn-sparse-fallback"),
+        completedAt: createdAt,
+        checkpointRef: CheckpointRef.makeUnsafe("provider-diff:evt-sparse-provider-fallback"),
+        status: "missing",
+        files: [],
+        unifiedDiff: "diff --git a/README.md b/README.md\n+v4\n",
+        checkpointTurnCount: 17,
+        assistantMessageId: MessageId.makeUnsafe("assistant:turn-sparse-fallback"),
+        createdAt,
+      }),
+    );
+
+    fs.writeFileSync(path.join(harness.cwd, "README.md"), "v4\n", "utf8");
+    harness.provider.emit({
+      type: "turn.completed",
+      eventId: EventId.makeUnsafe("evt-turn-completed-sparse-provider-fallback"),
+      provider: "codex",
+      createdAt: new Date().toISOString(),
+      threadId: ThreadId.makeUnsafe("thread-1"),
+      turnId: asTurnId("turn-sparse-fallback"),
+      payload: { state: "completed" },
+    });
+
+    const canonicalCheckpointRef = checkpointRefForThreadTurn(ThreadId.makeUnsafe("thread-1"), 17);
+    const thread = await waitForThread(
+      harness.engine,
+      (entry) =>
+        entry.checkpoints.some((checkpoint) => checkpoint.checkpointRef === canonicalCheckpointRef) &&
+        !entry.activities.some((activity) => activity.kind === "checkpoint.capture.failed"),
+    );
+
+    expect(
+      thread.checkpoints.find((checkpoint) => checkpoint.checkpointRef === canonicalCheckpointRef)
+        ?.checkpointTurnCount,
+    ).toBe(17);
+    expect(gitRefExists(harness.cwd, canonicalCheckpointRef)).toBe(true);
+    expect(gitShowFileAtRef(harness.cwd, canonicalCheckpointRef, "README.md")).toBe("v4\n");
+    expect(
+      thread.activities.some((activity) => activity.kind === "checkpoint.capture.failed"),
+    ).toBe(false);
+  });
+
   it("ignores auxiliary thread turn completion while primary turn is active", async () => {
     const harness = await createHarness({ seedFilesystemCheckpoints: false });
     const createdAt = new Date().toISOString();
