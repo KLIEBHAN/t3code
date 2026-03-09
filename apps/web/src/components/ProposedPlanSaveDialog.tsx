@@ -15,11 +15,14 @@ import {
 } from "./ui/dialog";
 import { Input } from "./ui/input";
 
-export function useProposedPlanWorkspaceSave(planMarkdown: string | null, workspaceRoot: string | undefined) {
+type ProposedPlanExport = ReturnType<typeof buildProposedPlanExport>;
+
+export function useProposedPlanWorkspaceSave(
+  planMarkdown: string | null,
+  workspaceRoot: string | undefined,
+) {
   const [isSaveDialogOpen, setIsSaveDialogOpen] = useState(false);
-  const [dialogPlanExport, setDialogPlanExport] = useState<ReturnType<
-    typeof buildProposedPlanExport
-  > | null>(null);
+  const [dialogPlanSnapshot, setDialogPlanSnapshot] = useState<ProposedPlanExport | null>(null);
   const [savePath, setSavePath] = useState("");
   const [isSavingToWorkspace, setIsSavingToWorkspace] = useState(false);
 
@@ -30,7 +33,8 @@ export function useProposedPlanWorkspaceSave(planMarkdown: string | null, worksp
 
   useEffect(() => {
     if (!isSaveDialogOpen) {
-      setDialogPlanExport(null);
+      setDialogPlanSnapshot(null);
+      setSavePath("");
     }
   }, [isSaveDialogOpen]);
 
@@ -48,14 +52,14 @@ export function useProposedPlanWorkspaceSave(planMarkdown: string | null, worksp
       return;
     }
 
-    setDialogPlanExport(planExport);
+    setDialogPlanSnapshot(planExport);
     setSavePath(planExport.filename);
     setIsSaveDialogOpen(true);
   }, [planExport, workspaceRoot]);
 
   const saveToWorkspace = useCallback(() => {
     const api = readNativeApi();
-    const activePlanExport = dialogPlanExport ?? planExport;
+    const activePlanExport = dialogPlanSnapshot ?? planExport;
     const relativePath = savePath.trim();
 
     if (!api || !workspaceRoot || !activePlanExport) {
@@ -94,13 +98,13 @@ export function useProposedPlanWorkspaceSave(planMarkdown: string | null, worksp
       .finally(() => {
         setIsSavingToWorkspace(false);
       });
-  }, [dialogPlanExport, planExport, savePath, workspaceRoot]);
+  }, [dialogPlanSnapshot, planExport, savePath, workspaceRoot]);
 
   return {
     isSaveDialogOpen,
     isSavingToWorkspace,
     savePath,
-    defaultFilename: dialogPlanExport?.filename ?? planExport?.filename ?? "plan.md",
+    defaultFilename: dialogPlanSnapshot?.filename ?? planExport?.filename ?? "plan.md",
     openSaveDialog,
     saveToWorkspace,
     setIsSaveDialogOpen,

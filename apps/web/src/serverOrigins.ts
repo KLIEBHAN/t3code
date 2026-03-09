@@ -1,15 +1,22 @@
+function readNonEmptyString(value: string | null | undefined): string | undefined {
+  const normalized = value?.trim();
+  return normalized && normalized.length > 0 ? normalized : undefined;
+}
+
 export function resolveServerWsUrl(explicitUrl?: string): string {
-  if (explicitUrl && explicitUrl.length > 0) {
-    return explicitUrl;
+  const normalizedExplicitUrl = readNonEmptyString(explicitUrl);
+  if (normalizedExplicitUrl) {
+    return normalizedExplicitUrl;
   }
 
-  const bridgeUrl = typeof window !== "undefined" ? window.desktopBridge?.getWsUrl() : undefined;
-  if (bridgeUrl && bridgeUrl.length > 0) {
+  const bridgeUrl =
+    typeof window !== "undefined" ? readNonEmptyString(window.desktopBridge?.getWsUrl()) : undefined;
+  if (bridgeUrl) {
     return bridgeUrl;
   }
 
-  const envUrl = import.meta.env.VITE_WS_URL as string | undefined;
-  if (envUrl && envUrl.length > 0) {
+  const envUrl = readNonEmptyString(import.meta.env.VITE_WS_URL as string | undefined);
+  if (envUrl) {
     return envUrl;
   }
 
@@ -18,8 +25,8 @@ export function resolveServerWsUrl(explicitUrl?: string): string {
   }
 
   const protocol = window.location.protocol === "https:" ? "wss" : "ws";
-  const host = window.location.host.trim();
-  const fallbackHost = window.location.hostname.trim();
+  const host = readNonEmptyString(window.location.host);
+  const fallbackHost = readNonEmptyString(window.location.hostname);
   return `${protocol}://${host || fallbackHost || "localhost"}`;
 }
 

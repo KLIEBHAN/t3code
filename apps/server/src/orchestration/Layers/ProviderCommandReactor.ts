@@ -40,6 +40,21 @@ type ProviderIntentEvent = Extract<
   }
 >;
 
+function isProviderIntentEvent(event: OrchestrationEvent): event is ProviderIntentEvent {
+  switch (event.type) {
+    case "thread.runtime-mode-set":
+    case "thread.turn-start-requested":
+    case "thread.turn-interrupt-requested":
+    case "thread.approval-response-requested":
+    case "thread.user-input-response-requested":
+    case "thread.deleted":
+    case "thread.session-stop-requested":
+      return true;
+    default:
+      return false;
+  }
+}
+
 function toNonEmptyProviderInput(value: string | undefined): string | undefined {
   const normalized = value?.trim();
   return normalized && normalized.length > 0 ? normalized : undefined;
@@ -142,7 +157,20 @@ const make = Effect.gen(function* () {
       ),
     );
 
-  const threadProviderOptions = new Map<string, ProviderStartOptions>();
+  const threadProviderOptionsByThreadId = new Map<ThreadId, ProviderStartOptions>();
+
+  const rememberThreadProviderOptions = (
+    threadId: ThreadId,
+    providerOptions: ProviderStartOptions | undefined,
+  ) => {
+    if (providerOptions !== undefined) {
+      threadProviderOptionsByThreadId.set(threadId, providerOptions);
+    }
+  };
+
+  const clearThreadProviderOptions = (threadId: ThreadId) => {
+    threadProviderOptionsByThreadId.delete(threadId);
+  };
 
   const appendProviderFailureActivity = (input: {
     readonly threadId: ThreadId;
@@ -150,8 +178,7 @@ const make = Effect.gen(function* () {
       | "provider.turn.start.failed"
       | "provider.turn.interrupt.failed"
       | "provider.approval.respond.failed"
-      | "provider.user-input.respond.failed"
-      | "provider.session.stop.failed";
+      | "provider.user-input.respond.failed";
     readonly summary: string;
     readonly detail: string;
     readonly turnId: TurnId | null;
@@ -331,9 +358,7 @@ const make = Effect.gen(function* () {
     if (!thread) {
       return;
     }
-    if (input.providerOptions !== undefined) {
-      threadProviderOptions.set(input.threadId, input.providerOptions);
-    }
+    rememberThreadProviderOptions(input.threadId, input.providerOptions);
     yield* ensureSessionForThread(input.threadId, input.createdAt, {
       ...(input.provider !== undefined ? { provider: input.provider } : {}),
       ...(input.model !== undefined ? { model: input.model } : {}),
@@ -593,7 +618,7 @@ const make = Effect.gen(function* () {
   ) {
     const thread = yield* resolveThread(event.payload.threadId);
     if (!thread) {
-      threadProviderOptions.delete(event.payload.threadId);
+      clearThreadProviderOptions(event.payload.threadId);
       return;
     }
 
@@ -602,7 +627,7 @@ const make = Effect.gen(function* () {
       yield* providerService.stopSession({ threadId: thread.id });
     }
 
-    threadProviderOptions.delete(event.payload.threadId);
+    clearThreadProviderOptions(event.payload.threadId);
 
     yield* setThreadSession({
       threadId: thread.id,
@@ -622,7 +647,7 @@ const make = Effect.gen(function* () {
   const processThreadDeleted = (
     event: Extract<ProviderIntentEvent, { type: "thread.deleted" }>,
   ) => Effect.sync(() => {
-    threadProviderOptions.delete(event.payload.threadId);
+    clearThreadProviderOptions(event.payload.threadId);
   });
 
   const processDomainEvent = (event: ProviderIntentEvent) =>
@@ -633,7 +658,7 @@ const make = Effect.gen(function* () {
           if (!thread?.session || thread.session.status === "stopped") {
             return;
           }
-          const cachedProviderOptions = threadProviderOptions.get(event.payload.threadId);
+          const cachedProviderOptions = threadProviderOptionsByThreadId.get(event.payload.threadId);
           yield* ensureSessionForThread(
             event.payload.threadId,
             event.occurredAt,
@@ -675,65 +700,13 @@ const make = Effect.gen(function* () {
       }),
     );
 
-<<<<<<< HEAD
   const worker = yield* makeDrainableWorker(processDomainEventSafely);
 
   const start: ProviderCommandReactorShape["start"] = Effect.forkScoped(
     Stream.runForEach(orchestrationEngine.streamDomainEvents, (event) => {
-      if (
-        event.type !== "thread.runtime-mode-set" &&
-        event.type !== "thread.turn-start-requested" &&
-        event.type !== "thread.turn-interrupt-requested" &&
-        event.type !== "thread.approval-response-requested" &&
-        event.type !== "thread.user-input-response-requested" &&
-        event.type !== "thread.session-stop-requested"
-      ) {
-        return Effect.void;
+      if (!isProviderIntentEvent(event)) {
+          return Effect.void;
       }
-||||||| parent of 55f75f26 (Preserve provider options and harden save flow)
-  const start: ProviderCommandReactorShape["start"] = Effect.gen(function* () {
-    const queue = yield* Queue.unbounded<ProviderIntentEvent>();
-    yield* Effect.addFinalizer(() => Queue.shutdown(queue).pipe(Effect.asVoid));
-
-    yield* Effect.forkScoped(
-      Effect.forever(Queue.take(queue).pipe(Effect.flatMap(processDomainEventSafely))),
-    );
-
-    yield* Effect.forkScoped(
-      Stream.runForEach(orchestrationEngine.streamDomainEvents, (event) => {
-        if (
-          event.type !== "thread.runtime-mode-set" &&
-          event.type !== "thread.turn-start-requested" &&
-          event.type !== "thread.turn-interrupt-requested" &&
-          event.type !== "thread.approval-response-requested" &&
-          event.type !== "thread.user-input-response-requested" &&
-          event.type !== "thread.session-stop-requested"
-        ) {
-          return Effect.void;
-        }
-=======
-  const start: ProviderCommandReactorShape["start"] = Effect.gen(function* () {
-    const queue = yield* Queue.unbounded<ProviderIntentEvent>();
-    yield* Effect.addFinalizer(() => Queue.shutdown(queue).pipe(Effect.asVoid));
-
-    yield* Effect.forkScoped(
-      Effect.forever(Queue.take(queue).pipe(Effect.flatMap(processDomainEventSafely))),
-    );
-
-    yield* Effect.forkScoped(
-      Stream.runForEach(orchestrationEngine.streamDomainEvents, (event) => {
-        if (
-          event.type !== "thread.runtime-mode-set" &&
-          event.type !== "thread.turn-start-requested" &&
-          event.type !== "thread.turn-interrupt-requested" &&
-          event.type !== "thread.approval-response-requested" &&
-          event.type !== "thread.user-input-response-requested" &&
-          event.type !== "thread.deleted" &&
-          event.type !== "thread.session-stop-requested"
-        ) {
-          return Effect.void;
-        }
->>>>>>> 55f75f26 (Preserve provider options and harden save flow)
 
       return worker.enqueue(event);
     }),

@@ -31,6 +31,10 @@ describe("resolveServerWsUrl", () => {
     expect(resolveServerWsUrl("ws://custom-host:3020")).toBe("ws://custom-host:3020");
   });
 
+  it("trims surrounding whitespace from an explicit URL", () => {
+    expect(resolveServerWsUrl("  ws://custom-host:3020  ")).toBe("ws://custom-host:3020");
+  });
+
   it("derives a secure default URL from the browser location", () => {
     expect(resolveServerWsUrl()).toBe("wss://example.com:8443");
   });
