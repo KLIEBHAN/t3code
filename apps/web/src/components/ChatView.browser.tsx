@@ -2025,6 +2025,59 @@ describe("ChatView timeline estimator parity (full app)", () => {
     }
   });
 
+  it("renders the selected file diff on first open without requiring a diff-panel scroll", async () => {
+    const mounted = await mountChatView({
+      viewport: DEFAULT_VIEWPORT,
+      snapshot: createFileChangeDiffSnapshot(),
+    });
+
+    try {
+      const filePill = await waitForElement(
+        () =>
+          Array.from(document.querySelectorAll<HTMLButtonElement>("button")).find((button) =>
+            button.textContent?.includes("ChatView.tsx"),
+          ) ?? null,
+        "Unable to find changed-file pill button.",
+      );
+
+      filePill.dispatchEvent(
+        new MouseEvent("mousedown", {
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+      filePill.click();
+
+      const diffViewport = await waitForElement(
+        () => document.querySelector<HTMLDivElement>(".diff-panel-viewport"),
+        "Unable to find diff viewport.",
+      );
+
+      await vi.waitFor(
+        () => {
+          const rect = diffViewport.getBoundingClientRect();
+          expect(rect.width).toBeGreaterThan(1);
+          expect(rect.height).toBeGreaterThan(1);
+          expect(
+            document.querySelector('[data-diff-file-path="apps/web/src/components/ChatView.tsx"]'),
+          ).toBeTruthy();
+        },
+        { timeout: 8_000, interval: 16 },
+      );
+
+      expect(diffViewport.textContent).not.toContain("Preparing diff viewer...");
+
+      diffViewport.dispatchEvent(new Event("scroll"));
+      await waitForLayout();
+
+      expect(
+        document.querySelector('[data-diff-file-path="apps/web/src/components/ChatView.tsx"]'),
+      ).toBeTruthy();
+    } finally {
+      await mounted.cleanup();
+    }
+  });
+
   it("shows turn-level changed files only once for the final assistant message in a turn", async () => {
     const mounted = await mountChatView({
       viewport: DEFAULT_VIEWPORT,
