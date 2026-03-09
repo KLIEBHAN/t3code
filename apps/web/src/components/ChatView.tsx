@@ -3730,6 +3730,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
       />
       {/* Main content area with optional plan sidebar */}
       <div className="flex min-h-0 min-w-0 flex-1">
+<<<<<<< HEAD
           {/* Chat column */}
           <div className="flex min-h-0 min-w-0 flex-1 flex-col">
             {/* Messages Wrapper */}
@@ -3792,7 +3793,6 @@ export default function ChatView({ threadId }: ChatViewProps) {
                 </div>
               )}
             </div>
-
           {/* Input bar */}
           <div className={cn("px-3 pt-1.5 sm:px-5 sm:pt-2", isGitRepo ? "pb-1" : "pb-3 sm:pb-4")}>
             <form
