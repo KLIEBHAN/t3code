@@ -16,16 +16,17 @@ function readTrimmedEnvValue(env, key) {
   return normalized.length > 0 ? normalized : undefined;
 }
 
-function isTruthyEnvFlag(value) {
-  if (typeof value !== "string") {
-    return false;
-  }
-
-  const normalized = value.trim().toLowerCase();
+function isEnabledFlagValue(value) {
+  const normalized = value.toLowerCase();
   return normalized === "1" || normalized === "true" || normalized === "yes";
 }
 
-function splitDesktopLaunchArgs(argv) {
+function hasEnabledEnvFlag(env, key) {
+  const value = readTrimmedEnvValue(env, key);
+  return value ? isEnabledFlagValue(value) : false;
+}
+
+function splitDesktopStartArgs(argv) {
   const forwardedElectronArgs = [];
   let freshRequestedFromArgs = false;
 
@@ -51,14 +52,12 @@ export function resolveDesktopStateDir(env = process.env) {
 export function resolveDesktopLaunchOptions(input = {}) {
   const argv = input.argv ?? process.argv.slice(2);
   const env = input.env ?? process.env;
-  const { forwardedElectronArgs, freshRequestedFromArgs } = splitDesktopLaunchArgs(argv);
+  const { forwardedElectronArgs, freshRequestedFromArgs } = splitDesktopStartArgs(argv);
 
   return {
     stateDir: resolveDesktopStateDir(env),
     // Fresh starts must stay explicit so normal launches keep their persisted desktop profile.
-    freshRequested:
-      isTruthyEnvFlag(readTrimmedEnvValue(env, DESKTOP_FRESH_START_ENV_VAR)) ||
-      freshRequestedFromArgs,
+    freshRequested: hasEnabledEnvFlag(env, DESKTOP_FRESH_START_ENV_VAR) || freshRequestedFromArgs,
     forwardedElectronArgs,
   };
 }

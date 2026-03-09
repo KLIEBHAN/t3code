@@ -24,6 +24,11 @@ function exitCurrentProcessWithChildResult(code, signal) {
   process.exit(code ?? 0);
 }
 
+function exitCurrentProcessOnLaunchError(error) {
+  console.error(`[desktop] Failed to launch Electron: ${error instanceof Error ? error.message : String(error)}`);
+  process.exit(1);
+}
+
 const { forwardedElectronArgs, freshRequested, stateDir } = resolveDesktopLaunchOptions();
 const desktopChildEnv = buildDesktopChildEnv(stateDir);
 
@@ -32,10 +37,15 @@ if (freshRequested) {
   clearDesktopStateDir(stateDir);
 }
 
-const desktopProcess = spawn(resolveElectronPath(), ["dist-electron/main.js", ...forwardedElectronArgs], {
-  stdio: "inherit",
-  cwd: desktopDir,
-  env: desktopChildEnv,
-});
+const desktopProcess = spawn(
+  resolveElectronPath(),
+  ["dist-electron/main.js", ...forwardedElectronArgs],
+  {
+    stdio: "inherit",
+    cwd: desktopDir,
+    env: desktopChildEnv,
+  },
+);
 
+desktopProcess.on("error", exitCurrentProcessOnLaunchError);
 desktopProcess.on("exit", exitCurrentProcessWithChildResult);
