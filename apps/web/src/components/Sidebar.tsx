@@ -90,6 +90,7 @@ import {
   shouldClearThreadSelectionOnMouseDown,
 } from "./Sidebar.logic";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
+import { groupThreadsByProject, resolveThreadActivityAt } from "../sidebarThreads";
 
 const EMPTY_KEYBINDINGS: ResolvedKeybindingsConfig = [];
 const THREAD_PREVIEW_LIMIT = 6;
@@ -311,6 +312,7 @@ export default function Sidebar() {
     () => new Map(projects.map((project) => [project.id, project.cwd] as const)),
     [projects],
   );
+  const threadsByProjectId = useMemo(() => groupThreadsByProject(threads), [threads]);
   const threadGitTargets = useMemo(
     () =>
       threads.map((thread) => ({
@@ -1293,14 +1295,7 @@ export default function Sidebar() {
                 strategy={verticalListSortingStrategy}
               >
                 {projects.map((project) => {
-                  const projectThreads = threads
-                    .filter((thread) => thread.projectId === project.id)
-                    .toSorted((a, b) => {
-                      const byDate =
-                        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-                      if (byDate !== 0) return byDate;
-                      return b.id.localeCompare(a.id);
-                    });
+                  const projectThreads = threadsByProjectId.get(project.id) ?? [];
                   const isThreadListExpanded = expandedThreadListsByProject.has(project.id);
                   const hasHiddenThreads = projectThreads.length > THREAD_PREVIEW_LIMIT;
                   const visibleThreads =
@@ -1551,7 +1546,7 @@ export default function Sidebar() {
                                               : "text-muted-foreground/40"
                                           }`}
                                         >
-                                          {formatRelativeTime(thread.createdAt)}
+                                          {formatRelativeTime(resolveThreadActivityAt(thread))}
                                         </span>
                                       </div>
                                     </SidebarMenuSubButton>
