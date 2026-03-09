@@ -3730,69 +3730,68 @@ export default function ChatView({ threadId }: ChatViewProps) {
       />
       {/* Main content area with optional plan sidebar */}
       <div className="flex min-h-0 min-w-0 flex-1">
-<<<<<<< HEAD
-          {/* Chat column */}
-          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-            {/* Messages Wrapper */}
-            <div className="relative flex min-h-0 flex-1 flex-col">
-              {/* Messages */}
-              <div
-                ref={setMessagesScrollContainerRef}
-                className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-y-contain px-3 py-3 sm:px-5 sm:py-4"
-                style={{ overflowAnchor: "none" }}
-                onScroll={onMessagesScroll}
-                onClickCapture={onMessagesClickCapture}
-                onWheel={onMessagesWheel}
-                onPointerDown={onMessagesPointerDown}
-                onPointerUp={onMessagesPointerUp}
-                onPointerCancel={onMessagesPointerCancel}
-                onTouchStart={onMessagesTouchStart}
-                onTouchMove={onMessagesTouchMove}
-                onTouchEnd={onMessagesTouchEnd}
-                onTouchCancel={onMessagesTouchEnd}
-              >
-                <MessagesTimeline
-                  key={activeThread.id}
-                  hasMessages={timelineEntries.length > 0}
-                  isWorking={isWorking}
-                  activeTurnInProgress={isWorking || !latestTurnSettled}
-                  activeTurnStartedAt={activeWorkStartedAt}
-                  scrollContainer={messagesScrollElement}
-                  timelineEntries={timelineEntries}
-                  completionDividerBeforeEntryId={completionDividerBeforeEntryId}
-                  completionSummary={completionSummary}
-                  resolveAssistantTurnDiffSummary={resolveAssistantTurnDiffSummary}
-                  turnDiffSummaryByTurnId={turnDiffSummaryByTurnId}
-                  nowIso={nowIso}
-                  expandedWorkGroups={expandedWorkGroups}
-                  onToggleWorkGroup={onToggleWorkGroup}
-                  canOpenTurnDiff={canOpenTurnDiff}
-                  onOpenTurnDiff={onOpenTurnDiff}
-                  revertTurnCountByUserMessageId={revertTurnCountByUserMessageId}
-                  onRevertUserMessage={onRevertUserMessage}
-                  isRevertingCheckpoint={isRevertingCheckpoint}
-                  onImageExpand={onExpandTimelineImage}
-                  markdownCwd={gitCwd ?? undefined}
-                  resolvedTheme={resolvedTheme}
-                  timestampFormat={timestampFormat}
-                  workspaceRoot={activeProject?.cwd ?? undefined}
-                />
-              </div>
-
-              {/* scroll to bottom pill — shown when user has scrolled away from the bottom */}
-              {showScrollToBottom && (
-                <div className="pointer-events-none absolute bottom-1 left-1/2 z-30 flex -translate-x-1/2 justify-center py-1.5">
-                  <button
-                    type="button"
-                    onClick={() => scrollMessagesToBottom("smooth")}
-                    className="pointer-events-auto flex items-center gap-1.5 rounded-full border border-border/60 bg-card px-3 py-1 text-muted-foreground text-xs shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground"
-                  >
-                    <ChevronDownIcon className="size-3.5" />
-                    Scroll to bottom
-                  </button>
-                </div>
-              )}
+        {/* Chat column */}
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          {/* Messages Wrapper */}
+          <div className="relative flex min-h-0 flex-1 flex-col">
+            {/* Messages */}
+            <div
+              ref={setMessagesScrollContainerRef}
+              className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-y-contain px-3 py-3 sm:px-5 sm:py-4"
+              style={{ overflowAnchor: "none" }}
+              onScroll={onMessagesScroll}
+              onClickCapture={onMessagesClickCapture}
+              onWheel={onMessagesWheel}
+              onPointerDown={onMessagesPointerDown}
+              onPointerUp={onMessagesPointerUp}
+              onPointerCancel={onMessagesPointerCancel}
+              onTouchStart={onMessagesTouchStart}
+              onTouchMove={onMessagesTouchMove}
+              onTouchEnd={onMessagesTouchEnd}
+              onTouchCancel={onMessagesTouchEnd}
+            >
+              <MessagesTimeline
+                key={activeThread.id}
+                hasMessages={timelineEntries.length > 0}
+                isWorking={isWorking}
+                activeTurnInProgress={isWorking || !latestTurnSettled}
+                activeTurnStartedAt={activeWorkStartedAt}
+                scrollContainer={messagesScrollElement}
+                timelineEntries={timelineEntries}
+                completionDividerBeforeEntryId={completionDividerBeforeEntryId}
+                completionSummary={completionSummary}
+                resolveAssistantTurnDiffSummary={resolveAssistantTurnDiffSummary}
+                turnDiffSummaryByTurnId={turnDiffSummaryByTurnId}
+                nowIso={nowIso}
+                expandedWorkGroups={expandedWorkGroups}
+                onToggleWorkGroup={onToggleWorkGroup}
+                canOpenTurnDiff={canOpenTurnDiff}
+                onOpenTurnDiff={onOpenTurnDiff}
+                revertTurnCountByUserMessageId={revertTurnCountByUserMessageId}
+                onRevertUserMessage={onRevertUserMessage}
+                isRevertingCheckpoint={isRevertingCheckpoint}
+                onImageExpand={onExpandTimelineImage}
+                markdownCwd={gitCwd ?? undefined}
+                resolvedTheme={resolvedTheme}
+                timestampFormat={timestampFormat}
+                workspaceRoot={activeProject?.cwd ?? undefined}
+              />
             </div>
+
+            {/* scroll to bottom pill — shown when user has scrolled away from the bottom */}
+            {showScrollToBottom && (
+              <div className="pointer-events-none absolute bottom-1 left-1/2 z-30 flex -translate-x-1/2 justify-center py-1.5">
+                <button
+                  type="button"
+                  onClick={() => scrollMessagesToBottom("smooth")}
+                  className="pointer-events-auto flex items-center gap-1.5 rounded-full border border-border/60 bg-card px-3 py-1 text-muted-foreground text-xs shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground"
+                >
+                  <ChevronDownIcon className="size-3.5" />
+                  Scroll to bottom
+                </button>
+              </div>
+            )}
+          </div>
           {/* Input bar */}
           <div className={cn("px-3 pt-1.5 sm:px-5 sm:pt-2", isGitRepo ? "pb-1" : "pb-3 sm:pb-4")}>
             <form
