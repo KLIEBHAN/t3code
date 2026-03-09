@@ -11,6 +11,7 @@ import {
 import { normalizeModelSlug } from "@t3tools/shared/model";
 import { DEFAULT_INTERACTION_MODE, DEFAULT_RUNTIME_MODE, type ChatImageAttachment } from "./types";
 import { Debouncer } from "@tanstack/react-pacer";
+import { getSafeLocalStorage } from "./lib/browserStorage";
 import { create } from "zustand";
 import { createJSONStorage, persist, type StateStorage } from "zustand/middleware";
 
@@ -46,10 +47,7 @@ export function createDebouncedStorage(baseStorage: StateStorage): DebouncedStor
   };
 }
 
-const composerDebouncedStorage: DebouncedStorage =
-  typeof localStorage !== "undefined"
-    ? createDebouncedStorage(localStorage)
-    : { getItem: () => null, setItem: () => {}, removeItem: () => {}, flush: () => {} };
+const composerDebouncedStorage: DebouncedStorage = createDebouncedStorage(getSafeLocalStorage());
 
 // Flush pending composer draft writes before page unload to prevent data loss.
 if (typeof window !== "undefined") {
@@ -477,7 +475,7 @@ function readPersistedAttachmentIdsFromStorage(threadId: ThreadId): string[] {
     return [];
   }
   try {
-    const raw = localStorage.getItem(COMPOSER_DRAFT_STORAGE_KEY);
+    const raw = getSafeLocalStorage().getItem(COMPOSER_DRAFT_STORAGE_KEY);
     const persisted = parsePersistedDraftStateRaw(raw);
     return (persisted.draftsByThreadId[threadId]?.attachments ?? []).map(
       (attachment) => attachment.id,
@@ -1208,6 +1206,7 @@ export const useComposerDraftStore = create<ComposerDraftStoreState>()(
     {
       name: COMPOSER_DRAFT_STORAGE_KEY,
       version: 1,
+      storage: createJSONStorage(() => composerDebouncedStorage),
       storage: createJSONStorage(() => composerDebouncedStorage),
       partialize: (state) => {
         const persistedDraftsByThreadId: PersistedComposerDraftStoreState["draftsByThreadId"] = {};
