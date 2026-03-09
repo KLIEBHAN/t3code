@@ -829,6 +829,168 @@ async function waitForInteractionModeButton(expectedLabel: "Chat" | "Plan"): Pro
   );
 }
 
+function querySidebarProjectButton(projectName: string): HTMLButtonElement | null {
+  return (
+    Array.from(
+      document.querySelectorAll<HTMLButtonElement>('[data-sidebar-project-button="true"]'),
+    ).find((button) => {
+      const label = button.textContent?.replace(/\s+/g, " ").trim() ?? "";
+      return label.includes(projectName);
+    }) ?? null
+  );
+}
+
+async function waitForSidebarProjectButton(projectName: string): Promise<HTMLButtonElement> {
+  return waitForElement(
+    () => querySidebarProjectButton(projectName),
+    `Unable to find project button for "${projectName}".`,
+  );
+}
+
+function readSidebarProjectOrder(): string[] {
+  return Array.from(
+    document.querySelectorAll<HTMLButtonElement>('[data-sidebar-project-button="true"]'),
+  ).map((button) => button.textContent?.replace(/\s+/g, " ").trim() ?? "");
+}
+
+async function dragSidebarProjectToTarget(options: {
+  source: HTMLButtonElement;
+  target: HTMLButtonElement;
+}): Promise<void> {
+  const sourceRect = options.source.getBoundingClientRect();
+  const targetRect = options.target.getBoundingClientRect();
+  const startX = sourceRect.left + sourceRect.width / 2;
+  const startY = sourceRect.top + sourceRect.height / 2;
+  const targetX = targetRect.left + targetRect.width / 2;
+  const targetY = targetRect.top + targetRect.height / 2;
+  const pointerId = 1;
+  const pointerInit = {
+    bubbles: true,
+    cancelable: true,
+    composed: true,
+    pointerId,
+    pointerType: "mouse",
+    isPrimary: true,
+    button: 0,
+    buttons: 1,
+  } satisfies PointerEventInit;
+
+  options.source.dispatchEvent(
+    new PointerEvent("pointerdown", {
+      ...pointerInit,
+      clientX: startX,
+      clientY: startY,
+    }),
+  );
+  document.dispatchEvent(
+    new PointerEvent("pointermove", {
+      ...pointerInit,
+      clientX: startX,
+      clientY: startY + 12,
+    }),
+  );
+  document.dispatchEvent(
+    new PointerEvent("pointermove", {
+      ...pointerInit,
+      clientX: targetX,
+      clientY: targetY,
+    }),
+  );
+  await waitForLayout();
+  document.dispatchEvent(
+    new PointerEvent("pointerup", {
+      ...pointerInit,
+      clientX: targetX,
+      clientY: targetY,
+      buttons: 0,
+    }),
+  );
+  await waitForLayout();
+}
+
+function readSidebarProjectExpansion(): Record<string, boolean> {
+  return Object.fromEntries(
+    useStore.getState().projects.map((project) => [project.name, project.expanded] as const),
+  );
+}
+  );
+}
+
+async function waitForSidebarProjectButton(projectName: string): Promise<HTMLButtonElement> {
+  return waitForElement(
+    () => querySidebarProjectButton(projectName),
+    `Unable to find project button for "${projectName}".`,
+  );
+}
+
+function readSidebarProjectOrder(): string[] {
+  return Array.from(
+    document.querySelectorAll<HTMLButtonElement>('[data-sidebar-project-button="true"]'),
+  ).map((button) => button.textContent?.replace(/\s+/g, " ").trim() ?? "");
+}
+
+async function dragSidebarProjectToTarget(options: {
+  source: HTMLButtonElement;
+  target: HTMLButtonElement;
+}): Promise<void> {
+  const sourceRect = options.source.getBoundingClientRect();
+  const targetRect = options.target.getBoundingClientRect();
+  const startX = sourceRect.left + sourceRect.width / 2;
+  const startY = sourceRect.top + sourceRect.height / 2;
+  const targetX = targetRect.left + targetRect.width / 2;
+  const targetY = targetRect.top + targetRect.height / 2;
+  const pointerId = 1;
+  const pointerInit = {
+    bubbles: true,
+    cancelable: true,
+    composed: true,
+    pointerId,
+    pointerType: "mouse",
+    isPrimary: true,
+    button: 0,
+    buttons: 1,
+  } satisfies PointerEventInit;
+
+  options.source.dispatchEvent(
+    new PointerEvent("pointerdown", {
+      ...pointerInit,
+      clientX: startX,
+      clientY: startY,
+    }),
+  );
+  document.dispatchEvent(
+    new PointerEvent("pointermove", {
+      ...pointerInit,
+      clientX: startX,
+      clientY: startY + 12,
+    }),
+  );
+  document.dispatchEvent(
+    new PointerEvent("pointermove", {
+      ...pointerInit,
+      clientX: targetX,
+      clientY: targetY,
+    }),
+  );
+  await waitForLayout();
+  document.dispatchEvent(
+    new PointerEvent("pointerup", {
+      ...pointerInit,
+      clientX: targetX,
+      clientY: targetY,
+      buttons: 0,
+    }),
+  );
+  await waitForLayout();
+}
+
+function readSidebarProjectExpansion(): Record<string, boolean> {
+  return Object.fromEntries(
+    useStore.getState().projects.map((project) => [project.name, project.expanded] as const),
+  );
+}
+
+>>>>>>> 9423f227 (Extract chat timeline and sidebar project list)
 async function waitForImagesToLoad(scope: ParentNode): Promise<void> {
   const images = Array.from(scope.querySelectorAll("img"));
   if (images.length === 0) {
