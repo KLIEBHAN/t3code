@@ -426,6 +426,33 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
   }, []);
 
   useEffect(() => {
+    if (diffSearch.diff !== "1") {
+      return;
+    }
+
+    let firstFrameId: number | null = window.requestAnimationFrame(() => {
+      firstFrameId = null;
+      secondFrameId = window.requestAnimationFrame(() => {
+        secondFrameId = null;
+        setPatchViewportMetrics((current) => ({
+          ...current,
+          revision: current.revision + 1,
+        }));
+      });
+    });
+    let secondFrameId: number | null = null;
+
+    return () => {
+      if (firstFrameId !== null) {
+        window.cancelAnimationFrame(firstFrameId);
+      }
+      if (secondFrameId !== null) {
+        window.cancelAnimationFrame(secondFrameId);
+      }
+    };
+  }, [diffSearch.diff, selectedFilePath, selectedTurnId]);
+
+  useEffect(() => {
     if (!selectedFilePath || !patchViewportRef.current) {
       return;
     }
