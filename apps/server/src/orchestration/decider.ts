@@ -40,6 +40,29 @@ type SystemGeneratedTurnCommand = Extract<
   }
 >;
 
+function buildTurnStartProviderFields(
+  command: Extract<OrchestrationCommand, { type: "thread.turn.start" }> | SystemGeneratedTurnCommand,
+) {
+  return {
+    ...(command.provider !== undefined ? { provider: command.provider } : {}),
+    ...(command.model !== undefined ? { model: command.model } : {}),
+    ...(command.modelOptions !== undefined ? { modelOptions: command.modelOptions } : {}),
+    ...("providerOptions" in command && command.providerOptions !== undefined
+      ? { providerOptions: command.providerOptions }
+      : {}),
+  };
+}
+
+function buildSystemGeneratedPrompt(
+  basePrompt: string,
+  instructions: string | undefined,
+  instructionsLabel: string,
+): string {
+  return instructions && instructions.length > 0
+    ? `${basePrompt}\n\n${instructionsLabel}:\n${instructions}`
+    : basePrompt;
+}
+
 function withEventBase(
   input: Pick<OrchestrationCommand, "commandId"> & {
     readonly aggregateKind: OrchestrationEvent["aggregateKind"];
@@ -103,12 +126,7 @@ function buildTurnStartEvents(input: {
     payload: {
       threadId: input.command.threadId,
       messageId: input.messageId,
-      ...(input.command.provider !== undefined ? { provider: input.command.provider } : {}),
-      ...(input.command.model !== undefined ? { model: input.command.model } : {}),
-      ...(input.command.modelOptions !== undefined ? { modelOptions: input.command.modelOptions } : {}),
-      ...("providerOptions" in input.command && input.command.providerOptions !== undefined
-        ? { providerOptions: input.command.providerOptions }
-        : {}),
+      ...buildTurnStartProviderFields(input.command),
       assistantDeliveryMode:
         input.command.assistantDeliveryMode ?? DEFAULT_ASSISTANT_DELIVERY_MODE,
       runtimeMode: thread?.runtimeMode ?? input.command.runtimeMode,

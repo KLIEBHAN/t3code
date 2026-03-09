@@ -46,6 +46,10 @@ class MockWebSocket {
     this.emit("message", { data });
   }
 
+  fail() {
+    this.emit("error");
+  }
+
   private emit(type: WsEventType, event?: { data?: unknown }) {
     const listeners = this.listeners.get(type);
     if (!listeners) return;
@@ -81,6 +85,7 @@ beforeEach(() => {
 
 afterEach(() => {
   globalThis.WebSocket = originalWebSocket;
+  vi.useRealTimers();
   vi.restoreAllMocks();
 });
 
@@ -252,5 +257,65 @@ describe("WsTransport", () => {
     transport.dispose();
 
     await expect(requestPromise).rejects.toThrow("Transport disposed");
+  });
+
+  it("reconnects after a tracked socket closes and flushes queued requests once the replacement opens", async () => {
+    vi.useFakeTimers();
+    const transport = new WsTransport("ws://localhost:3020");
+    const firstSocket = getSocket();
+    firstSocket.open();
+    firstSocket.close();
+
+    await vi.advanceTimersByTimeAsync(500);
+
+    const replacementSocket = getSocket();
+    expect(replacementSocket).not.toBe(firstSocket);
+
+    const requestPromise = transport.request("projects.list");
+    expect(replacementSocket.sent).toEqual([]);
+
+    replacementSocket.open();
+    expect(replacementSocket.sent).toHaveLength(1);
+
+    const requestEnvelope = JSON.parse(replacementSocket.sent[0] ?? "") as { id: string };
+    replacementSocket.serverMessage(
+      JSON.stringify({
+        id: requestEnvelope.id,
+        result: { projects: [] },
+      }),
+    );
+
+    await expect(requestPromise).resolves.toEqual({ projects: [] });
+    transport.dispose();
+  });
+
+  it("ignores late close events from stale sockets after a newer socket is already open", async () => {
+    vi.useFakeTimers();
+    const transport = new WsTransport("ws://localhost:3020");
+    const firstSocket = getSocket();
+
+    firstSocket.close();
+    await vi.advanceTimersByTimeAsync(500);
+
+    const secondSocket = getSocket();
+    secondSocket.open();
+    firstSocket.fail();
+    firstSocket.close();
+
+    await vi.advanceTimersByTimeAsync(8_000);
+
+    expect(sockets).toHaveLength(2);
+    transport.dispose();
+  });
+
+  it("does not flush queued requests if a socket opens after dispose", async () => {
+    const transport = new WsTransport("ws://localhost:3020");
+    const socket = getSocket();
+
+    void transport.request("projects.list").catch(() => undefined);
+    transport.dispose();
+    socket.open();
+
+    expect(socket.sent).toEqual([]);
   });
 });

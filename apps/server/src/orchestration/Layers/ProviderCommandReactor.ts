@@ -137,6 +137,11 @@ const make = Effect.gen(function* () {
 
   const threadProviderOptions = new Map<string, ProviderStartOptions>();
 
+  const buildProviderOptionsOverride = (
+    providerOptions: ProviderStartOptions | undefined,
+  ): { readonly providerOptions: ProviderStartOptions } | undefined =>
+    providerOptions !== undefined ? { providerOptions } : undefined;
+
   const appendProviderFailureActivity = (input: {
     readonly threadId: ThreadId;
     readonly kind:
@@ -231,9 +236,7 @@ const make = Effect.gen(function* () {
         ...(effectiveCwd ? { cwd: effectiveCwd } : {}),
         ...(desiredModel ? { model: desiredModel } : {}),
         ...(options?.modelOptions !== undefined ? { modelOptions: options.modelOptions } : {}),
-        ...(options?.providerOptions !== undefined
-          ? { providerOptions: options.providerOptions }
-          : {}),
+        ...buildProviderOptionsOverride(options?.providerOptions),
         ...(input?.resumeCursor !== undefined ? { resumeCursor: input.resumeCursor } : {}),
         runtimeMode: desiredRuntimeMode,
       });
@@ -333,7 +336,7 @@ const make = Effect.gen(function* () {
       ...(input.provider !== undefined ? { provider: input.provider } : {}),
       ...(input.model !== undefined ? { model: input.model } : {}),
       ...(input.modelOptions !== undefined ? { modelOptions: input.modelOptions } : {}),
-      ...(input.providerOptions !== undefined ? { providerOptions: input.providerOptions } : {}),
+      ...buildProviderOptionsOverride(input.providerOptions),
     });
     const normalizedInput = toNonEmptyProviderInput(input.messageText);
     const normalizedAttachments = input.attachments ?? [];
@@ -467,12 +470,8 @@ const make = Effect.gen(function* () {
       ...(message.attachments !== undefined ? { attachments: message.attachments } : {}),
       ...(event.payload.provider !== undefined ? { provider: event.payload.provider } : {}),
       ...(event.payload.model !== undefined ? { model: event.payload.model } : {}),
-      ...(event.payload.modelOptions !== undefined
-        ? { modelOptions: event.payload.modelOptions }
-        : {}),
-      ...(event.payload.providerOptions !== undefined
-        ? { providerOptions: event.payload.providerOptions }
-        : {}),
+      ...(event.payload.modelOptions !== undefined ? { modelOptions: event.payload.modelOptions } : {}),
+      ...buildProviderOptionsOverride(event.payload.providerOptions),
       interactionMode: event.payload.interactionMode,
       createdAt: event.payload.createdAt,
     });
@@ -627,9 +626,7 @@ const make = Effect.gen(function* () {
           yield* ensureSessionForThread(
             event.payload.threadId,
             event.occurredAt,
-            cachedProviderOptions !== undefined
-              ? { providerOptions: cachedProviderOptions }
-              : undefined,
+            buildProviderOptionsOverride(cachedProviderOptions),
           );
           return;
         }

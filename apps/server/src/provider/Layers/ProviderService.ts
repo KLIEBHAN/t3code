@@ -110,6 +110,12 @@ function readPersistedProviderOptions(
   return raw as Record<string, unknown>;
 }
 
+function buildProviderOptionsExtra(providerOptions: unknown): {
+  readonly providerOptions: unknown;
+} | undefined {
+  return providerOptions !== undefined ? { providerOptions } : undefined;
+}
+
 function readPersistedCwd(
   runtimePayload: ProviderRuntimeBinding["runtimePayload"],
 ): string | undefined {
@@ -291,9 +297,11 @@ const makeProviderService = (options?: ProviderServiceLiveOptions) =>
           );
         }
 
-        yield* upsertSessionBinding(session, threadId, {
-          providerOptions: input.providerOptions,
-        });
+        yield* upsertSessionBinding(
+          session,
+          threadId,
+          buildProviderOptionsExtra(input.providerOptions),
+        );
         yield* analytics.record("provider.session.started", {
           provider: session.provider,
           runtimeMode: input.runtimeMode,
