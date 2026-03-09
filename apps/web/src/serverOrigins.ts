@@ -18,7 +18,9 @@ export function resolveServerWsUrl(explicitUrl?: string): string {
   }
 
   const protocol = window.location.protocol === "https:" ? "wss" : "ws";
-  return `${protocol}://${window.location.hostname}:${window.location.port}`;
+  const host = window.location.host.trim();
+  const fallbackHost = window.location.hostname.trim();
+  return `${protocol}://${host || fallbackHost || "localhost"}`;
 }
 
 export function resolveServerHttpOrigin(explicitUrl?: string): string {

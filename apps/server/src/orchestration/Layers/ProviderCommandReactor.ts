@@ -35,6 +35,7 @@ type ProviderIntentEvent = Extract<
       | "thread.turn-interrupt-requested"
       | "thread.approval-response-requested"
       | "thread.user-input-response-requested"
+      | "thread.deleted"
       | "thread.session-stop-requested";
   }
 >;
@@ -592,6 +593,7 @@ const make = Effect.gen(function* () {
   ) {
     const thread = yield* resolveThread(event.payload.threadId);
     if (!thread) {
+      threadProviderOptions.delete(event.payload.threadId);
       return;
     }
 
@@ -599,6 +601,8 @@ const make = Effect.gen(function* () {
     if (thread.session && thread.session.status !== "stopped") {
       yield* providerService.stopSession({ threadId: thread.id });
     }
+
+    threadProviderOptions.delete(event.payload.threadId);
 
     yield* setThreadSession({
       threadId: thread.id,
@@ -613,6 +617,12 @@ const make = Effect.gen(function* () {
       },
       createdAt: now,
     });
+  });
+
+  const processThreadDeleted = (
+    event: Extract<ProviderIntentEvent, { type: "thread.deleted" }>,
+  ) => Effect.sync(() => {
+    threadProviderOptions.delete(event.payload.threadId);
   });
 
   const processDomainEvent = (event: ProviderIntentEvent) =>
@@ -643,6 +653,9 @@ const make = Effect.gen(function* () {
         case "thread.user-input-response-requested":
           yield* processUserInputResponseRequested(event);
           return;
+        case "thread.deleted":
+          yield* processThreadDeleted(event);
+          return;
         case "thread.session-stop-requested":
           yield* processSessionStopRequested(event);
           return;
@@ -662,6 +675,7 @@ const make = Effect.gen(function* () {
       }),
     );
 
+<<<<<<< HEAD
   const worker = yield* makeDrainableWorker(processDomainEventSafely);
 
   const start: ProviderCommandReactorShape["start"] = Effect.forkScoped(
@@ -676,6 +690,50 @@ const make = Effect.gen(function* () {
       ) {
         return Effect.void;
       }
+||||||| parent of 55f75f26 (Preserve provider options and harden save flow)
+  const start: ProviderCommandReactorShape["start"] = Effect.gen(function* () {
+    const queue = yield* Queue.unbounded<ProviderIntentEvent>();
+    yield* Effect.addFinalizer(() => Queue.shutdown(queue).pipe(Effect.asVoid));
+
+    yield* Effect.forkScoped(
+      Effect.forever(Queue.take(queue).pipe(Effect.flatMap(processDomainEventSafely))),
+    );
+
+    yield* Effect.forkScoped(
+      Stream.runForEach(orchestrationEngine.streamDomainEvents, (event) => {
+        if (
+          event.type !== "thread.runtime-mode-set" &&
+          event.type !== "thread.turn-start-requested" &&
+          event.type !== "thread.turn-interrupt-requested" &&
+          event.type !== "thread.approval-response-requested" &&
+          event.type !== "thread.user-input-response-requested" &&
+          event.type !== "thread.session-stop-requested"
+        ) {
+          return Effect.void;
+        }
+=======
+  const start: ProviderCommandReactorShape["start"] = Effect.gen(function* () {
+    const queue = yield* Queue.unbounded<ProviderIntentEvent>();
+    yield* Effect.addFinalizer(() => Queue.shutdown(queue).pipe(Effect.asVoid));
+
+    yield* Effect.forkScoped(
+      Effect.forever(Queue.take(queue).pipe(Effect.flatMap(processDomainEventSafely))),
+    );
+
+    yield* Effect.forkScoped(
+      Stream.runForEach(orchestrationEngine.streamDomainEvents, (event) => {
+        if (
+          event.type !== "thread.runtime-mode-set" &&
+          event.type !== "thread.turn-start-requested" &&
+          event.type !== "thread.turn-interrupt-requested" &&
+          event.type !== "thread.approval-response-requested" &&
+          event.type !== "thread.user-input-response-requested" &&
+          event.type !== "thread.deleted" &&
+          event.type !== "thread.session-stop-requested"
+        ) {
+          return Effect.void;
+        }
+>>>>>>> 55f75f26 (Preserve provider options and harden save flow)
 
       return worker.enqueue(event);
     }),

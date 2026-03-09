@@ -1,4 +1,4 @@
-import { useCallback, useId, useMemo, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useState } from "react";
 
 import { buildProposedPlanExport } from "../proposedPlan";
 import { readNativeApi } from "../nativeApi";
@@ -17,6 +17,9 @@ import { Input } from "./ui/input";
 
 export function useProposedPlanWorkspaceSave(planMarkdown: string | null, workspaceRoot: string | undefined) {
   const [isSaveDialogOpen, setIsSaveDialogOpen] = useState(false);
+  const [dialogPlanExport, setDialogPlanExport] = useState<ReturnType<
+    typeof buildProposedPlanExport
+  > | null>(null);
   const [savePath, setSavePath] = useState("");
   const [isSavingToWorkspace, setIsSavingToWorkspace] = useState(false);
 
@@ -24,6 +27,12 @@ export function useProposedPlanWorkspaceSave(planMarkdown: string | null, worksp
     () => (planMarkdown ? buildProposedPlanExport(planMarkdown) : null),
     [planMarkdown],
   );
+
+  useEffect(() => {
+    if (!isSaveDialogOpen) {
+      setDialogPlanExport(null);
+    }
+  }, [isSaveDialogOpen]);
 
   const openSaveDialog = useCallback(() => {
     if (!planExport) {
@@ -39,15 +48,17 @@ export function useProposedPlanWorkspaceSave(planMarkdown: string | null, worksp
       return;
     }
 
-    setSavePath((existing) => (existing.length > 0 ? existing : planExport.filename));
+    setDialogPlanExport(planExport);
+    setSavePath(planExport.filename);
     setIsSaveDialogOpen(true);
   }, [planExport, workspaceRoot]);
 
   const saveToWorkspace = useCallback(() => {
     const api = readNativeApi();
+    const activePlanExport = dialogPlanExport ?? planExport;
     const relativePath = savePath.trim();
 
-    if (!api || !workspaceRoot || !planExport) {
+    if (!api || !workspaceRoot || !activePlanExport) {
       return;
     }
     if (!relativePath) {
@@ -63,7 +74,7 @@ export function useProposedPlanWorkspaceSave(planMarkdown: string | null, worksp
       .writeFile({
         cwd: workspaceRoot,
         relativePath,
-        contents: planExport.contents,
+        contents: activePlanExport.contents,
       })
       .then((result) => {
         setIsSaveDialogOpen(false);
@@ -83,13 +94,13 @@ export function useProposedPlanWorkspaceSave(planMarkdown: string | null, worksp
       .finally(() => {
         setIsSavingToWorkspace(false);
       });
-  }, [planExport, savePath, workspaceRoot]);
+  }, [dialogPlanExport, planExport, savePath, workspaceRoot]);
 
   return {
     isSaveDialogOpen,
     isSavingToWorkspace,
     savePath,
-    defaultFilename: planExport?.filename ?? "plan.md",
+    defaultFilename: dialogPlanExport?.filename ?? planExport?.filename ?? "plan.md",
     openSaveDialog,
     saveToWorkspace,
     setIsSaveDialogOpen,

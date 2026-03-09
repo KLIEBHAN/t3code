@@ -573,6 +573,142 @@ routing.layer("ProviderServiceLive routing", (it) => {
     }),
   );
 
+  it.effect("preserves providerOptions when resuming a stale session for sendTurn", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService;
+
+      const initial = yield* provider.startSession(asThreadId("thread-provider-options"), {
+        provider: "codex",
+        threadId: asThreadId("thread-provider-options"),
+        cwd: "/tmp/project-provider-options",
+        runtimeMode: "full-access",
+        providerOptions: {
+          codex: {
+            binaryPath: "/tmp/custom-codex",
+            homePath: "/tmp/custom-home",
+          },
+        },
+      });
+
+      yield* routing.codex.stopAll();
+      routing.codex.startSession.mockClear();
+
+      yield* provider.sendTurn({
+        threadId: initial.threadId,
+        input: "resume with provider options",
+        attachments: [],
+      });
+
+      const resumedStartInput = routing.codex.startSession.mock.calls[0]?.[0] as
+        | {
+            providerOptions?: {
+              codex?: {
+                binaryPath?: string;
+                homePath?: string;
+              };
+            };
+          }
+        | undefined;
+      assert.deepEqual(resumedStartInput?.providerOptions, {
+        codex: {
+          binaryPath: "/tmp/custom-codex",
+          homePath: "/tmp/custom-home",
+        },
+      });
+    }),
+  );
+
+  it.effect("preserves providerOptions when adopting an already running session after restart", () =>
+    Effect.gen(function* () {
+      const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "t3-provider-service-adopt-"));
+      const dbPath = path.join(tempDir, "orchestration.sqlite");
+      const persistenceLayer = makeSqlitePersistenceLive(dbPath);
+      const runtimeRepositoryLayer = ProviderSessionRuntimeRepositoryLive.pipe(
+        Layer.provide(persistenceLayer),
+      );
+
+      const sharedCodex = makeFakeCodexAdapter();
+      const registry: typeof ProviderAdapterRegistry.Service = {
+        getByProvider: (provider) =>
+          provider === "codex"
+            ? Effect.succeed(sharedCodex.adapter)
+            : Effect.fail(new ProviderUnsupportedError({ provider })),
+        listProviders: () => Effect.succeed(["codex"]),
+      };
+
+      const firstDirectoryLayer = ProviderSessionDirectoryLive.pipe(
+        Layer.provide(runtimeRepositoryLayer),
+      );
+      const firstProviderLayer = makeProviderServiceLive().pipe(
+        Layer.provide(Layer.succeed(ProviderAdapterRegistry, registry)),
+        Layer.provide(firstDirectoryLayer),
+        Layer.provide(AnalyticsService.layerTest),
+      );
+
+      yield* Effect.gen(function* () {
+        const provider = yield* ProviderService;
+        yield* provider.startSession(asThreadId("thread-adopt-existing"), {
+          provider: "codex",
+          threadId: asThreadId("thread-adopt-existing"),
+          runtimeMode: "full-access",
+          providerOptions: {
+            codex: {
+              binaryPath: "/tmp/adopt-codex",
+              homePath: "/tmp/adopt-home",
+            },
+          },
+        });
+      }).pipe(Effect.provide(firstProviderLayer));
+
+      const secondDirectoryLayer = ProviderSessionDirectoryLive.pipe(
+        Layer.provide(runtimeRepositoryLayer),
+      );
+      const secondProviderLayer = makeProviderServiceLive().pipe(
+        Layer.provide(Layer.succeed(ProviderAdapterRegistry, registry)),
+        Layer.provide(secondDirectoryLayer),
+        Layer.provide(AnalyticsService.layerTest),
+      );
+
+      sharedCodex.startSession.mockClear();
+
+      yield* Effect.gen(function* () {
+        const provider = yield* ProviderService;
+        yield* provider.sendTurn({
+          threadId: asThreadId("thread-adopt-existing"),
+          input: "adopt existing",
+          attachments: [],
+        });
+      }).pipe(Effect.provide(secondProviderLayer));
+
+      const persistedRuntime = yield* Effect.gen(function* () {
+        const repository = yield* ProviderSessionRuntimeRepository;
+        return yield* repository.getByThreadId({
+          threadId: asThreadId("thread-adopt-existing"),
+        });
+      }).pipe(Effect.provide(runtimeRepositoryLayer));
+
+      assert.equal(Option.isSome(persistedRuntime), true);
+      if (Option.isSome(persistedRuntime)) {
+        const payload = persistedRuntime.value.runtimePayload as {
+          providerOptions?: {
+            codex?: {
+              binaryPath?: string;
+              homePath?: string;
+            };
+          };
+        } | null;
+        assert.deepEqual(payload?.providerOptions, {
+          codex: {
+            binaryPath: "/tmp/adopt-codex",
+            homePath: "/tmp/adopt-home",
+          },
+        });
+      }
+
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
   it.effect("lists no sessions after adapter runtime clears", () =>
     Effect.gen(function* () {
       const provider = yield* ProviderService;

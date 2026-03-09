@@ -10,6 +10,7 @@ beforeEach(() => {
     value: {
       location: {
         protocol: "https:",
+        host: "example.com:8443",
         hostname: "example.com",
         port: "8443",
       },
@@ -32,6 +33,40 @@ describe("resolveServerWsUrl", () => {
 
   it("derives a secure default URL from the browser location", () => {
     expect(resolveServerWsUrl()).toBe("wss://example.com:8443");
+  });
+
+  it("omits the trailing colon when the browser location uses the default port", () => {
+    Object.defineProperty(globalThis, "window", {
+      configurable: true,
+      value: {
+        location: {
+          protocol: "https:",
+          host: "example.com",
+          hostname: "example.com",
+          port: "",
+        },
+        desktopBridge: undefined,
+      },
+    });
+
+    expect(resolveServerWsUrl()).toBe("wss://example.com");
+  });
+
+  it("preserves bracketed IPv6 hosts from the browser location", () => {
+    Object.defineProperty(globalThis, "window", {
+      configurable: true,
+      value: {
+        location: {
+          protocol: "http:",
+          host: "[::1]:3020",
+          hostname: "::1",
+          port: "3020",
+        },
+        desktopBridge: undefined,
+      },
+    });
+
+    expect(resolveServerWsUrl()).toBe("ws://[::1]:3020");
   });
 });
 
