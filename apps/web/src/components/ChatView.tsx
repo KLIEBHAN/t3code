@@ -153,6 +153,7 @@ import {
   ChevronLeftIcon,
   CircleAlertIcon,
   DiffIcon,
+  EllipsisIcon,
   FolderClosedIcon,
   ListTodoIcon,
   LockIcon,
