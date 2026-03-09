@@ -18,14 +18,15 @@ import type { LatestProposedPlanState } from "../session-logic";
 import { formatTimestamp } from "../timestampFormat";
 import {
   proposedPlanTitle,
-  buildProposedPlanMarkdownFilename,
-  normalizePlanMarkdownForExport,
   downloadPlanAsTextFile,
   stripDisplayedPlanMarkdown,
+  buildProposedPlanExport,
 } from "../proposedPlan";
+import {
+  ProposedPlanSaveDialog,
+  useProposedPlanWorkspaceSave,
+} from "./ProposedPlanSaveDialog";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "./ui/menu";
-import { readNativeApi } from "~/nativeApi";
-import { toastManager } from "./ui/toast";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 
 function stepStatusIcon(status: string): React.ReactNode {
@@ -68,12 +69,22 @@ const PlanSidebar = memo(function PlanSidebar({
   onClose,
 }: PlanSidebarProps) {
   const [proposedPlanExpanded, setProposedPlanExpanded] = useState(false);
-  const [isSavingToWorkspace, setIsSavingToWorkspace] = useState(false);
   const { copyToClipboard, isCopied } = useCopyToClipboard();
 
   const planMarkdown = activeProposedPlan?.planMarkdown ?? null;
   const displayedPlanMarkdown = planMarkdown ? stripDisplayedPlanMarkdown(planMarkdown) : null;
   const planTitle = planMarkdown ? proposedPlanTitle(planMarkdown) : null;
+  const planExport = planMarkdown ? buildProposedPlanExport(planMarkdown) : null;
+  const {
+    defaultFilename,
+    isSaveDialogOpen,
+    isSavingToWorkspace,
+    openSaveDialog,
+    savePath,
+    saveToWorkspace,
+    setIsSaveDialogOpen,
+    setSavePath,
+  } = useProposedPlanWorkspaceSave(planMarkdown, workspaceRoot);
 
   const handleCopyPlan = useCallback(() => {
     if (!planMarkdown) return;
@@ -81,41 +92,9 @@ const PlanSidebar = memo(function PlanSidebar({
   }, [planMarkdown, copyToClipboard]);
 
   const handleDownload = useCallback(() => {
-    if (!planMarkdown) return;
-    const filename = buildProposedPlanMarkdownFilename(planMarkdown);
-    downloadPlanAsTextFile(filename, normalizePlanMarkdownForExport(planMarkdown));
-  }, [planMarkdown]);
-
-  const handleSaveToWorkspace = useCallback(() => {
-    const api = readNativeApi();
-    if (!api || !workspaceRoot || !planMarkdown) return;
-    const filename = buildProposedPlanMarkdownFilename(planMarkdown);
-    setIsSavingToWorkspace(true);
-    void api.projects
-      .writeFile({
-        cwd: workspaceRoot,
-        relativePath: filename,
-        contents: normalizePlanMarkdownForExport(planMarkdown),
-      })
-      .then((result) => {
-        toastManager.add({
-          type: "success",
-          title: "Plan saved",
-          description: result.relativePath,
-        });
-      })
-      .catch((error) => {
-        toastManager.add({
-          type: "error",
-          title: "Could not save plan",
-          description: error instanceof Error ? error.message : "An error occurred.",
-        });
-      })
-      .then(
-        () => setIsSavingToWorkspace(false),
-        () => setIsSavingToWorkspace(false),
-      );
-  }, [planMarkdown, workspaceRoot]);
+    if (!planExport) return;
+    downloadPlanAsTextFile(planExport.filename, planExport.contents);
+  }, [planExport]);
 
   return (
     <div className="flex h-full w-[340px] shrink-0 flex-col border-l border-border/70 bg-card/50">
@@ -155,7 +134,7 @@ const PlanSidebar = memo(function PlanSidebar({
                 </MenuItem>
                 <MenuItem onClick={handleDownload}>Download as markdown</MenuItem>
                 <MenuItem
-                  onClick={handleSaveToWorkspace}
+                  onClick={openSaveDialog}
                   disabled={!workspaceRoot || isSavingToWorkspace}
                 >
                   Save to workspace
@@ -200,7 +179,9 @@ const PlanSidebar = memo(function PlanSidebar({
                     step.status === "completed" && "bg-emerald-500/5",
                   )}
                 >
-                  <div className="mt-0.5">{stepStatusIcon(step.status)}</div>
+                  <div className="mt-0.5">
+                    {stepStatusIcon(step.status)}
+                  </div>
                   <p
                     className={cn(
                       "text-[13px] leading-snug",
@@ -250,7 +231,9 @@ const PlanSidebar = memo(function PlanSidebar({
           {/* Empty state */}
           {!activePlan && !planMarkdown ? (
             <div className="flex flex-col items-center justify-center py-12 text-center">
-              <p className="text-[13px] text-muted-foreground/40">No active plan yet.</p>
+              <p className="text-[13px] text-muted-foreground/40">
+                No active plan yet.
+              </p>
               <p className="mt-1 text-[11px] text-muted-foreground/30">
                 Plans will appear here when generated.
               </p>
@@ -258,6 +241,16 @@ const PlanSidebar = memo(function PlanSidebar({
           ) : null}
         </div>
       </ScrollArea>
+      <ProposedPlanSaveDialog
+        workspaceRoot={workspaceRoot}
+        isOpen={isSaveDialogOpen}
+        isSaving={isSavingToWorkspace}
+        savePath={savePath}
+        defaultFilename={defaultFilename}
+        onOpenChange={setIsSaveDialogOpen}
+        onSavePathChange={setSavePath}
+        onSave={saveToWorkspace}
+      />
     </div>
   );
 });

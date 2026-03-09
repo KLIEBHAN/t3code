@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildCollapsedProposedPlanPreviewMarkdown,
+  buildProposedPlanExport,
+  buildCollapsedProposedPlanPreviewMarkdown,
   buildPlanImplementationThreadTitle,
   buildPlanImplementationPrompt,
   buildProposedPlanMarkdownFilename,
@@ -110,5 +112,14 @@ describe("buildProposedPlanMarkdownFilename", () => {
 
   it("falls back to a generic filename when the plan has no heading", () => {
     expect(buildProposedPlanMarkdownFilename("- step 1")).toBe("plan.md");
+  });
+});
+
+describe("buildProposedPlanExport", () => {
+  it("reuses the derived filename and normalized file contents", () => {
+    expect(buildProposedPlanExport("# Integrate RPC\n\n- step 1\n")).toEqual({
+      filename: "integrate-rpc.md",
+      contents: "# Integrate RPC\n\n- step 1\n",
+    });
   });
 });

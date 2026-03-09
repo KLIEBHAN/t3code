@@ -4,7 +4,6 @@ import {
   memo,
   useCallback,
   useEffect,
-  useId,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -21,12 +20,10 @@ import {
 } from "../session-logic";
 import type { ChatMessage, TurnDiffSummary } from "../types";
 import {
-  buildProposedPlanMarkdownFilename,
+  buildProposedPlanExport,
   downloadPlanAsTextFile,
-  normalizePlanMarkdownForExport,
   proposedPlanTitle,
 } from "../proposedPlan";
-import { readNativeApi } from "../nativeApi";
 import { cn } from "~/lib/utils";
 import { estimateTimelineMessageHeight } from "./timelineHeight";
 import {
@@ -37,18 +34,11 @@ import {
 import ChatMarkdown from "./ChatMarkdown";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
-import {
-  Dialog,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogPanel,
-  DialogPopup,
-  DialogTitle,
-} from "./ui/dialog";
-import { Input } from "./ui/input";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "./ui/menu";
-import { toastManager } from "./ui/toast";
+import {
+  ProposedPlanSaveDialog,
+  useProposedPlanWorkspaceSave,
+} from "./ProposedPlanSaveDialog";
 
 const ALWAYS_UNVIRTUALIZED_TAIL_ROWS = 8;
 
@@ -136,77 +126,23 @@ const ProposedPlanCard = memo(function ProposedPlanCard({
   workspaceRoot: string | undefined;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const [isSaveDialogOpen, setIsSaveDialogOpen] = useState(false);
-  const [savePath, setSavePath] = useState("");
-  const [isSavingToWorkspace, setIsSavingToWorkspace] = useState(false);
-  const savePathInputId = useId();
   const title = proposedPlanTitle(planMarkdown) ?? "Proposed plan";
   const lineCount = planMarkdown.split("\n").length;
   const canCollapse = planMarkdown.length > 900 || lineCount > 20;
-  const downloadFilename = buildProposedPlanMarkdownFilename(planMarkdown);
-  const saveContents = normalizePlanMarkdownForExport(planMarkdown);
+  const planExport = buildProposedPlanExport(planMarkdown);
+  const {
+    defaultFilename,
+    isSaveDialogOpen,
+    isSavingToWorkspace,
+    openSaveDialog,
+    savePath,
+    saveToWorkspace,
+    setIsSaveDialogOpen,
+    setSavePath,
+  } = useProposedPlanWorkspaceSave(planMarkdown, workspaceRoot);
 
   const handleDownload = () => {
-    downloadPlanAsTextFile(downloadFilename, saveContents);
-  };
-
-  const openSaveDialog = () => {
-    if (!workspaceRoot) {
-      toastManager.add({
-        type: "error",
-        title: "Workspace path is unavailable",
-        description: "This thread does not have a workspace path to save into.",
-      });
-      return;
-    }
-    setSavePath((existing) => (existing.length > 0 ? existing : downloadFilename));
-    setIsSaveDialogOpen(true);
-  };
-
-  const handleSaveToWorkspace = () => {
-    const api = readNativeApi();
-    const relativePath = savePath.trim();
-    if (!api || !workspaceRoot) {
-      return;
-    }
-    if (!relativePath) {
-      toastManager.add({
-        type: "warning",
-        title: "Enter a workspace path",
-      });
-      return;
-    }
-
-    setIsSavingToWorkspace(true);
-    void api.projects
-      .writeFile({
-        cwd: workspaceRoot,
-        relativePath,
-        contents: saveContents,
-      })
-      .then((result) => {
-        setIsSaveDialogOpen(false);
-        toastManager.add({
-          type: "success",
-          title: "Plan saved to workspace",
-          description: result.relativePath,
-        });
-      })
-      .catch((error) => {
-        toastManager.add({
-          type: "error",
-          title: "Could not save plan",
-          description: error instanceof Error ? error.message : "An error occurred while saving.",
-        });
-      })
-      .then(
-        () => {
-          setIsSavingToWorkspace(false);
-        },
-        () => {
-          setIsSavingToWorkspace(false);
-        },
-      );
+    downloadPlanAsTextFile(planExport.filename, planExport.contents);
   };
 
   return (
@@ -246,53 +182,16 @@ const ProposedPlanCard = memo(function ProposedPlanCard({
         ) : null}
       </div>
 
-      <Dialog
-        open={isSaveDialogOpen}
-        onOpenChange={(open) => {
-          if (!isSavingToWorkspace) {
-            setIsSaveDialogOpen(open);
-          }
-        }}
-      >
-        <DialogPopup className="max-w-xl">
-          <DialogHeader>
-            <DialogTitle>Save plan to workspace</DialogTitle>
-            <DialogDescription>
-              Enter a path relative to <code>{workspaceRoot ?? "the workspace"}</code>.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogPanel className="space-y-3">
-            <label htmlFor={savePathInputId} className="grid gap-1.5">
-              <span className="text-xs font-medium text-foreground">Workspace path</span>
-              <Input
-                id={savePathInputId}
-                value={savePath}
-                onChange={(event) => setSavePath(event.target.value)}
-                placeholder={downloadFilename}
-                spellCheck={false}
-                disabled={isSavingToWorkspace}
-              />
-            </label>
-          </DialogPanel>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setIsSaveDialogOpen(false)}
-              disabled={isSavingToWorkspace}
-            >
-              Cancel
-            </Button>
-            <Button
-              size="sm"
-              onClick={() => void handleSaveToWorkspace()}
-              disabled={isSavingToWorkspace}
-            >
-              {isSavingToWorkspace ? "Saving..." : "Save"}
-            </Button>
-          </DialogFooter>
-        </DialogPopup>
-      </Dialog>
+      <ProposedPlanSaveDialog
+        workspaceRoot={workspaceRoot}
+        isOpen={isSaveDialogOpen}
+        isSaving={isSavingToWorkspace}
+        savePath={savePath}
+        defaultFilename={defaultFilename}
+        onOpenChange={setIsSaveDialogOpen}
+        onSavePathChange={setSavePath}
+        onSave={saveToWorkspace}
+      />
     </div>
   );
 });

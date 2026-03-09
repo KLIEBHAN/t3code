@@ -989,8 +989,6 @@ function readSidebarProjectExpansion(): Record<string, boolean> {
     useStore.getState().projects.map((project) => [project.name, project.expanded] as const),
   );
 }
-
->>>>>>> 9423f227 (Extract chat timeline and sidebar project list)
 async function waitForImagesToLoad(scope: ParentNode): Promise<void> {
   const images = Array.from(scope.querySelectorAll("img"));
   if (images.length === 0) {

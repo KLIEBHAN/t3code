@@ -11,6 +11,11 @@ import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-
 import { CSS } from "@dnd-kit/utilities";
 import type { ProjectId, ThreadId } from "@t3tools/contracts";
 
+import { resolveServerHttpOrigin } from "../serverOrigins";
+import type {
+  SidebarPrStatusIndicator,
+  SidebarTerminalStatusIndicator,
+} from "../sidebarStatus";
 import type { Project, Thread } from "../types";
 import type { ThreadStatusPill } from "./Sidebar.logic";
 import {
@@ -28,41 +33,9 @@ import {
 } from "./ui/sidebar";
 
 const THREAD_PREVIEW_LIMIT = 6;
-
-interface TerminalStatusIndicator {
-  label: "Terminal process running";
-  colorClass: string;
-  pulse: boolean;
-}
-
-interface PrStatusIndicator {
-  label: "PR open" | "PR closed" | "PR merged";
-  colorClass: string;
-  tooltip: string;
-  url: string;
-}
-
-function getServerHttpOrigin(): string {
-  const bridgeUrl = window.desktopBridge?.getWsUrl();
-  const envUrl = import.meta.env.VITE_WS_URL as string | undefined;
-  const wsUrl =
-    bridgeUrl && bridgeUrl.length > 0
-      ? bridgeUrl
-      : envUrl && envUrl.length > 0
-        ? envUrl
-        : `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.hostname}:${window.location.port}`;
-  const httpUrl = wsUrl.replace(/^wss:/, "https:").replace(/^ws:/, "http:");
-  try {
-    return new URL(httpUrl).origin;
-  } catch {
-    return httpUrl;
-  }
-}
-
-const serverHttpOrigin = getServerHttpOrigin();
-
 const ProjectFavicon = memo(function ProjectFavicon({ cwd }: { cwd: string }) {
   const [status, setStatus] = useState<"loading" | "loaded" | "error">("loading");
+  const serverHttpOrigin = resolveServerHttpOrigin();
   const src = `${serverHttpOrigin}/api/project-favicon?cwd=${encodeURIComponent(cwd)}`;
 
   if (status === "error") {
@@ -111,8 +84,8 @@ function SidebarProjectThreadRow(props: {
   thread: Thread;
   isActive: boolean;
   threadStatus: ThreadStatusPill | null;
-  prStatus: PrStatusIndicator | null;
-  terminalStatus: TerminalStatusIndicator | null;
+  prStatus: SidebarPrStatusIndicator | null;
+  terminalStatus: SidebarTerminalStatusIndicator | null;
   relativeUpdatedAtLabel: string;
   renamingThreadId: ThreadId | null;
   renamingTitle: string;
@@ -258,8 +231,8 @@ export interface SidebarProjectListProps {
   renamingInputRef: MutableRefObject<HTMLInputElement | null>;
   renamingCommittedRef: MutableRefObject<boolean>;
   resolveThreadStatus: (thread: Thread) => ThreadStatusPill | null;
-  resolvePrStatus: (threadId: ThreadId) => PrStatusIndicator | null;
-  resolveTerminalStatus: (threadId: ThreadId) => TerminalStatusIndicator | null;
+  resolvePrStatus: (threadId: ThreadId) => SidebarPrStatusIndicator | null;
+  resolveTerminalStatus: (threadId: ThreadId) => SidebarTerminalStatusIndicator | null;
   getThreadTimestampLabel: (thread: Thread) => string;
   onProjectTitlePointerDownCapture: () => void;
   onProjectTitleClick: (event: MouseEvent<HTMLButtonElement>, projectId: ProjectId) => void;

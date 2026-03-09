@@ -109,6 +109,16 @@ export function normalizePlanMarkdownForExport(planMarkdown: string): string {
   return `${planMarkdown.trimEnd()}\n`;
 }
 
+export function buildProposedPlanExport(planMarkdown: string): {
+  filename: string;
+  contents: string;
+} {
+  return {
+    filename: buildProposedPlanMarkdownFilename(planMarkdown),
+    contents: normalizePlanMarkdownForExport(planMarkdown),
+  };
+}
+
 export function downloadPlanAsTextFile(filename: string, contents: string): void {
   const blob = new Blob([contents], { type: "text/markdown;charset=utf-8" });
   const url = URL.createObjectURL(blob);
