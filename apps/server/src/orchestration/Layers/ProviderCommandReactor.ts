@@ -117,6 +117,12 @@ function buildGeneratedWorktreeBranchName(raw: string): string {
   return `${WORKTREE_BRANCH_PREFIX}/${safeFragment}`;
 }
 
+function buildProviderOptionsOverride(
+  providerOptions: ProviderStartOptions | undefined,
+): { readonly providerOptions: ProviderStartOptions } | undefined {
+  return providerOptions !== undefined ? { providerOptions } : undefined;
+}
+
 const make = Effect.gen(function* () {
   const orchestrationEngine = yield* OrchestrationEngineService;
   const providerService = yield* ProviderService;
@@ -136,11 +142,6 @@ const make = Effect.gen(function* () {
     );
 
   const threadProviderOptions = new Map<string, ProviderStartOptions>();
-
-  const buildProviderOptionsOverride = (
-    providerOptions: ProviderStartOptions | undefined,
-  ): { readonly providerOptions: ProviderStartOptions } | undefined =>
-    providerOptions !== undefined ? { providerOptions } : undefined;
 
   const appendProviderFailureActivity = (input: {
     readonly threadId: ThreadId;
