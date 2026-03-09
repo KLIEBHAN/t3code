@@ -386,7 +386,7 @@ describe("sendTurn", () => {
         },
       ],
       model: "gpt-5.3",
-      serviceTier: "fast",
+      fastMode: true,
       effort: "high",
     });
 

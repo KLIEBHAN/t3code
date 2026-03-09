@@ -1306,7 +1306,7 @@ const makeCodexAdapter = (options?: CodexAdapterLiveOptions) =>
         ...(input.providerOptions !== undefined ? { providerOptions: input.providerOptions } : {}),
         runtimeMode: input.runtimeMode,
         ...(input.model !== undefined ? { model: input.model } : {}),
-        ...(input.modelOptions?.codex?.fastMode ? { serviceTier: "fast" } : {}),
+        ...(input.modelOptions?.codex?.fastMode ? { fastMode: true } : {}),
       };
 
       return Effect.tryPromise({
@@ -1366,7 +1366,7 @@ const makeCodexAdapter = (options?: CodexAdapterLiveOptions) =>
               ...(input.modelOptions?.codex?.reasoningEffort !== undefined
                 ? { effort: input.modelOptions.codex.reasoningEffort }
                 : {}),
-              ...(input.modelOptions?.codex?.fastMode ? { serviceTier: "fast" } : {}),
+              ...(input.modelOptions?.codex?.fastMode ? { fastMode: true } : {}),
               ...(input.interactionMode !== undefined
                 ? { interactionMode: input.interactionMode }
                 : {}),

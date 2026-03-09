@@ -78,7 +78,6 @@ interface PersistedComposerThreadDraftState {
   interactionMode?: ProviderInteractionMode | null;
   effort?: CodexReasoningEffort | null;
   codexFastMode?: boolean | null;
-  serviceTier?: string | null;
 }
 
 interface PersistedDraftThreadState {
@@ -422,6 +421,8 @@ function normalizePersistedComposerDraftState(value: unknown): PersistedComposer
       effortCandidate && REASONING_EFFORT_VALUES.has(effortCandidate as CodexReasoningEffort)
         ? (effortCandidate as CodexReasoningEffort)
         : null;
+    // Keep reading the legacy `serviceTier` shape so older persisted drafts
+    // continue to hydrate after the fast-mode rename.
     const codexFastMode =
       draftCandidate.codexFastMode === true ||
       (typeof draftCandidate.serviceTier === "string" && draftCandidate.serviceTier === "fast");

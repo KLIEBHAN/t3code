@@ -118,7 +118,7 @@ export interface CodexAppServerSendTurnInput {
   readonly input?: string;
   readonly attachments?: ReadonlyArray<{ type: "image"; url: string }>;
   readonly model?: string;
-  readonly serviceTier?: string | null;
+  readonly fastMode?: boolean;
   readonly effort?: string;
   readonly interactionMode?: ProviderInteractionMode;
 }
@@ -128,7 +128,7 @@ export interface CodexAppServerStartSessionInput {
   readonly provider?: "codex";
   readonly cwd?: string;
   readonly model?: string;
-  readonly serviceTier?: string;
+  readonly fastMode?: boolean;
   readonly resumeCursor?: unknown;
   readonly providerOptions?: ProviderSessionStartInput["providerOptions"];
   readonly runtimeMode: RuntimeMode;
@@ -608,7 +608,7 @@ export class CodexAppServerManager extends EventEmitter<CodexAppServerManagerEve
       );
       const sessionOverrides = {
         model: normalizedModel ?? null,
-        ...(input.serviceTier !== undefined ? { serviceTier: input.serviceTier } : {}),
+        ...mapCodexFastModeToServiceTier(input.fastMode),
         cwd: input.cwd ?? null,
         ...mapCodexRuntimeMode(input.runtimeMode ?? "full-access"),
       };
@@ -790,8 +790,9 @@ export class CodexAppServerManager extends EventEmitter<CodexAppServerManagerEve
     if (normalizedModel) {
       turnStartParams.model = normalizedModel;
     }
-    if (input.serviceTier !== undefined) {
-      turnStartParams.serviceTier = input.serviceTier;
+    const serviceTier = mapCodexFastModeToServiceTier(input.fastMode);
+    if (serviceTier) {
+      turnStartParams.serviceTier = serviceTier.serviceTier;
     }
     if (input.effort) {
       turnStartParams.effort = input.effort;
@@ -1519,6 +1520,12 @@ function readCodexProviderOptions(input: CodexAppServerStartSessionInput): {
     ...(options.binaryPath ? { binaryPath: options.binaryPath } : {}),
     ...(options.homePath ? { homePath: options.homePath } : {}),
   };
+}
+
+function mapCodexFastModeToServiceTier(
+  fastMode: boolean | undefined,
+): { readonly serviceTier: "fast" } | undefined {
+  return fastMode ? { serviceTier: "fast" } : undefined;
 }
 
 function assertSupportedCodexCliVersion(input: {
