@@ -8,6 +8,7 @@ import {
   type WheelEvent as ReactWheelEvent,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -171,6 +172,11 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
   const { settings } = useAppSettings();
   const [diffRenderMode, setDiffRenderMode] = useState<DiffRenderMode>("stacked");
   const patchViewportRef = useRef<HTMLDivElement>(null);
+  const [patchViewportMetrics, setPatchViewportMetrics] = useState({
+    width: 0,
+    height: 0,
+    revision: 0,
+  });
   const turnStripRef = useRef<HTMLDivElement>(null);
   const [canScrollTurnStripLeft, setCanScrollTurnStripLeft] = useState(false);
   const [canScrollTurnStripRight, setCanScrollTurnStripRight] = useState(false);
@@ -344,6 +350,80 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
       }),
     );
   }, [renderablePatch]);
+  const canRenderVirtualizedPatch =
+    renderablePatch?.kind === "files" &&
+    patchViewportMetrics.width > 1 &&
+    patchViewportMetrics.height > 1;
+  const virtualizerRenderKey = useMemo(
+    () =>
+      [
+        resolvedTheme,
+        diffRenderMode,
+        renderableFiles.length,
+        patchViewportMetrics.revision,
+      ].join(":"),
+    [diffRenderMode, patchViewportMetrics.revision, renderableFiles.length, resolvedTheme],
+  );
+
+  useLayoutEffect(() => {
+    const viewport = patchViewportRef.current;
+    if (!viewport) {
+      return;
+    }
+
+    let frameId: number | null = null;
+    const syncViewportMetrics = () => {
+      const nextRect = viewport.getBoundingClientRect();
+      const nextWidth = Math.round(nextRect.width);
+      const nextHeight = Math.round(nextRect.height);
+      setPatchViewportMetrics((current) => {
+        if (current.width === nextWidth && current.height === nextHeight) {
+          return current;
+        }
+        const isVisible = nextWidth > 1 && nextHeight > 1;
+        const wasVisible = current.width > 1 && current.height > 1;
+        return {
+          width: nextWidth,
+          height: nextHeight,
+          revision:
+            isVisible && (!wasVisible || nextWidth !== current.width || nextHeight !== current.height)
+              ? current.revision + 1
+              : current.revision,
+        };
+      });
+    };
+    const scheduleSyncViewportMetrics = () => {
+      if (frameId !== null) {
+        window.cancelAnimationFrame(frameId);
+      }
+      frameId = window.requestAnimationFrame(() => {
+        frameId = null;
+        syncViewportMetrics();
+      });
+    };
+
+    syncViewportMetrics();
+
+    if (typeof ResizeObserver === "undefined") {
+      return () => {
+        if (frameId !== null) {
+          window.cancelAnimationFrame(frameId);
+        }
+      };
+    }
+
+    const observer = new ResizeObserver(() => {
+      scheduleSyncViewportMetrics();
+    });
+    observer.observe(viewport);
+
+    return () => {
+      if (frameId !== null) {
+        window.cancelAnimationFrame(frameId);
+      }
+      observer.disconnect();
+    };
+  }, []);
 
   useEffect(() => {
     if (!selectedFilePath || !patchViewportRef.current) {
@@ -640,8 +720,13 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
                   </p>
                 </div>
               )
+            ) : renderablePatch.kind === "files" && !canRenderVirtualizedPatch ? (
+              <div className="flex h-full items-center justify-center px-3 py-2 text-xs text-muted-foreground/70">
+                <p>Preparing diff viewer...</p>
+              </div>
             ) : renderablePatch.kind === "files" ? (
               <Virtualizer
+                key={virtualizerRenderKey}
                 className="diff-render-surface h-full min-h-0 overflow-auto px-2 pb-2"
                 config={{
                   overscrollSize: 600,
