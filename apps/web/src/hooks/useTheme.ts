@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useSyncExternalStore } from "react";
 
+import { getSafeLocalStorage } from "../lib/browserStorage";
+
 type Theme = "light" | "dark" | "system";
 type ThemeSnapshot = {
   theme: Theme;
@@ -12,21 +14,38 @@ const MEDIA_QUERY = "(prefers-color-scheme: dark)";
 let listeners: Array<() => void> = [];
 let lastSnapshot: ThemeSnapshot | null = null;
 let lastDesktopTheme: Theme | null = null;
+
 function emitChange() {
   for (const listener of listeners) listener();
 }
 
+function hasBrowserDom(): boolean {
+  return typeof window !== "undefined" && typeof document !== "undefined";
+}
+
+function getThemeStorage() {
+  return getSafeLocalStorage();
+}
+
 function getSystemDark(): boolean {
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+    return false;
+  }
+
   return window.matchMedia(MEDIA_QUERY).matches;
 }
 
 function getStored(): Theme {
-  const raw = localStorage.getItem(STORAGE_KEY);
+  const raw = getThemeStorage().getItem(STORAGE_KEY);
   if (raw === "light" || raw === "dark" || raw === "system") return raw;
   return "system";
 }
 
 function applyTheme(theme: Theme, suppressTransitions = false) {
+  if (!hasBrowserDom()) {
+    return;
+  }
+
   if (suppressTransitions) {
     document.documentElement.classList.add("no-transitions");
   }
@@ -44,6 +63,10 @@ function applyTheme(theme: Theme, suppressTransitions = false) {
 }
 
 function syncDesktopTheme(theme: Theme) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
   const bridge = window.desktopBridge;
   if (!bridge || lastDesktopTheme === theme) {
     return;
@@ -58,7 +81,9 @@ function syncDesktopTheme(theme: Theme) {
 }
 
 // Apply immediately on module load to prevent flash
-applyTheme(getStored());
+if (hasBrowserDom()) {
+  applyTheme(getStored());
+}
 
 function getSnapshot(): ThemeSnapshot {
   const theme = getStored();
@@ -75,13 +100,18 @@ function getSnapshot(): ThemeSnapshot {
 function subscribe(listener: () => void): () => void {
   listeners.push(listener);
 
-  // Listen for system preference changes
-  const mq = window.matchMedia(MEDIA_QUERY);
+  if (typeof window === "undefined") {
+    return () => {
+      listeners = listeners.filter((l) => l !== listener);
+    };
+  }
+
+  const mq = typeof window.matchMedia === "function" ? window.matchMedia(MEDIA_QUERY) : null;
   const handleChange = () => {
     if (getStored() === "system") applyTheme("system", true);
     emitChange();
   };
-  mq.addEventListener("change", handleChange);
+  mq?.addEventListener("change", handleChange);
 
   // Listen for storage changes from other tabs
   const handleStorage = (e: StorageEvent) => {
@@ -94,20 +124,20 @@ function subscribe(listener: () => void): () => void {
 
   return () => {
     listeners = listeners.filter((l) => l !== listener);
-    mq.removeEventListener("change", handleChange);
+    mq?.removeEventListener("change", handleChange);
     window.removeEventListener("storage", handleStorage);
   };
 }
 
 export function useTheme() {
-  const snapshot = useSyncExternalStore(subscribe, getSnapshot);
+  const snapshot = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
   const theme = snapshot.theme;
 
   const resolvedTheme: "light" | "dark" =
     theme === "system" ? (snapshot.systemDark ? "dark" : "light") : theme;
 
   const setTheme = useCallback((next: Theme) => {
-    localStorage.setItem(STORAGE_KEY, next);
+    getThemeStorage().setItem(STORAGE_KEY, next);
     applyTheme(next, true);
     emitChange();
   }, []);
