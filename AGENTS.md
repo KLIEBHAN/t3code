@@ -23,6 +23,15 @@ If a tradeoff is required, choose correctness and robustness over short-term con
 
 Long term maintainability is a core priority. If you add new functionality, first check if there are shared logic that can be extracted to a separate module. Duplicate logic across mulitple files is a code smell and should be avoided. Don't be afraid to change existing code. Don't take shortcuts by just adding local logic to solve a problem.
 
+## Rebase Hygiene
+
+- Keep `apps/web/src/components/Sidebar.tsx` as a wiring/composition file. Put sidebar drag-and-drop behavior, collision detection, and click suppression in `apps/web/src/sidebarProjectInteractions.ts`.
+- Keep browser-test fixtures and mount helpers in `apps/web/src/components/chatViewBrowserTestUtils.tsx`. Put specs in the split files (`ChatView.commands.browser.tsx`, `ChatView.diff.browser.tsx`, `ChatView.timeline.browser.tsx`, `Sidebar.browser.tsx`) instead of rebuilding a monolithic browser test file.
+- Keep `apps/web/src/components/ChatView.tsx` focused on orchestration. New feature logic should be added through small hooks/modules first, then wired into `ChatView`, rather than expanding inline logic there.
+- Do not duplicate timeline rendering paths. Shared timeline behavior should live in `apps/web/src/components/ChatMessagesTimeline.tsx` and `apps/web/src/components/ChatTimelinePanels.tsx`, not in a second local implementation.
+- Rebase branch work onto `origin/main` early and often when `main` is moving in `ChatView`, `Sidebar`, browser tests, or provider runtime code. Smaller rebases are much cheaper than infrequent large ones.
+- After a conflict-heavy rebase, keep any cleanup for import drift, duplicate keys, or prop mismatches in a small follow-up commit so the structural rebase changes stay easy to audit.
+
 ## Package Roles
 
 - `apps/server`: Node.js WebSocket server. Wraps Codex app-server (JSON-RPC over stdio), serves the React web app, and manages provider sessions.
