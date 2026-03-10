@@ -1,25 +1,38 @@
-const memoryStorageEntries = new Map<string, string>();
+function createMemoryStorage(): Storage {
+  const entries = new Map<string, string>();
 
-const memoryStorage: Storage = {
-  get length() {
-    return memoryStorageEntries.size;
-  },
-  clear() {
-    memoryStorageEntries.clear();
-  },
-  getItem(key) {
-    return memoryStorageEntries.get(key) ?? null;
-  },
-  key(index) {
-    return Array.from(memoryStorageEntries.keys())[index] ?? null;
-  },
-  removeItem(key) {
-    memoryStorageEntries.delete(key);
-  },
-  setItem(key, value) {
-    memoryStorageEntries.set(key, String(value));
-  },
-};
+  return {
+    get length() {
+      return entries.size;
+    },
+    clear() {
+      entries.clear();
+    },
+    getItem(key) {
+      return entries.get(key) ?? null;
+    },
+    key(index) {
+      return Array.from(entries.keys())[index] ?? null;
+    },
+    removeItem(key) {
+      entries.delete(key);
+    },
+    setItem(key, value) {
+      entries.set(key, String(value));
+    },
+  };
+}
+
+let browserMemoryStorage: Storage | null = null;
+
+function getFallbackStorage(): Storage {
+  if (typeof window === "undefined") {
+    return createMemoryStorage();
+  }
+
+  browserMemoryStorage ??= createMemoryStorage();
+  return browserMemoryStorage;
+}
 
 function isStorageLike(value: unknown): value is Storage {
   if (!value || typeof value !== "object") {
@@ -47,19 +60,51 @@ export function getSafeLocalStorage(): Storage {
   })();
 
   if (isStorageLike(candidate)) {
-    return candidate;
+    return {
+      get length() {
+        try {
+          return candidate.length;
+        } catch {
+          return 0;
+        }
+      },
+      clear() {
+        try {
+          candidate.clear();
+        } catch {
+          // Ignore storage clear failures.
+        }
+      },
+      getItem(key) {
+        try {
+          return candidate.getItem(key);
+        } catch {
+          return null;
+        }
+      },
+      key(index) {
+        try {
+          return candidate.key(index);
+        } catch {
+          return null;
+        }
+      },
+      removeItem(key) {
+        try {
+          candidate.removeItem(key);
+        } catch {
+          // Ignore storage remove failures.
+        }
+      },
+      setItem(key, value) {
+        try {
+          candidate.setItem(key, value);
+        } catch {
+          // Ignore storage write failures.
+        }
+      },
+    };
   }
 
-  try {
-    Object.defineProperty(globalThis, "localStorage", {
-      configurable: true,
-      enumerable: true,
-      writable: true,
-      value: memoryStorage,
-    });
-  } catch {
-    // Ignore assignment failures and keep the in-memory fallback local to callers.
-  }
-
-  return memoryStorage;
+  return getFallbackStorage();
 }

@@ -115,6 +115,11 @@ export function PullRequestThreadDialog({
         return "text-muted-foreground";
     }
   }, [resolvedPullRequest?.state]);
+  const canPreparePullRequestThread =
+    Boolean(cwd) &&
+    resolvedPullRequest !== null &&
+    !isResolving &&
+    !preparePullRequestThreadMutation.isPending;
 
   const handleConfirm = useCallback(
     async (mode: "local" | "worktree") => {
@@ -202,7 +207,7 @@ export function PullRequestThreadDialog({
                   return;
                 }
                 event.preventDefault();
-                if (!isResolving && !preparePullRequestThreadMutation.isPending) {
+                if (canPreparePullRequestThread) {
                   void handleConfirm("local");
                 }
               }}
@@ -252,12 +257,7 @@ export function PullRequestThreadDialog({
             onClick={() => {
               void handleConfirm("local");
             }}
-            disabled={
-              !cwd ||
-              !resolvedPullRequest ||
-              isResolving ||
-              preparePullRequestThreadMutation.isPending
-            }
+            disabled={!canPreparePullRequestThread}
           >
             {preparingMode === "local" ? "Preparing local..." : "Local"}
           </Button>
@@ -267,12 +267,7 @@ export function PullRequestThreadDialog({
             onClick={() => {
               void handleConfirm("worktree");
             }}
-            disabled={
-              !cwd ||
-              !resolvedPullRequest ||
-              isResolving ||
-              preparePullRequestThreadMutation.isPending
-            }
+            disabled={!canPreparePullRequestThread}
           >
             {preparingMode === "worktree" ? "Preparing worktree..." : "Worktree"}
           </Button>
