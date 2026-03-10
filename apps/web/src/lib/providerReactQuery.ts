@@ -64,6 +64,10 @@ function normalizeCheckpointErrorMessage(error: unknown): string {
     return "Turn diffs are unavailable because this project is not a git repository.";
   }
 
+  if (isCheckpointDiffTooLarge(error)) {
+    return "This diff is too large to render. Open a specific turn or file to narrow the selection.";
+  }
+
   if (
     lower.includes("checkpoint unavailable for thread") ||
     lower.includes("checkpoint invariant violation")
@@ -89,6 +93,15 @@ function isCheckpointTemporarilyUnavailable(error: unknown): boolean {
   );
 }
 
+function isCheckpointDiffTooLarge(error: unknown): boolean {
+  const message = asCheckpointErrorMessage(error).toLowerCase();
+  return (
+    message.includes("checkpointstore.diffcheckpoints") &&
+    message.includes("output exceeded") &&
+    message.includes("truncated")
+  );
+}
+
 export function checkpointDiffQueryOptions(input: CheckpointDiffQueryInput) {
   const decodedRequest = decodeCheckpointDiffRequest(input);
 
@@ -111,6 +124,9 @@ export function checkpointDiffQueryOptions(input: CheckpointDiffQueryInput) {
     enabled: (input.enabled ?? true) && !!input.threadId && decodedRequest._tag === "Some",
     staleTime: Infinity,
     retry: (failureCount, error) => {
+      if (isCheckpointDiffTooLarge(error)) {
+        return false;
+      }
       if (isCheckpointTemporarilyUnavailable(error)) {
         return failureCount < 12;
       }

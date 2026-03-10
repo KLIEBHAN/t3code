@@ -158,4 +158,50 @@ describe("checkpointDiffQueryOptions", () => {
     expect(typeof genericDelay).toBe("number");
     expect((checkpointDelay ?? 0) > (genericDelay ?? 0)).toBe(true);
   });
+
+  it("normalizes oversized checkpoint diff errors to a user-facing message", async () => {
+    const getTurnDiff = vi
+      .fn()
+      .mockRejectedValue(
+        new Error(
+          "Git command failed in CheckpointStore.diffCheckpoints: git diff --patch --minimal --no-color a b output exceeded 1000000 bytes and was truncated. at Array.<anonymous> (file:///server/dist/index.mjs:33:1)",
+        ),
+      );
+    const getFullThreadDiff = vi.fn().mockResolvedValue({ diff: "patch" });
+    mockNativeApi({ getTurnDiff, getFullThreadDiff });
+
+    const options = checkpointDiffQueryOptions({
+      threadId,
+      fromTurnCount: 3,
+      toTurnCount: 4,
+      cacheScope: "turn:large",
+    });
+
+    const queryClient = new QueryClient();
+
+    await expect(queryClient.fetchQuery(options)).rejects.toThrow(
+      "This diff is too large to render. Open a specific turn or file to narrow the selection.",
+    );
+  });
+
+  it("does not retry oversized checkpoint diff errors", () => {
+    const options = checkpointDiffQueryOptions({
+      threadId,
+      fromTurnCount: 1,
+      toTurnCount: 2,
+      cacheScope: "turn:oversized",
+    });
+    const retry = options.retry;
+    expect(typeof retry).toBe("function");
+    if (typeof retry !== "function") {
+      throw new Error("Expected retry to be a function.");
+    }
+
+    const oversizedError = new Error(
+      "Git command failed in CheckpointStore.diffCheckpoints: git diff --patch --minimal --no-color a b output exceeded 1000000 bytes and was truncated.",
+    );
+
+    expect(retry(0, oversizedError)).toBe(false);
+    expect(retry(1, oversizedError)).toBe(false);
+  });
 });
