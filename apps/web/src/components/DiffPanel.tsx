@@ -171,7 +171,7 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
   const { resolvedTheme } = useTheme();
   const { settings } = useAppSettings();
   const [diffRenderMode, setDiffRenderMode] = useState<DiffRenderMode>("stacked");
-  const patchViewportRef = useRef<HTMLDivElement>(null);
+  const [patchViewportElement, setPatchViewportElement] = useState<HTMLDivElement | null>(null);
   const [patchViewportMetrics, setPatchViewportMetrics] = useState({
     width: 0,
     height: 0,
@@ -366,7 +366,7 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
   );
 
   useLayoutEffect(() => {
-    const viewport = patchViewportRef.current;
+    const viewport = patchViewportElement;
     if (!viewport) {
       return;
     }
@@ -423,7 +423,7 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
       }
       observer.disconnect();
     };
-  }, []);
+  }, [patchViewportElement]);
 
   useEffect(() => {
     if (diffSearch.diff !== "1") {
@@ -453,17 +453,17 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
   }, [diffSearch.diff, selectedFilePath, selectedTurnId]);
 
   useEffect(() => {
-    if (!selectedFilePath || !patchViewportRef.current) {
+    if (!selectedFilePath || !patchViewportElement) {
       return;
     }
     const target = Array.from(
-      patchViewportRef.current.querySelectorAll<HTMLElement>("[data-diff-file-path]"),
+      patchViewportElement.querySelectorAll<HTMLElement>("[data-diff-file-path]"),
     ).find((element) => {
       const diffFilePath = element.dataset.diffFilePath;
       return diffFilePath ? pathsReferToSameFileChange(diffFilePath, selectedFilePath) : false;
     });
     target?.scrollIntoView({ block: "start", inline: "nearest" });
-  }, [selectedFilePath, renderableFiles]);
+  }, [patchViewportElement, selectedFilePath, renderableFiles]);
 
   const openDiffFileInEditor = useCallback(
     (filePath: string) => {
@@ -725,7 +725,7 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
       ) : (
         <>
           <div
-            ref={patchViewportRef}
+            ref={setPatchViewportElement}
             className="diff-panel-viewport min-h-0 min-w-0 flex-1 overflow-hidden"
           >
             {checkpointDiffError && !renderablePatch && (
