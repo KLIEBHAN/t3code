@@ -1,8 +1,11 @@
 import {
+  type CollisionDetection,
   type DragCancelEvent,
   type DragEndEvent,
   type DragStartEvent,
   PointerSensor,
+  closestCorners,
+  pointerWithin,
   useSensor,
   useSensors,
 } from "@dnd-kit/core";
@@ -34,6 +37,15 @@ export function useSidebarProjectInteractions(options: {
       activationConstraint: { distance: 6 },
     }),
   );
+
+  const projectCollisionDetection = useCallback<CollisionDetection>((args) => {
+    const pointerCollisions = pointerWithin(args);
+    if (pointerCollisions.length > 0) {
+      return pointerCollisions;
+    }
+
+    return closestCorners(args);
+  }, []);
 
   const handleProjectDragEnd = useCallback(
     (event: DragEndEvent) => {
@@ -92,6 +104,7 @@ export function useSidebarProjectInteractions(options: {
 
   return {
     projectDnDSensors,
+    projectCollisionDetection,
     handleProjectDragEnd,
     handleProjectDragStart,
     handleProjectDragCancel,
