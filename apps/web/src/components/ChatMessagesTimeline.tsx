@@ -635,7 +635,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
                   </div>
                 )}
                 {row.message.text && (
-                  <pre className="whitespace-pre-wrap wrap-break-word font-mono text-sm leading-relaxed text-foreground">
+                  <pre className="chat-user-message-text whitespace-pre-wrap wrap-break-word text-sm leading-relaxed text-foreground">
                     {row.message.text}
                   </pre>
                 )}

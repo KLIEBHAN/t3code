@@ -122,7 +122,7 @@
 
 body {
   font-family:
-    "DM Sans",
+    "Inter",
     -apple-system,
     BlinkMacSystemFont,
     "Segoe UI",
@@ -161,6 +161,10 @@ code,
 textarea,
 input {
   font-family: "SF Mono", "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+}
+
+.chat-user-message-text {
+  font-family: inherit;
 }
 
 /* Window drag region (frameless titlebar) */
@@ -241,6 +245,7 @@ label:has(> select#reasoning-effort) select {
 
 /* Chat markdown rendering */
 .chat-markdown {
+  font-family: inherit;
   min-width: 0;
   overflow-wrap: anywhere;
   word-break: break-word;
