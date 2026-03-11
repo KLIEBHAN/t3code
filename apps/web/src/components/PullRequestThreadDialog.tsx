@@ -115,11 +115,6 @@ export function PullRequestThreadDialog({
         return "text-muted-foreground";
     }
   }, [resolvedPullRequest?.state]);
-  const canPreparePullRequestThread =
-    Boolean(cwd) &&
-    resolvedPullRequest !== null &&
-    !isResolving &&
-    !preparePullRequestThreadMutation.isPending;
 
   const handleConfirm = useCallback(
     async (mode: "local" | "worktree") => {
@@ -127,7 +122,7 @@ export function PullRequestThreadDialog({
         setReferenceDirty(true);
         return;
       }
-      if (!resolvedPullRequest || !cwd) {
+      if (!parsedReference || !resolvedPullRequest || !cwd) {
         return;
       }
       setPreparingMode(mode);
@@ -207,7 +202,7 @@ export function PullRequestThreadDialog({
                   return;
                 }
                 event.preventDefault();
-                if (canPreparePullRequestThread) {
+                if (!isResolving && !preparePullRequestThreadMutation.isPending) {
                   void handleConfirm("local");
                 }
               }}
@@ -257,7 +252,12 @@ export function PullRequestThreadDialog({
             onClick={() => {
               void handleConfirm("local");
             }}
-            disabled={!canPreparePullRequestThread}
+            disabled={
+              !cwd ||
+              !resolvedPullRequest ||
+              isResolving ||
+              preparePullRequestThreadMutation.isPending
+            }
           >
             {preparingMode === "local" ? "Preparing local..." : "Local"}
           </Button>
@@ -267,7 +267,12 @@ export function PullRequestThreadDialog({
             onClick={() => {
               void handleConfirm("worktree");
             }}
-            disabled={!canPreparePullRequestThread}
+            disabled={
+              !cwd ||
+              !resolvedPullRequest ||
+              isResolving ||
+              preparePullRequestThreadMutation.isPending
+            }
           >
             {preparingMode === "worktree" ? "Preparing worktree..." : "Worktree"}
           </Button>
