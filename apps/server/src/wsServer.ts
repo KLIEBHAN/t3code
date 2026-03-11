@@ -628,14 +628,7 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
     pushBus.publishAll(ORCHESTRATION_WS_CHANNELS.domainEvent, event),
   ).pipe(Effect.forkIn(subscriptionsScope));
 
-  yield* Stream.runForEach(keybindingsManager.streamChanges, (event) =>
-    pushBus.publishAll(WS_CHANNELS.serverConfigUpdated, {
-      issues: event.issues,
-      providers: providerStatuses,
-    }),
-  ).pipe(Effect.forkIn(subscriptionsScope));
-
-  yield* Stream.runForEach(keybindingsManager.changes, () =>
+  yield* Stream.runForEach(keybindingsManager.streamChanges, () =>
     Effect.flatMap(buildServerConfigUpdatedPayload(["keybindings"]), (payload) =>
       pushBus.publishAll(WS_CHANNELS.serverConfigUpdated, payload),
     ),

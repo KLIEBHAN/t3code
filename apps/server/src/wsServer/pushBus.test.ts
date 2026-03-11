@@ -54,6 +54,8 @@ describe("makeServerPushBus", () => {
         yield* pushBus.publishAll(WS_CHANNELS.serverConfigUpdated, {
           issues: [{ kind: "keybindings.malformed-config", message: "queued-before-connect" }],
           providers: [],
+          sources: ["keybindings"],
+          updatedAt: "2026-03-11T00:00:00.000Z",
         });
 
         const delivered = yield* pushBus.publishClient(
@@ -71,6 +73,8 @@ describe("makeServerPushBus", () => {
         yield* pushBus.publishAll(WS_CHANNELS.serverConfigUpdated, {
           issues: [],
           providers: [],
+          sources: ["keybindings"],
+          updatedAt: "2026-03-11T00:00:01.000Z",
         });
 
         yield* Effect.promise(() => client.waitForSentCount(2));
@@ -96,6 +100,8 @@ describe("makeServerPushBus", () => {
           data: {
             issues: [],
             providers: [],
+            sources: ["keybindings"],
+            updatedAt: "2026-03-11T00:00:01.000Z",
           },
         });
       }),

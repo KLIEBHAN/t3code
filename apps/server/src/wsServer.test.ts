@@ -978,12 +978,9 @@ describe("WebSocket Server", () => {
       keybindingsPath,
       "{ not-json",
       (push) =>
-        Array.isArray((push.data as { issues?: unknown[] }).issues) &&
-        Array.isArray((push.data as { sources?: unknown[] }).sources) &&
-        (push.data as { sources: string[] }).sources.includes("keybindings") &&
-        Boolean((push.data as { issues: Array<{ kind: string }> }).issues[0]) &&
-        (push.data as { issues: Array<{ kind: string }> }).issues[0]!.kind ===
-          "keybindings.malformed-config",
+        push.data.sources.includes("keybindings") &&
+        Boolean(push.data.issues[0]) &&
+        push.data.issues[0]!.kind === "keybindings.malformed-config",
     );
     expect(malformedPush.data).toEqual({
       issues: [{ kind: "keybindings.malformed-config", message: expect.any(String) }],
@@ -997,10 +994,7 @@ describe("WebSocket Server", () => {
       keybindingsPath,
       "[]",
       (push) =>
-        Array.isArray((push.data as { issues?: unknown[] }).issues) &&
-        Array.isArray((push.data as { sources?: unknown[] }).sources) &&
-        (push.data as { sources: string[] }).sources.includes("keybindings") &&
-        (push.data as { issues: unknown[] }).issues.length === 0,
+        push.data.sources.includes("keybindings") && push.data.issues.length === 0,
     );
     expect(successPush.data).toEqual({
       issues: [],
@@ -1023,9 +1017,8 @@ describe("WebSocket Server", () => {
     const addr = server.address();
     const port = typeof addr === "object" && addr !== null ? addr.port : 0;
 
-    const ws = await connectWs(port);
+    const [ws] = await connectAndAwaitWelcome(port);
     connections.push(ws);
-    await waitForMessage(ws);
 
     const response = await sendRequest(ws, WS_METHODS.serverGetConfig);
     expect(response.error).toBeUndefined();
@@ -1051,9 +1044,7 @@ describe("WebSocket Server", () => {
     const invalidPush = await waitForPush(
       ws,
       WS_CHANNELS.serverConfigUpdated,
-      (push) =>
-        Array.isArray((push.data as { sources?: unknown[] }).sources) &&
-        (push.data as { sources: string[] }).sources.includes("custom-slash-commands"),
+      (push) => push.data.sources.includes("custom-slash-commands"),
     );
     expect(invalidPush.data).toEqual({
       issues: [

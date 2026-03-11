@@ -14,8 +14,6 @@ import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
 import { checkpointFilesFromUnifiedDiff } from "../../checkpointing/Diffs.ts";
 import {
   checkpointRefForThreadTurn,
-  isProviderFallbackCheckpointRef,
-  nextCheckpointTurnCount,
   resolveThreadWorkspaceCwd,
 } from "../../checkpointing/Utils.ts";
 import { clearWorkspaceIndexCache } from "../../workspaceEntries.ts";
