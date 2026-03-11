@@ -90,6 +90,7 @@ interface ProjectScriptsControlProps {
   scripts: ProjectScript[];
   keybindings: ResolvedKeybindingsConfig;
   preferredScriptId?: string | null;
+  compactHeaderActions?: boolean;
   onRunScript: (script: ProjectScript) => void;
   onAddScript: (input: NewProjectScriptInput) => Promise<void> | void;
   onUpdateScript: (scriptId: string, input: NewProjectScriptInput) => Promise<void> | void;
@@ -151,6 +152,7 @@ export default function ProjectScriptsControl({
   scripts,
   keybindings,
   preferredScriptId = null,
+  compactHeaderActions = false,
   onRunScript,
   onAddScript,
   onUpdateScript,
@@ -178,6 +180,12 @@ export default function ProjectScriptsControl({
   const isEditing = editingScriptId !== null;
   const dropdownItemClassName =
     "data-highlighted:bg-transparent data-highlighted:text-foreground hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:text-accent-foreground data-highlighted:hover:bg-accent data-highlighted:hover:text-accent-foreground data-highlighted:focus-visible:bg-accent data-highlighted:focus-visible:text-accent-foreground";
+  const headerActionLabelClassName = compactHeaderActions
+    ? "sr-only"
+    : "sr-only @sm/header-actions:not-sr-only @sm/header-actions:ml-0.5";
+  const groupSeparatorClassName = compactHeaderActions
+    ? "hidden"
+    : "hidden @sm/header-actions:block";
 
   const captureKeybinding = (event: KeyboardEvent<HTMLInputElement>) => {
     if (event.key === "Tab") return;
@@ -277,11 +285,9 @@ export default function ProjectScriptsControl({
             title={`Run ${primaryScript.name}`}
           >
             <ScriptIcon icon={primaryScript.icon} />
-            <span className="sr-only @sm/header-actions:not-sr-only @sm/header-actions:ml-0.5">
-              {primaryScript.name}
-            </span>
+            <span className={headerActionLabelClassName}>{primaryScript.name}</span>
           </Button>
-          <GroupSeparator className="hidden @sm/header-actions:block" />
+          <GroupSeparator className={groupSeparatorClassName} />
           <Menu highlightItemOnHover={false}>
             <MenuTrigger
               render={<Button size="icon-xs" variant="outline" aria-label="Script actions" />}
@@ -342,9 +348,7 @@ export default function ProjectScriptsControl({
       ) : (
         <Button size="xs" variant="outline" onClick={openAddDialog} title="Add action">
           <PlusIcon className="size-3.5" />
-          <span className="sr-only @sm/header-actions:not-sr-only @sm/header-actions:ml-0.5">
-            Add action
-          </span>
+          <span className={headerActionLabelClassName}>Add action</span>
         </Button>
       )}
 

@@ -48,6 +48,7 @@ import { readNativeApi } from "~/nativeApi";
 interface GitActionsControlProps {
   gitCwd: string | null;
   activeThreadId: ThreadId | null;
+  compactHeaderActions?: boolean;
 }
 
 interface PendingDefaultBranchAction {
@@ -153,7 +154,17 @@ function GitQuickActionIcon({ quickAction }: { quickAction: GitQuickAction }) {
   return <InfoIcon className={iconClassName} />;
 }
 
-export default function GitActionsControl({ gitCwd, activeThreadId }: GitActionsControlProps) {
+export default function GitActionsControl({
+  gitCwd,
+  activeThreadId,
+  compactHeaderActions = false,
+}: GitActionsControlProps) {
+  const gitQuickActionLabelClassName = compactHeaderActions
+    ? "sr-only"
+    : "sr-only @sm/header-actions:not-sr-only @sm/header-actions:ml-0.5";
+  const groupSeparatorClassName = compactHeaderActions
+    ? "hidden"
+    : "hidden @sm/header-actions:block";
   const threadToastData = useMemo(
     () => (activeThreadId ? { threadId: activeThreadId } : undefined),
     [activeThreadId],
@@ -655,9 +666,7 @@ export default function GitActionsControl({ gitCwd, activeThreadId }: GitActions
                 }
               >
                 <GitQuickActionIcon quickAction={quickAction} />
-                <span className="sr-only @sm/header-actions:not-sr-only @sm/header-actions:ml-0.5">
-                  {quickAction.label}
-                </span>
+                <span className={gitQuickActionLabelClassName}>{quickAction.label}</span>
               </PopoverTrigger>
               <PopoverPopup tooltipStyle side="bottom" align="start">
                 {quickActionDisabledReason}
@@ -671,12 +680,10 @@ export default function GitActionsControl({ gitCwd, activeThreadId }: GitActions
               onClick={runQuickAction}
             >
               <GitQuickActionIcon quickAction={quickAction} />
-              <span className="sr-only @sm/header-actions:not-sr-only @sm/header-actions:ml-0.5">
-                {quickAction.label}
-              </span>
+              <span className={gitQuickActionLabelClassName}>{quickAction.label}</span>
             </Button>
           )}
-          <GroupSeparator className="hidden @sm/header-actions:block" />
+          <GroupSeparator className={groupSeparatorClassName} />
           <Menu
             onOpenChange={(open) => {
               if (open) void invalidateGitQueries(queryClient);
