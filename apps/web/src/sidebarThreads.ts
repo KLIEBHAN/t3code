@@ -7,9 +7,7 @@ function parseSortableTimestamp(value: string): number {
   return Number.isFinite(timestamp) ? timestamp : Number.NEGATIVE_INFINITY;
 }
 
-export function resolveThreadActivityAt(
-  thread: Pick<Thread, "createdAt" | "updatedAt">,
-): string {
+export function resolveThreadActivityAt(thread: Pick<Thread, "createdAt" | "updatedAt">): string {
   return Number.isFinite(Date.parse(thread.updatedAt)) ? thread.updatedAt : thread.createdAt;
 }
 

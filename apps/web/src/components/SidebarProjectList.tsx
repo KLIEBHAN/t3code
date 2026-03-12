@@ -1,4 +1,10 @@
-import { ChevronRightIcon, FolderIcon, GitPullRequestIcon, SquarePenIcon, TerminalIcon } from "lucide-react";
+import {
+  ChevronRightIcon,
+  FolderIcon,
+  GitPullRequestIcon,
+  SquarePenIcon,
+  TerminalIcon,
+} from "lucide-react";
 import {
   memo,
   useState,
@@ -12,16 +18,10 @@ import { CSS } from "@dnd-kit/utilities";
 import type { ProjectId, ThreadId } from "@t3tools/contracts";
 
 import { resolveServerHttpOrigin } from "../serverOrigins";
-import type {
-  SidebarPrStatusIndicator,
-  SidebarTerminalStatusIndicator,
-} from "../sidebarStatus";
+import type { SidebarPrStatusIndicator, SidebarTerminalStatusIndicator } from "../sidebarStatus";
 import type { Project, Thread } from "../types";
 import type { ThreadStatusPill } from "./Sidebar.logic";
-import {
-  Collapsible,
-  CollapsibleContent,
-} from "./ui/collapsible";
+import { Collapsible, CollapsibleContent } from "./ui/collapsible";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import {
   SidebarMenu,
@@ -236,10 +236,7 @@ export interface SidebarProjectListProps {
   getThreadTimestampLabel: (thread: Thread) => string;
   onProjectTitlePointerDownCapture: () => void;
   onProjectTitleClick: (event: MouseEvent<HTMLButtonElement>, projectId: ProjectId) => void;
-  onProjectTitleKeyDown: (
-    event: KeyboardEvent<HTMLButtonElement>,
-    projectId: ProjectId,
-  ) => void;
+  onProjectTitleKeyDown: (event: KeyboardEvent<HTMLButtonElement>, projectId: ProjectId) => void;
   onProjectContextMenu: (projectId: ProjectId, position: { x: number; y: number }) => void;
   onStartNewThread: (projectId: ProjectId) => void;
   onThreadNavigate: (threadId: ThreadId) => void;

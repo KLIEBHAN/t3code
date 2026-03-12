@@ -52,12 +52,12 @@ export function useSidebarDesktopUpdate(options: { isElectron: boolean }) {
   }, [options.isElectron]);
 
   const desktopUpdateButtonAction = useMemo(
-    () =>
-      desktopUpdateState ? resolveDesktopUpdateButtonAction(desktopUpdateState) : "none",
+    () => (desktopUpdateState ? resolveDesktopUpdateButtonAction(desktopUpdateState) : "none"),
     [desktopUpdateState],
   );
 
-  const showDesktopUpdateButton = options.isElectron && shouldShowDesktopUpdateButton(desktopUpdateState);
+  const showDesktopUpdateButton =
+    options.isElectron && shouldShowDesktopUpdateButton(desktopUpdateState);
   const desktopUpdateTooltip = desktopUpdateState
     ? getDesktopUpdateButtonTooltip(desktopUpdateState)
     : "Update available";

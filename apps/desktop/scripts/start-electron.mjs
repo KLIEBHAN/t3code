@@ -25,7 +25,9 @@ function exitCurrentProcessWithChildResult(code, signal) {
 }
 
 function exitCurrentProcessOnLaunchError(error) {
-  console.error(`[desktop] Failed to launch Electron: ${error instanceof Error ? error.message : String(error)}`);
+  console.error(
+    `[desktop] Failed to launch Electron: ${error instanceof Error ? error.message : String(error)}`,
+  );
   process.exit(1);
 }
 

@@ -48,7 +48,11 @@ export function SidebarWindowHeader(props: {
     );
   }
 
-  return <SidebarHeader className="gap-3 px-3 py-2 sm:gap-2.5 sm:px-4 sm:py-3">{props.wordmark}</SidebarHeader>;
+  return (
+    <SidebarHeader className="gap-3 px-3 py-2 sm:gap-2.5 sm:px-4 sm:py-3">
+      {props.wordmark}
+    </SidebarHeader>
+  );
 }
 
 export function SidebarProjectsHeader(props: {

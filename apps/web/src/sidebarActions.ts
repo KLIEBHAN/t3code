@@ -21,9 +21,13 @@ export async function openSidebarThreadDraft(options: {
   draftOptions?: Parameters<typeof openThreadDraftForProject>[2];
   getDraftThreadByProjectId: (projectId: ProjectId) => ProjectDraftThread | null;
   getDraftThread: Parameters<typeof openThreadDraftForProject>[1]["getDraftThread"];
-  setProjectDraftThreadId: Parameters<typeof openThreadDraftForProject>[1]["setProjectDraftThreadId"];
+  setProjectDraftThreadId: Parameters<
+    typeof openThreadDraftForProject
+  >[1]["setProjectDraftThreadId"];
   setDraftThreadContext: Parameters<typeof openThreadDraftForProject>[1]["setDraftThreadContext"];
-  clearProjectDraftThreadId: Parameters<typeof openThreadDraftForProject>[1]["clearProjectDraftThreadId"];
+  clearProjectDraftThreadId: Parameters<
+    typeof openThreadDraftForProject
+  >[1]["clearProjectDraftThreadId"];
   routeThreadId: ThreadId | null;
   navigateToThread: Parameters<typeof openThreadDraftForProject>[1]["navigateToThread"];
 }): Promise<void> {
