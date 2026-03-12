@@ -160,6 +160,38 @@ function buildFileDiffRenderKey(fileDiff: FileDiffMetadata): string {
   return fileDiff.cacheKey ?? `${fileDiff.prevName ?? "none"}:${fileDiff.name}`;
 }
 
+function scrollSelectedDiffFileIntoView(options: {
+  patchViewportElement: HTMLDivElement;
+  selectedFilePath: string;
+}): boolean {
+  const { patchViewportElement, selectedFilePath } = options;
+  const scrollContainer = patchViewportElement.querySelector<HTMLElement>(".diff-render-surface");
+  if (!scrollContainer) {
+    return false;
+  }
+  const target = Array.from(
+    patchViewportElement.querySelectorAll<HTMLElement>("[data-diff-file-path]"),
+  ).find((element) => {
+    const diffFilePath = element.dataset.diffFilePath;
+    return diffFilePath ? pathsReferToSameFileChange(diffFilePath, selectedFilePath) : false;
+  });
+  if (!target) {
+    return false;
+  }
+
+  const containerRect = scrollContainer.getBoundingClientRect();
+  const targetRect = target.getBoundingClientRect();
+  const nextScrollTop = Math.max(
+    0,
+    scrollContainer.scrollTop + (targetRect.top - containerRect.top),
+  );
+
+  if (Math.abs(scrollContainer.scrollTop - nextScrollTop) > 1) {
+    scrollContainer.scrollTo({ top: nextScrollTop, behavior: "auto" });
+  }
+
+  return true;
+}
 interface DiffPanelProps {
   mode?: DiffPanelMode;
 }
@@ -453,17 +485,37 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
   }, [diffSearch.diff, selectedFilePath, selectedTurnId]);
 
   useEffect(() => {
-    if (!selectedFilePath || !patchViewportElement) {
+    if (!selectedFilePath || !patchViewportElement || !canRenderVirtualizedPatch) {
       return;
     }
-    const target = Array.from(
-      patchViewportElement.querySelectorAll<HTMLElement>("[data-diff-file-path]"),
-    ).find((element) => {
-      const diffFilePath = element.dataset.diffFilePath;
-      return diffFilePath ? pathsReferToSameFileChange(diffFilePath, selectedFilePath) : false;
-    });
-    target?.scrollIntoView({ block: "start", inline: "nearest" });
-  }, [patchViewportElement, selectedFilePath, renderableFiles]);
+
+    let frameId: number | null = null;
+    let attempts = 0;
+
+    const tryScroll = () => {
+      if (
+        scrollSelectedDiffFileIntoView({
+          patchViewportElement,
+          selectedFilePath,
+        })
+      ) {
+        return;
+      }
+      if (attempts >= 6) {
+        return;
+      }
+      attempts += 1;
+      frameId = window.requestAnimationFrame(tryScroll);
+    };
+
+    frameId = window.requestAnimationFrame(tryScroll);
+
+    return () => {
+      if (frameId !== null) {
+        window.cancelAnimationFrame(frameId);
+      }
+    };
+  }, [canRenderVirtualizedPatch, patchViewportElement, selectedFilePath, virtualizerRenderKey]);
 
   const openDiffFileInEditor = useCallback(
     (filePath: string) => {
