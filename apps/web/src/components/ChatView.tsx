@@ -83,7 +83,11 @@ import {
   type PendingUserInputDraftAnswer,
 } from "../pendingUserInput";
 import { useChatPendingUserInputActions } from "../chatPendingUserInput";
-import { createChatPromptHistory } from "../chatPromptHistory";
+import {
+  canBrowsePromptHistoryDown,
+  canBrowsePromptHistoryUp,
+  createChatPromptHistory,
+} from "../chatPromptHistory";
 import { deriveChatComposerState } from "../chatComposerState";
 import { implementPlanInNewThread, submitPlanFollowUp } from "../chatPlanFollowUp";
 import { openChatThreadDraft, runProgrammaticChatThreadCommand } from "../chatThreadCommands";
@@ -3554,9 +3558,13 @@ export default function ChatView({ threadId }: ChatViewProps) {
       !showPlanFollowUpPrompt
     ) {
       const snapshot = readComposerSnapshot();
-      const canNavigateUp =
-        key === "ArrowUp" && (snapshot.value.length === 0 || snapshot.cursor === 0);
-      const canNavigateDown = key === "ArrowDown" && promptHistory.isBrowsing(threadId);
+      const canNavigateUp = key === "ArrowUp" && canBrowsePromptHistoryUp(snapshot);
+      const canNavigateDown =
+        key === "ArrowDown" &&
+        canBrowsePromptHistoryDown({
+          isBrowsing: promptHistory.isBrowsing(threadId),
+          snapshot,
+        });
       if (canNavigateUp || canNavigateDown) {
         const nextPrompt = promptHistory.browse(
           threadId,

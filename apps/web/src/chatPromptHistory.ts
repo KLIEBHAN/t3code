@@ -4,6 +4,11 @@ const MAX_PROMPT_HISTORY_ENTRIES = 50;
 
 type HistoryDirection = "up" | "down";
 
+export interface PromptHistoryCursorSnapshot {
+  value: string;
+  cursor: number;
+}
+
 interface PromptHistoryBrowseState {
   draft: string;
   index: number;
@@ -14,6 +19,17 @@ export interface ChatPromptHistory {
   isBrowsing: (threadId: ThreadId) => boolean;
   recordPrompt: (threadId: ThreadId, prompt: string) => void;
   resetBrowsing: (threadId: ThreadId) => void;
+}
+
+export function canBrowsePromptHistoryUp(snapshot: PromptHistoryCursorSnapshot): boolean {
+  return snapshot.value.length === 0 || snapshot.cursor <= 0;
+}
+
+export function canBrowsePromptHistoryDown(options: {
+  isBrowsing: boolean;
+  snapshot: PromptHistoryCursorSnapshot;
+}): boolean {
+  return options.isBrowsing && options.snapshot.cursor >= options.snapshot.value.length;
 }
 
 export function createChatPromptHistory(): ChatPromptHistory {
