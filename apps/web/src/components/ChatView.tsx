@@ -29,15 +29,7 @@ import {
   normalizeModelSlug,
   resolveModelSlugForProvider,
 } from "@t3tools/shared/model";
-import {
-  memo,
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useDebouncedValue } from "@tanstack/react-pacer";
 import { useNavigate, useSearch } from "@tanstack/react-router";
@@ -64,13 +56,8 @@ import {
   expandCollapsedComposerCursor,
   replaceTextRange,
 } from "../composer-logic";
-import {
-  type CustomSlashCommandDefinition,
-} from "../slashCommands";
-import {
-  createBuiltinSlashCommandExecutor,
-  useSlashCommands,
-} from "../slashCommandsHooks";
+import { type CustomSlashCommandDefinition } from "../slashCommands";
+import { createBuiltinSlashCommandExecutor, useSlashCommands } from "../slashCommandsHooks";
 import {
   buildCommandPaletteItems,
   buildComposerCommandItems,
@@ -101,10 +88,7 @@ import { implementPlanInNewThread, submitPlanFollowUp } from "../chatPlanFollowU
 import { openChatThreadDraft, runProgrammaticChatThreadCommand } from "../chatThreadCommands";
 import { getCustomModelOptionsByProvider } from "./ChatView.logic";
 import { useStore } from "../store";
-import {
-  proposedPlanTitle,
-  resolvePlanFollowUpSubmission,
-} from "../proposedPlan";
+import { proposedPlanTitle, resolvePlanFollowUpSubmission } from "../proposedPlan";
 import { truncateTitle } from "../truncateTitle";
 import { buildLocalDraftThread, resolveDraftThreadEnvMode } from "../chatDraftThread";
 import {
@@ -135,10 +119,7 @@ import {
   MessagesTimeline,
   type ExpandedImagePreview,
 } from "./ChatMessagesTimeline";
-import {
-  CommandPaletteDialog,
-  ComposerCommandMenu,
-} from "./ChatCommandMenus";
+import { CommandPaletteDialog, ComposerCommandMenu } from "./ChatCommandMenus";
 import { CodexTraitsPicker } from "./chat/CodexTraitsPicker";
 import { CompactComposerControlsMenu } from "./chat/CompactComposerControlsMenu";
 import { ComposerPendingApprovalActions } from "./chat/ComposerPendingApprovalActions";
@@ -166,25 +147,12 @@ import {
 import { Button } from "./ui/button";
 import { Separator } from "./ui/separator";
 import { Group, GroupSeparator } from "./ui/group";
-import {
-  Menu,
-  MenuItem,
-  MenuPopup,
-  MenuShortcut,
-  MenuTrigger,
-} from "./ui/menu";
-import {
-  CursorIcon,
-  Icon,
-  VisualStudioCode,
-  Zed,
-} from "./Icons";
+import { Menu, MenuItem, MenuPopup, MenuShortcut, MenuTrigger } from "./ui/menu";
+import { CursorIcon, Icon, VisualStudioCode, Zed } from "./Icons";
 import { cn, isMacPlatform, isWindowsPlatform, randomUUID } from "~/lib/utils";
 import { Badge } from "./ui/badge";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
-import {
-  CommandShortcut,
-} from "./ui/command";
+import { CommandShortcut } from "./ui/command";
 import { toastManager } from "./ui/toast";
 import { decodeProjectScriptKeybindingRule } from "~/lib/projectScriptKeybindings";
 import ProjectScriptsControl, { type NewProjectScriptInput } from "./ProjectScriptsControl";
@@ -410,9 +378,9 @@ export default function ChatView({ threadId }: ChatViewProps) {
   const [terminalFocusRequestId, setTerminalFocusRequestId] = useState(0);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [commandPaletteQuery, setCommandPaletteQuery] = useState("");
-  const [commandPaletteHighlightedItemId, setCommandPaletteHighlightedItemId] = useState<string | null>(
-    null,
-  );
+  const [commandPaletteHighlightedItemId, setCommandPaletteHighlightedItemId] = useState<
+    string | null
+  >(null);
   const [composerHighlightedItemId, setComposerHighlightedItemId] = useState<string | null>(null);
   const [pullRequestDialogState, setPullRequestDialogState] =
     useState<PullRequestDialogState | null>(null);
@@ -1024,11 +992,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
     }
 
     return byUserMessageId;
-  }, [
-    inferredCheckpointTurnCountByTurnId,
-    resolveAssistantTurnDiffSummary,
-    timelineEntries,
-  ]);
+  }, [inferredCheckpointTurnCountByTurnId, resolveAssistantTurnDiffSummary, timelineEntries]);
 
   const completionSummary = useMemo(() => {
     if (!latestTurnSettled) return null;
@@ -1125,12 +1089,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
       searchableModelOptions,
       slashCommandItems: slashCommands.composerItems,
     });
-  }, [
-    composerTrigger,
-    searchableModelOptions,
-    slashCommands.composerItems,
-    workspaceEntries,
-  ]);
+  }, [composerTrigger, searchableModelOptions, slashCommands.composerItems, workspaceEntries]);
   const composerMenuOpen = Boolean(composerTrigger);
   const activeComposerMenuItem = useMemo(
     () =>
@@ -1781,7 +1740,8 @@ export default function ChatView({ threadId }: ChatViewProps) {
       rememberedState.element.isConnected &&
       scrollContainer.contains(rememberedState.element)
     ) {
-      nextScrollTop += rememberedState.element.getBoundingClientRect().top - rememberedState.triggerTop;
+      nextScrollTop +=
+        rememberedState.element.getBoundingClientRect().top - rememberedState.triggerTop;
     }
 
     scrollContainer.scrollTop = nextScrollTop;
@@ -2563,9 +2523,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
       return;
     }
     const standaloneSlashCommand =
-      composerImages.length === 0
-        ? slashCommands.parseStandaloneCommand(trimmed)
-        : null;
+      composerImages.length === 0 ? slashCommands.parseStandaloneCommand(trimmed) : null;
     if (standaloneSlashCommand && (await slashCommands.executeCommand(standaloneSlashCommand))) {
       promptRef.current = "";
       clearComposerDraftContent(activeThread.id);
@@ -3364,7 +3322,12 @@ export default function ChatView({ threadId }: ChatViewProps) {
       });
       return true;
     },
-    [activePendingProgress?.activeQuestion, activePendingUserInput, detectChatComposerTrigger, setPrompt],
+    [
+      activePendingProgress?.activeQuestion,
+      activePendingUserInput,
+      detectChatComposerTrigger,
+      setPrompt,
+    ],
   );
 
   const readComposerSnapshot = useCallback((): {
@@ -3459,12 +3422,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
         setComposerHighlightedItemId(null);
       }
     },
-    [
-      applyPromptReplacement,
-      onProviderModelSelect,
-      resolveActiveComposerTrigger,
-      slashCommands,
-    ],
+    [applyPromptReplacement, onProviderModelSelect, resolveActiveComposerTrigger, slashCommands],
   );
   const onComposerMenuItemHighlighted = useCallback((itemId: string | null) => {
     setComposerHighlightedItemId(itemId);
