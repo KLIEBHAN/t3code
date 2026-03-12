@@ -29,13 +29,10 @@ export interface CustomSlashCommandDefinition {
 }
 
 export type SlashCommandDefinition = BuiltinSlashCommandDefinition | CustomSlashCommandDefinition;
-export type ExecutableSlashCommandDefinition = Exclude<
-  SlashCommandDefinition,
-  { mode: "insert" }
->;
+export type ExecutableSlashCommandDefinition = Exclude<SlashCommandDefinition, { mode: "insert" }>;
 
-const BUILTIN_SLASH_COMMANDS: readonly BuiltinSlashCommandDefinition[] = BUILTIN_CHAT_SLASH_COMMANDS.map(
-  (command) => {
+const BUILTIN_SLASH_COMMANDS: readonly BuiltinSlashCommandDefinition[] =
+  BUILTIN_CHAT_SLASH_COMMANDS.map((command) => {
     const definition: BuiltinSlashCommandDefinition = {
       source: "builtin",
       id: command.id,
@@ -53,8 +50,7 @@ const BUILTIN_SLASH_COMMANDS: readonly BuiltinSlashCommandDefinition[] = BUILTIN
       definition.searchTerms = command.searchTerms;
     }
     return definition;
-  },
-);
+  });
 
 function normalizeQuery(value: string): string {
   return value.trim().toLowerCase();
@@ -100,10 +96,7 @@ export function getSlashCommandDefinitions(
   return [...BUILTIN_SLASH_COMMANDS, ...customCommands.map(toCustomSlashCommandDefinition)];
 }
 
-export function matchesSlashCommandQuery(
-  command: SlashCommandDefinition,
-  query: string,
-): boolean {
+export function matchesSlashCommandQuery(command: SlashCommandDefinition, query: string): boolean {
   const normalizedQuery = normalizeQuery(query);
   if (!normalizedQuery) {
     return true;

@@ -175,7 +175,8 @@ const ServerConfigLive = (input: CliInput) =>
       const { join, resolve } = yield* Path.Path;
       const keybindingsConfigPath = join(stateDir, "keybindings.json");
       const customSlashCommandsDirectoryPath = resolve(
-        env.customSlashCommandsDirectoryPath ?? join(homedir(), ".config", "t3code", "slash-commands"),
+        env.customSlashCommandsDirectoryPath ??
+          join(homedir(), ".config", "t3code", "slash-commands"),
       );
       const host =
         Option.getOrUndefined(input.host) ??

@@ -14,10 +14,7 @@ import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 
 import { newCommandId, newMessageId, newThreadId } from "~/lib/utils";
 import { toastManager } from "./components/ui/toast";
-import {
-  buildPlanImplementationPrompt,
-  buildPlanImplementationThreadTitle,
-} from "./proposedPlan";
+import { buildPlanImplementationPrompt, buildPlanImplementationThreadTitle } from "./proposedPlan";
 import { truncateTitle } from "./truncateTitle";
 import type { ChatMessage } from "./types";
 

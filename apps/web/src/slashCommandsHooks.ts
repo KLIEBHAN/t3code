@@ -2,10 +2,7 @@ import type { ResolvedKeybindingsConfig, ServerCustomSlashCommand } from "@t3too
 import type { BuiltinChatSlashCommand } from "@t3tools/shared/slashCommands";
 import { useCallback, useMemo } from "react";
 
-import {
-  parseStandaloneComposerSlashCommand,
-  type ComposerTrigger,
-} from "./composer-logic";
+import { parseStandaloneComposerSlashCommand, type ComposerTrigger } from "./composer-logic";
 import { shortcutLabelForCommand } from "./keybindings";
 import {
   findMatchingSlashCommands,

@@ -42,9 +42,9 @@ describe("findMatchingSlashCommands", () => {
   });
 
   it("includes custom commands in search results", () => {
-    expect(findMatchingSlashCommands("deploy", CUSTOM_COMMANDS).map((command) => command.id)).toEqual([
-      "custom:deploy",
-    ]);
+    expect(
+      findMatchingSlashCommands("deploy", CUSTOM_COMMANDS).map((command) => command.id),
+    ).toEqual(["custom:deploy"]);
     expect(
       findMatchingSlashCommands("current project", CUSTOM_COMMANDS).map((command) => command.id),
     ).toContain("custom:deploy");

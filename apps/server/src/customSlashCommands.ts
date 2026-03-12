@@ -1,7 +1,4 @@
-import type {
-  ServerConfigIssue,
-  ServerCustomSlashCommand,
-} from "@t3tools/contracts";
+import type { ServerConfigIssue, ServerCustomSlashCommand } from "@t3tools/contracts";
 import { RESERVED_SLASH_COMMAND_NAMES } from "@t3tools/shared/slashCommands";
 import { Cache, Effect, FileSystem, Layer, Path, PubSub, ServiceMap, Stream } from "effect";
 
@@ -96,7 +93,11 @@ const makeCustomSlashCommands = Effect.gen(function* () {
 
     for (const entry of entries) {
       const relativeEntry = entry.replace(/^[/\\]+/, "").replace(/\\/g, "/");
-      if (relativeEntry.length === 0 || relativeEntry.includes("/") || !relativeEntry.endsWith(".md")) {
+      if (
+        relativeEntry.length === 0 ||
+        relativeEntry.includes("/") ||
+        !relativeEntry.endsWith(".md")
+      ) {
         continue;
       }
 
@@ -180,7 +181,10 @@ const makeCustomSlashCommands = Effect.gen(function* () {
     .pipe(Effect.orElseSucceed(() => undefined));
 
   yield* syncDirectoryOnStartup;
-  yield* Stream.runForEach(fs.watch(customSlashCommandsDirectoryPath), () => revalidateAndEmit).pipe(
+  yield* Stream.runForEach(
+    fs.watch(customSlashCommandsDirectoryPath),
+    () => revalidateAndEmit,
+  ).pipe(
     Effect.catch((cause) =>
       Effect.logWarning("custom slash commands watcher stopped unexpectedly", {
         path: customSlashCommandsDirectoryPath,

@@ -150,7 +150,9 @@ export const CommandPaletteDialog = memo(function CommandPaletteDialog(props: {
             onKeyDown={(event) => {
               if (event.key !== "Enter") return;
               const activeItem =
-                props.items.find((item) => item.id === props.activeItemId) ?? props.items[0] ?? null;
+                props.items.find((item) => item.id === props.activeItemId) ??
+                props.items[0] ??
+                null;
               if (!activeItem) return;
               event.preventDefault();
               void props.onSelect(activeItem);
@@ -180,7 +182,9 @@ export const CommandPaletteDialog = memo(function CommandPaletteDialog(props: {
                       <span className="truncate text-muted-foreground/70 text-xs">
                         {item.description}
                       </span>
-                      {item.shortcutLabel && <CommandShortcut>{item.shortcutLabel}</CommandShortcut>}
+                      {item.shortcutLabel && (
+                        <CommandShortcut>{item.shortcutLabel}</CommandShortcut>
+                      )}
                     </CommandItem>
                   ))}
                 </CommandGroup>
@@ -233,7 +237,9 @@ export const CommandPaletteDialog = memo(function CommandPaletteDialog(props: {
                       <span className="truncate text-muted-foreground/70 text-xs">
                         {item.description}
                       </span>
-                      {item.shortcutLabel && <CommandShortcut>{item.shortcutLabel}</CommandShortcut>}
+                      {item.shortcutLabel && (
+                        <CommandShortcut>{item.shortcutLabel}</CommandShortcut>
+                      )}
                     </CommandItem>
                   ))}
                 </CommandGroup>

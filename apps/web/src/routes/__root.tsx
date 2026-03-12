@@ -330,10 +330,7 @@ function EventRouter() {
                     if (!editor) {
                       throw new Error("No available editors found.");
                     }
-                    return api.shell.openInEditor(
-                      config.customSlashCommandsDirectoryPath,
-                      editor,
-                    );
+                    return api.shell.openInEditor(config.customSlashCommandsDirectoryPath, editor);
                   })
                   .catch((error) => {
                     toastManager.add({

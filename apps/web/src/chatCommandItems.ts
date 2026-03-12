@@ -144,21 +144,23 @@ export function buildCommandPaletteItems(options: {
     }));
 
   const scriptItems =
-    scripts?.filter((script) => {
-      if (!normalizedQuery) {
-        return true;
-      }
-      const scriptSearch = `${script.name} ${script.command}`.toLowerCase();
-      return scriptSearch.includes(normalizedQuery) || "script".includes(normalizedQuery);
-    }).map<CommandPaletteItem>((script) => ({
-      id: `palette:script:${script.id}`,
-      group: "scripts",
-      type: "script",
-      label: script.name,
-      description: script.command,
-      script,
-      shortcutLabel: shortcutLabelForCommand(keybindings, commandForProjectScript(script.id)),
-    })) ?? [];
+    scripts
+      ?.filter((script) => {
+        if (!normalizedQuery) {
+          return true;
+        }
+        const scriptSearch = `${script.name} ${script.command}`.toLowerCase();
+        return scriptSearch.includes(normalizedQuery) || "script".includes(normalizedQuery);
+      })
+      .map<CommandPaletteItem>((script) => ({
+        id: `palette:script:${script.id}`,
+        group: "scripts",
+        type: "script",
+        label: script.name,
+        description: script.command,
+        script,
+        shortcutLabel: shortcutLabelForCommand(keybindings, commandForProjectScript(script.id)),
+      })) ?? [];
 
   return [...slashCommandItems, ...modelItems, ...scriptItems];
 }

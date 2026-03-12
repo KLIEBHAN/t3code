@@ -2,10 +2,7 @@ import type { ApprovalRequestId } from "@t3tools/contracts";
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import { useCallback } from "react";
 
-import {
-  expandCollapsedComposerCursor,
-  type ComposerTrigger,
-} from "./composer-logic";
+import { expandCollapsedComposerCursor, type ComposerTrigger } from "./composer-logic";
 import {
   setPendingUserInputCustomAnswer,
   type PendingUserInputDraftAnswer,
