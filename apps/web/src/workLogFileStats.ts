@@ -42,12 +42,16 @@ export function findWorkLogFileStat(
   }
 
   const normalizedTargetPath = normalizePath(filePath);
-  const exactMatch = summary.files.find((file) => normalizePath(file.path) === normalizedTargetPath);
+  const exactMatch = summary.files.find(
+    (file) => normalizePath(file.path) === normalizedTargetPath,
+  );
   if (exactMatch) {
     return readFileStat(exactMatch);
   }
 
-  const suffixMatches = summary.files.filter((file) => pathsReferToSameFileChange(file.path, filePath));
+  const suffixMatches = summary.files.filter((file) =>
+    pathsReferToSameFileChange(file.path, filePath),
+  );
   if (suffixMatches.length !== 1) {
     return null;
   }

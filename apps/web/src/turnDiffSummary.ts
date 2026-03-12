@@ -14,7 +14,10 @@ export function buildTurnDiffSummaryByCheckpointTurnCount(
 ): Map<number, TurnDiffSummary> {
   const byTurnCount = new Map<number, TurnDiffSummary>();
   for (const summary of summaries) {
-    const checkpointTurnCount = resolveCheckpointTurnCount(summary, inferredCheckpointTurnCountByTurnId);
+    const checkpointTurnCount = resolveCheckpointTurnCount(
+      summary,
+      inferredCheckpointTurnCountByTurnId,
+    );
     if (typeof checkpointTurnCount !== "number") {
       continue;
     }
@@ -31,7 +34,10 @@ export function isTurnDiffNavigable(
   if (!summary?.checkpointRef) {
     return false;
   }
-  const checkpointTurnCount = resolveCheckpointTurnCount(summary, inferredCheckpointTurnCountByTurnId);
+  const checkpointTurnCount = resolveCheckpointTurnCount(
+    summary,
+    inferredCheckpointTurnCountByTurnId,
+  );
   if (typeof checkpointTurnCount !== "number" || checkpointTurnCount < 1) {
     return false;
   }

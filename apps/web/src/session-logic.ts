@@ -177,9 +177,7 @@ export function shouldResetSendPhase({
   return completedAtMs >= sendStartedAtMs;
 }
 
-function requestKindFromRequestType(
-  requestType: unknown,
-): PendingApproval["requestKind"] | null {
+function requestKindFromRequestType(requestType: unknown): PendingApproval["requestKind"] | null {
   switch (requestType) {
     case "command_execution_approval":
     case "exec_command_approval":
@@ -786,12 +784,7 @@ function pushChangedFile(target: string[], seen: Set<string>, value: unknown) {
   target.push(normalized);
 }
 
-function collectChangedFiles(
-  value: unknown,
-  target: string[],
-  seen: Set<string>,
-  depth: number,
-) {
+function collectChangedFiles(value: unknown, target: string[], seen: Set<string>, depth: number) {
   if (depth > MAX_CHANGED_FILE_DEPTH || target.length >= MAX_CHANGED_FILE_COUNT) {
     return;
   }

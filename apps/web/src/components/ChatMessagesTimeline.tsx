@@ -1,23 +1,15 @@
 import { clamp } from "effect/Number";
 import { CheckIcon, CopyIcon, EllipsisIcon, Undo2Icon } from "lucide-react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
-  memo,
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
-import { measureElement as measureVirtualElement, type VirtualItem, useVirtualizer } from "@tanstack/react-virtual";
+  measureElement as measureVirtualElement,
+  type VirtualItem,
+  useVirtualizer,
+} from "@tanstack/react-virtual";
 import type { MessageId, TurnId } from "@t3tools/contracts";
 
 import { AUTO_SCROLL_BOTTOM_THRESHOLD_PX } from "../chat-scroll";
-import {
-  deriveTimelineEntries,
-  formatElapsed,
-  formatTimestamp,
-} from "../session-logic";
+import { deriveTimelineEntries, formatElapsed, formatTimestamp } from "../session-logic";
 import type { ChatMessage, TurnDiffSummary } from "../types";
 import {
   buildProposedPlanExport,
@@ -35,10 +27,7 @@ import ChatMarkdown from "./ChatMarkdown";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "./ui/menu";
-import {
-  ProposedPlanSaveDialog,
-  useProposedPlanWorkspaceSave,
-} from "./ProposedPlanSaveDialog";
+import { ProposedPlanSaveDialog, useProposedPlanWorkspaceSave } from "./ProposedPlanSaveDialog";
 
 const ALWAYS_UNVIRTUALIZED_TAIL_ROWS = 8;
 
@@ -329,7 +318,9 @@ function findFirstUnvirtualizedRowIndex(input: {
   }
 
   const turnStartedAtMs =
-    typeof input.activeTurnStartedAt === "string" ? Date.parse(input.activeTurnStartedAt) : Number.NaN;
+    typeof input.activeTurnStartedAt === "string"
+      ? Date.parse(input.activeTurnStartedAt)
+      : Number.NaN;
   let firstCurrentTurnRowIndex = -1;
   if (!Number.isNaN(turnStartedAtMs)) {
     firstCurrentTurnRowIndex = input.rows.findIndex((row) => {
@@ -508,7 +499,9 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   const [allDirectoriesExpandedByTurnId, setAllDirectoriesExpandedByTurnId] = useState<
     Record<string, boolean>
   >({});
-  const [openToolResultsByEntryId, setOpenToolResultsByEntryId] = useState<Record<string, true>>({});
+  const [openToolResultsByEntryId, setOpenToolResultsByEntryId] = useState<Record<string, true>>(
+    {},
+  );
   const onToggleAllDirectories = useCallback((turnId: TurnId) => {
     setAllDirectoriesExpandedByTurnId((current) => ({
       ...current,

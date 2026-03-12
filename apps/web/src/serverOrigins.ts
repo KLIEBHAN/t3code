@@ -10,7 +10,9 @@ export function resolveServerWsUrl(explicitUrl?: string): string {
   }
 
   const bridgeUrl =
-    typeof window !== "undefined" ? readNonEmptyString(window.desktopBridge?.getWsUrl()) : undefined;
+    typeof window !== "undefined"
+      ? readNonEmptyString(window.desktopBridge?.getWsUrl())
+      : undefined;
   if (bridgeUrl) {
     return bridgeUrl;
   }

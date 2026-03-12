@@ -293,9 +293,7 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
   );
   const conversationCheckpointTurnCount = useMemo(() => {
     const turnCounts = orderedTurnDiffSummaries
-      .map(
-        (summary) => resolveCheckpointTurnCount(summary, inferredCheckpointTurnCountByTurnId),
-      )
+      .map((summary) => resolveCheckpointTurnCount(summary, inferredCheckpointTurnCountByTurnId))
       .filter((value): value is number => typeof value === "number");
     if (turnCounts.length === 0) {
       return undefined;
@@ -346,7 +344,7 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
         : null;
 
   const selectedPatch = hasSelectedTurnRequest
-    ? selectedTurnCheckpointDiff ?? selectedTurn?.unifiedDiff
+    ? (selectedTurnCheckpointDiff ?? selectedTurn?.unifiedDiff)
     : conversationCheckpointDiff;
   const hasResolvedPatch = typeof selectedPatch === "string";
   const hasNoNetChanges = hasResolvedPatch && selectedPatch.trim().length === 0;
@@ -362,11 +360,7 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
       return null;
     }
     return "This turn diff is unavailable because the required checkpoint history is incomplete.";
-  }, [
-    isSummaryOpenable,
-    selectedTurnId,
-    turnDiffSummaryByTurnId,
-  ]);
+  }, [isSummaryOpenable, selectedTurnId, turnDiffSummaryByTurnId]);
   const renderablePatch = useMemo(
     () => getRenderablePatch(selectedPatch, `diff-panel:${resolvedTheme}`),
     [resolvedTheme, selectedPatch],
@@ -388,12 +382,9 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
     patchViewportMetrics.height > 1;
   const virtualizerRenderKey = useMemo(
     () =>
-      [
-        resolvedTheme,
-        diffRenderMode,
-        renderableFiles.length,
-        patchViewportMetrics.revision,
-      ].join(":"),
+      [resolvedTheme, diffRenderMode, renderableFiles.length, patchViewportMetrics.revision].join(
+        ":",
+      ),
     [diffRenderMode, patchViewportMetrics.revision, renderableFiles.length, resolvedTheme],
   );
 
@@ -418,7 +409,8 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
           width: nextWidth,
           height: nextHeight,
           revision:
-            isVisible && (!wasVisible || nextWidth !== current.width || nextHeight !== current.height)
+            isVisible &&
+            (!wasVisible || nextWidth !== current.width || nextHeight !== current.height)
               ? current.revision + 1
               : current.revision,
         };
@@ -673,7 +665,8 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
           </button>
           {orderedTurnDiffSummaries.map((summary) => {
             const isOpenable = isSummaryOpenable(summary);
-            const isFallbackDiff = hasTurnDiffFallbackPatch(summary) && !isSummaryNavigable(summary);
+            const isFallbackDiff =
+              hasTurnDiffFallbackPatch(summary) && !isSummaryNavigable(summary);
             const chipButton = (
               <button
                 key={summary.turnId}
@@ -721,7 +714,9 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
               return (
                 <Tooltip key={`${summary.turnId}:provider-diff`}>
                   <TooltipTrigger render={chipButton} />
-                  <TooltipPopup side="top">Showing provider diff preview until checkpoint diff is ready.</TooltipPopup>
+                  <TooltipPopup side="top">
+                    Showing provider diff preview until checkpoint diff is ready.
+                  </TooltipPopup>
                 </Tooltip>
               );
             }
@@ -796,8 +791,8 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
                       : hasNoNetChanges
                         ? "No net changes in this selection."
                         : "No patch available for this selection."}
-                  </p>
-                </div>
+                </p>
+              </div>
               )
             ) : renderablePatch.kind === "files" && !canRenderVirtualizedPatch ? (
               <div className="flex h-full items-center justify-center px-3 py-2 text-xs text-muted-foreground/70">

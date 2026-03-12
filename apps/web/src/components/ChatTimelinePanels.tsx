@@ -1,10 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useState } from "react";
-import {
-  ChevronRightIcon,
-  FileIcon,
-  FolderClosedIcon,
-  FolderIcon,
-} from "lucide-react";
+import { ChevronRightIcon, FileIcon, FolderClosedIcon, FolderIcon } from "lucide-react";
 import type { TurnId } from "@t3tools/contracts";
 
 import type { TurnDiffFileChange, TurnDiffSummary } from "../types";
@@ -297,7 +292,9 @@ export const TimelineWorkGroupCard = memo(function TimelineWorkGroupCard(props: 
                         <div className="flex items-start gap-1.5 px-2 py-1">
                           <ChevronRightIcon className="mt-0.5 size-3 shrink-0 text-muted-foreground/70 transition-transform duration-200 group-data-[panel-open]:rotate-90" />
                           <div className="min-w-0 flex-1">
-                            <p className={`text-[11px] leading-relaxed ${workToneClass(workEntry.tone)}`}>
+                            <p
+                              className={`text-[11px] leading-relaxed ${workToneClass(workEntry.tone)}`}
+                            >
                               {workEntry.label}
                             </p>
                             {workEntry.command && (
@@ -358,7 +355,11 @@ export const TimelineWorkGroupCard = memo(function TimelineWorkGroupCard(props: 
                                   onMouseDown={props.onDiffTriggerMouseDown}
                                   onClick={(event) => {
                                     if (!workEntry.turnId) return;
-                                    props.onOpenTurnDiff(workEntry.turnId, filePath, event.currentTarget);
+                                    props.onOpenTurnDiff(
+                                      workEntry.turnId,
+                                      filePath,
+                                      event.currentTarget,
+                                    );
                                   }}
                                 />
                               ) : (
@@ -375,7 +376,10 @@ export const TimelineWorkGroupCard = memo(function TimelineWorkGroupCard(props: 
                             <span className="truncate font-mono">{fileLabel}</span>
                             {fileStat && hasNonZeroStat(fileStat) && (
                               <span className="shrink-0 font-mono text-[9px] tabular-nums">
-                                <DiffStatLabel additions={fileStat.additions} deletions={fileStat.deletions} />
+                                <DiffStatLabel
+                                  additions={fileStat.additions}
+                                  deletions={fileStat.deletions}
+                                />
                               </span>
                             )}
                           </TooltipTrigger>
@@ -384,11 +388,16 @@ export const TimelineWorkGroupCard = memo(function TimelineWorkGroupCard(props: 
                               <div className="font-mono text-[10px]">{filePath}</div>
                               {fileStat && hasNonZeroStat(fileStat) && (
                                 <div className="text-[10px]">
-                                  <DiffStatLabel additions={fileStat.additions} deletions={fileStat.deletions} />
+                                  <DiffStatLabel
+                                    additions={fileStat.additions}
+                                    deletions={fileStat.deletions}
+                                  />
                                 </div>
                               )}
                               {canOpenDiff ? (
-                                <div className="text-[10px] text-muted-foreground/80">Click to open diff</div>
+                                <div className="text-[10px] text-muted-foreground/80">
+                                  Click to open diff
+                                </div>
                               ) : (
                                 <div className="text-[10px] text-muted-foreground/80">
                                   Diff not available yet for this turn

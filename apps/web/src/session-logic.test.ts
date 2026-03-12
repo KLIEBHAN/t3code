@@ -709,9 +709,13 @@ describe("deriveWorkLogEntries", () => {
     ];
 
     const entries = deriveWorkLogEntries(activities, undefined);
-    const completedEntry = entries.find((entry) => entry.id === "command-tool-completed-without-output");
+    const completedEntry = entries.find(
+      (entry) => entry.id === "command-tool-completed-without-output",
+    );
     expect(completedEntry?.result).toBe("line 1\nline 2");
-    expect(completedEntry?.command).toBe("/bin/zsh -lc rg -n diff apps/web/src/components/ChatView.tsx");
+    expect(completedEntry?.command).toBe(
+      "/bin/zsh -lc rg -n diff apps/web/src/components/ChatView.tsx",
+    );
   });
 
   it("does not merge tool output across distinct activities without a stable item id", () => {
