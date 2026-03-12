@@ -21,8 +21,15 @@ export interface ChatPromptHistory {
   resetBrowsing: (threadId: ThreadId) => void;
 }
 
-export function canBrowsePromptHistoryUp(snapshot: PromptHistoryCursorSnapshot): boolean {
-  return snapshot.value.length === 0 || snapshot.cursor <= 0;
+export function canBrowsePromptHistoryUp(options: {
+  isBrowsing: boolean;
+  snapshot: PromptHistoryCursorSnapshot;
+}): boolean {
+  const { isBrowsing, snapshot } = options;
+  if (snapshot.value.length === 0 || snapshot.cursor <= 0) {
+    return true;
+  }
+  return isBrowsing && snapshot.cursor >= snapshot.value.length;
 }
 
 export function canBrowsePromptHistoryDown(options: {

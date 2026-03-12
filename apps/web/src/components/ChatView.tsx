@@ -3558,7 +3558,12 @@ export default function ChatView({ threadId }: ChatViewProps) {
       !showPlanFollowUpPrompt
     ) {
       const snapshot = readComposerSnapshot();
-      const canNavigateUp = key === "ArrowUp" && canBrowsePromptHistoryUp(snapshot);
+      const canNavigateUp =
+        key === "ArrowUp" &&
+        canBrowsePromptHistoryUp({
+          isBrowsing: promptHistory.isBrowsing(threadId),
+          snapshot,
+        });
       const canNavigateDown =
         key === "ArrowDown" &&
         canBrowsePromptHistoryDown({

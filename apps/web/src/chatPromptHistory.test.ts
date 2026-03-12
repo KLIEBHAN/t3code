@@ -36,10 +36,67 @@ describe("chatPromptHistory", () => {
     expect(history.browse(THREAD_ID_2, "up", "")).toBe("other prompt");
   });
 
+  it("allows continuing backward through history from the end of a recalled multiline prompt", () => {
+    const history = createChatPromptHistory();
+
+    history.recordPrompt(THREAD_ID_1, "older prompt");
+    history.recordPrompt(THREAD_ID_1, "line 1\nline 2");
+
+    expect(
+      canBrowsePromptHistoryUp({
+        isBrowsing: history.isBrowsing(THREAD_ID_1),
+        snapshot: { value: "", cursor: 0 },
+      }),
+    ).toBe(true);
+
+    const latestPrompt = history.browse(THREAD_ID_1, "up", "");
+    expect(latestPrompt).toBe("line 1\nline 2");
+    expect(history.isBrowsing(THREAD_ID_1)).toBe(true);
+
+    expect(
+      canBrowsePromptHistoryUp({
+        isBrowsing: history.isBrowsing(THREAD_ID_1),
+        snapshot: {
+          value: latestPrompt ?? "",
+          cursor: (latestPrompt ?? "").length,
+        },
+      }),
+    ).toBe(true);
+
+    expect(history.browse(THREAD_ID_1, "up", latestPrompt ?? "")).toBe("older prompt");
+  });
+
   it("only allows history navigation at the prompt boundaries", () => {
-    expect(canBrowsePromptHistoryUp({ value: "", cursor: 0 })).toBe(true);
-    expect(canBrowsePromptHistoryUp({ value: "line 1\nline 2", cursor: 0 })).toBe(true);
-    expect(canBrowsePromptHistoryUp({ value: "line 1\nline 2", cursor: 7 })).toBe(false);
+    expect(
+      canBrowsePromptHistoryUp({
+        isBrowsing: false,
+        snapshot: { value: "", cursor: 0 },
+      }),
+    ).toBe(true);
+    expect(
+      canBrowsePromptHistoryUp({
+        isBrowsing: false,
+        snapshot: { value: "line 1\nline 2", cursor: 0 },
+      }),
+    ).toBe(true);
+    expect(
+      canBrowsePromptHistoryUp({
+        isBrowsing: false,
+        snapshot: { value: "line 1\nline 2", cursor: 7 },
+      }),
+    ).toBe(false);
+    expect(
+      canBrowsePromptHistoryUp({
+        isBrowsing: true,
+        snapshot: { value: "line 1\nline 2", cursor: "line 1\nline 2".length },
+      }),
+    ).toBe(true);
+    expect(
+      canBrowsePromptHistoryUp({
+        isBrowsing: true,
+        snapshot: { value: "line 1\nline 2", cursor: 7 },
+      }),
+    ).toBe(false);
 
     expect(
       canBrowsePromptHistoryDown({
