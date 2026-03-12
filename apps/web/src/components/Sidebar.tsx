@@ -45,6 +45,11 @@ import { readNativeApi } from "../nativeApi";
 import { useComposerDraftStore } from "../composerDraftStore";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
 import { selectThreadTerminalState, useTerminalStateStore } from "../terminalStateStore";
+import {
+  useSidebarNewThreadShortcuts,
+  useSidebarProjectInteractions,
+  useSidebarVisibilityShortcut,
+} from "../sidebarProjectInteractions";
 import { toastManager } from "./ui/toast";
 import {
   getArm64IntelBuildWarningDescription,
@@ -948,6 +953,8 @@ export default function Sidebar() {
     },
     [toggleProject],
   );
+
+  useSidebarVisibilityShortcut({ keybindings });
 
   useEffect(() => {
     const onMouseDown = (event: globalThis.MouseEvent) => {

@@ -19,9 +19,11 @@ import {
 } from "react";
 
 import type { DraftThreadState } from "./composerDraftStore";
-import { isChatNewLocalShortcut, isChatNewShortcut } from "./keybindings";
+import { isChatNewLocalShortcut, isChatNewShortcut, isSidebarToggleShortcut } from "./keybindings";
+import { isTerminalFocusedInDocument } from "./terminalFocus";
 import { deriveSidebarNewThreadDraftOptions } from "./sidebarActions";
 import type { Project, Thread } from "./types";
+import { useSidebar } from "./components/ui/sidebar";
 
 export function useSidebarProjectInteractions(options: {
   projects: ReadonlyArray<Project>;
@@ -125,19 +127,19 @@ export function useSidebarNewThreadShortcuts(options: {
     draftOptions?: ReturnType<typeof deriveSidebarNewThreadDraftOptions>,
   ) => Promise<void>;
 }) {
-  const { getDraftThread, keybindings, openThreadDraft, projects, routeThreadId, threads } = options;
+  const { getDraftThread, keybindings, openThreadDraft, projects, routeThreadId, threads } =
+    options;
 
   useEffect(() => {
     const onWindowKeyDown = (event: KeyboardEvent) => {
       const activeThread = routeThreadId
         ? threads.find((thread) => thread.id === routeThreadId)
         : undefined;
-      const activeDraftThread = routeThreadId
-        ? getDraftThread(routeThreadId)
-        : null;
+      const activeDraftThread = routeThreadId ? getDraftThread(routeThreadId) : null;
 
       if (isChatNewLocalShortcut(event, keybindings)) {
-        const projectId = activeThread?.projectId ?? activeDraftThread?.projectId ?? projects[0]?.id;
+        const projectId =
+          activeThread?.projectId ?? activeDraftThread?.projectId ?? projects[0]?.id;
         if (!projectId) return;
         event.preventDefault();
         void openThreadDraft(
@@ -170,4 +172,31 @@ export function useSidebarNewThreadShortcuts(options: {
       window.removeEventListener("keydown", onWindowKeyDown);
     };
   }, [getDraftThread, keybindings, openThreadDraft, projects, routeThreadId, threads]);
+}
+
+export function useSidebarVisibilityShortcut(options: { keybindings: ResolvedKeybindingsConfig }) {
+  const { keybindings } = options;
+  const { toggleSidebar } = useSidebar();
+
+  useEffect(() => {
+    const onWindowKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) return;
+      if (
+        !isSidebarToggleShortcut(event, keybindings, {
+          context: { terminalFocus: isTerminalFocusedInDocument() },
+        })
+      ) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      toggleSidebar();
+    };
+
+    window.addEventListener("keydown", onWindowKeyDown);
+    return () => {
+      window.removeEventListener("keydown", onWindowKeyDown);
+    };
+  }, [keybindings, toggleSidebar]);
 }

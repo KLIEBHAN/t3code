@@ -12,6 +12,7 @@ import {
   isChatNewLocalShortcut,
   isDiffToggleShortcut,
   isOpenFavoriteEditorShortcut,
+  isSidebarToggleShortcut,
   isTerminalClearShortcut,
   isTerminalCloseShortcut,
   isTerminalNewShortcut,
@@ -95,6 +96,11 @@ const DEFAULT_BINDINGS = compile([
   {
     shortcut: modShortcut("d"),
     command: "diff.toggle",
+    whenAst: whenNot(whenIdentifier("terminalFocus")),
+  },
+  {
+    shortcut: modShortcut("b"),
+    command: "sidebar.toggle",
     whenAst: whenNot(whenIdentifier("terminalFocus")),
   },
   { shortcut: modShortcut("o", { shiftKey: true }), command: "chat.new" },
@@ -238,6 +244,10 @@ describe("shortcutLabelForCommand", () => {
     assert.strictEqual(shortcutLabelForCommand(DEFAULT_BINDINGS, "chat.new", "MacIntel"), "⇧⌘O");
     assert.strictEqual(shortcutLabelForCommand(DEFAULT_BINDINGS, "diff.toggle", "Linux"), "Ctrl+D");
     assert.strictEqual(
+      shortcutLabelForCommand(DEFAULT_BINDINGS, "sidebar.toggle", "Linux"),
+      "Ctrl+B",
+    );
+    assert.strictEqual(
       shortcutLabelForCommand(DEFAULT_BINDINGS, "editor.openFavorite", "Linux"),
       "Ctrl+O",
     );
@@ -293,6 +303,21 @@ describe("chat/editor shortcuts", () => {
     );
     assert.isFalse(
       isDiffToggleShortcut(event({ key: "d", metaKey: true }), DEFAULT_BINDINGS, {
+        platform: "MacIntel",
+        context: { terminalFocus: true },
+      }),
+    );
+  });
+
+  it("matches sidebar.toggle shortcut outside terminal focus", () => {
+    assert.isTrue(
+      isSidebarToggleShortcut(event({ key: "b", metaKey: true }), DEFAULT_BINDINGS, {
+        platform: "MacIntel",
+        context: { terminalFocus: false },
+      }),
+    );
+    assert.isFalse(
+      isSidebarToggleShortcut(event({ key: "b", metaKey: true }), DEFAULT_BINDINGS, {
         platform: "MacIntel",
         context: { terminalFocus: true },
       }),

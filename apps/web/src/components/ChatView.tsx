@@ -187,6 +187,7 @@ import { ComposerPromptEditor, type ComposerPromptEditorHandle } from "./Compose
 import { PullRequestThreadDialog } from "./PullRequestThreadDialog";
 import { LastInvokedScriptByProjectSchema } from "./ChatView.logic";
 import { useLocalStorage } from "~/hooks/useLocalStorage";
+import { isTerminalFocusedInDocument } from "../terminalFocus";
 
 const LAST_INVOKED_SCRIPT_BY_PROJECT_KEY = "t3code:last-invoked-script-by-project";
 const ATTACHMENT_PREVIEW_HANDOFF_TTL_MS = 5000;
