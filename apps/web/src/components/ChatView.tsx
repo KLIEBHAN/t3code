@@ -83,6 +83,7 @@ import {
   type PendingUserInputDraftAnswer,
 } from "../pendingUserInput";
 import { useChatPendingUserInputActions } from "../chatPendingUserInput";
+import { createChatPromptHistory } from "../chatPromptHistory";
 import { deriveChatComposerState } from "../chatComposerState";
 import { implementPlanInNewThread, submitPlanFollowUp } from "../chatPlanFollowUp";
 import { openChatThreadDraft, runProgrammaticChatThreadCommand } from "../chatThreadCommands";
@@ -418,6 +419,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
   } | null>(null);
   const pendingDiffOpenScrollRestoreFrameRef = useRef<number | null>(null);
   const composerEditorRef = useRef<ComposerPromptEditorHandle>(null);
+  const promptHistory = useMemo(() => createChatPromptHistory(), []);
   const composerFormRef = useRef<HTMLFormElement>(null);
   const composerFormHeightRef = useRef(0);
   const composerImagesRef = useRef<ComposerImageAttachment[]>([]);
@@ -2733,6 +2735,9 @@ export default function ChatView({ threadId }: ChatViewProps) {
         interactionMode,
         createdAt: messageCreatedAt,
       });
+      if (trimmed.length > 0) {
+        promptHistory.recordPrompt(threadIdForSend, trimmed);
+      }
       turnStartSucceeded = true;
     })().catch(async (err: unknown) => {
       if (createdServerThreadForLocalDraft && !turnStartSucceeded) {
@@ -3468,6 +3473,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
         );
         return;
       }
+      promptHistory.resetBrowsing(threadId);
       promptRef.current = nextPrompt;
       setPrompt(nextPrompt);
       setComposerCursor(nextCursor);
@@ -3486,7 +3492,25 @@ export default function ChatView({ threadId }: ChatViewProps) {
       detectChatComposerTrigger,
       onChangeActivePendingUserInputCustomAnswer,
       setPrompt,
+      promptHistory,
+      threadId,
     ],
+  );
+
+  const applyPromptHistorySelection = useCallback(
+    (nextPrompt: string) => {
+      const nextCursor = nextPrompt.length;
+      promptRef.current = nextPrompt;
+      setPrompt(nextPrompt);
+      setComposerCursor(nextCursor);
+      setComposerTrigger(
+        detectChatComposerTrigger(
+          nextPrompt,
+          expandCollapsedComposerCursor(nextPrompt, nextCursor),
+        ),
+      );
+    },
+    [detectChatComposerTrigger, setPrompt],
   );
 
   const onComposerCommandKey = (
@@ -3515,6 +3539,32 @@ export default function ChatView({ threadId }: ChatViewProps) {
         const selectedItem = activeComposerMenuItemRef.current ?? currentItems[0];
         if (selectedItem) {
           onSelectComposerItem(selectedItem);
+          return true;
+        }
+      }
+    }
+
+    if (
+      (key === "ArrowUp" || key === "ArrowDown") &&
+      !event.shiftKey &&
+      !event.altKey &&
+      !event.ctrlKey &&
+      !event.metaKey &&
+      !activePendingProgress &&
+      !showPlanFollowUpPrompt
+    ) {
+      const snapshot = readComposerSnapshot();
+      const canNavigateUp =
+        key === "ArrowUp" && (snapshot.value.length === 0 || snapshot.cursor === 0);
+      const canNavigateDown = key === "ArrowDown" && promptHistory.isBrowsing(threadId);
+      if (canNavigateUp || canNavigateDown) {
+        const nextPrompt = promptHistory.browse(
+          threadId,
+          key === "ArrowUp" ? "up" : "down",
+          snapshot.value,
+        );
+        if (nextPrompt !== null) {
+          applyPromptHistorySelection(nextPrompt);
           return true;
         }
       }
