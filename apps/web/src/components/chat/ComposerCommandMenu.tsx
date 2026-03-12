@@ -1,6 +1,7 @@
 import { type ProjectEntry, type ModelSlug, type ProviderKind } from "@t3tools/contracts";
 import { memo } from "react";
-import { type ComposerSlashCommand, type ComposerTriggerKind } from "../../composer-logic";
+import { type ComposerTriggerKind } from "../../composer-logic";
+import { type SlashCommandDefinition } from "../../slashCommands";
 import { BotIcon } from "lucide-react";
 import { cn } from "~/lib/utils";
 import { Badge } from "../ui/badge";
@@ -19,7 +20,7 @@ export type ComposerCommandItem =
   | {
       id: string;
       type: "slash-command";
-      command: ComposerSlashCommand;
+      command: SlashCommandDefinition;
       label: string;
       description: string;
     }
