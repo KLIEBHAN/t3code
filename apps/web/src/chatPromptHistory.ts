@@ -1,6 +1,8 @@
 import { type ThreadId } from "@t3tools/contracts";
+import { getSafeLocalStorage } from "./lib/browserStorage";
 
 const MAX_PROMPT_HISTORY_ENTRIES = 50;
+const PROMPT_HISTORY_STORAGE_KEY = "t3code:prompt-history:v1";
 
 type HistoryDirection = "up" | "down";
 
@@ -12,6 +14,10 @@ export interface PromptHistoryCursorSnapshot {
 interface PromptHistoryBrowseState {
   draft: string;
   index: number;
+}
+
+interface PersistedPromptHistoryState {
+  entriesByThreadId: Record<string, string[]>;
 }
 
 export interface ChatPromptHistory {
@@ -39,8 +45,67 @@ export function canBrowsePromptHistoryDown(options: {
   return options.isBrowsing && options.snapshot.cursor >= options.snapshot.value.length;
 }
 
+function normalizePersistedPromptEntries(value: unknown): Record<string, string[]> {
+  if (!value || typeof value !== "object") {
+    return {};
+  }
+
+  const candidate = value as Partial<PersistedPromptHistoryState>;
+  if (!candidate.entriesByThreadId || typeof candidate.entriesByThreadId !== "object") {
+    return {};
+  }
+
+  const normalizedEntries: Record<string, string[]> = {};
+
+  for (const [threadId, entries] of Object.entries(candidate.entriesByThreadId)) {
+    if (threadId.length === 0 || !Array.isArray(entries)) {
+      continue;
+    }
+
+    const normalizedHistory = entries
+      .filter((entry): entry is string => typeof entry === "string")
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0)
+      .slice(-MAX_PROMPT_HISTORY_ENTRIES);
+
+    if (normalizedHistory.length > 0) {
+      normalizedEntries[threadId] = normalizedHistory;
+    }
+  }
+
+  return normalizedEntries;
+}
+
+function loadPersistedPromptHistory(): Map<ThreadId, string[]> {
+  const storage = getSafeLocalStorage();
+  const raw = storage.getItem(PROMPT_HISTORY_STORAGE_KEY);
+  if (!raw) {
+    return new Map();
+  }
+
+  try {
+    const parsed = JSON.parse(raw);
+    return new Map(
+      Object.entries(normalizePersistedPromptEntries(parsed)).map(([threadId, history]) => [
+        threadId as ThreadId,
+        history,
+      ]),
+    );
+  } catch {
+    return new Map();
+  }
+}
+
+function persistPromptHistory(entriesByThreadId: Map<ThreadId, string[]>): void {
+  const persisted: PersistedPromptHistoryState = {
+    entriesByThreadId: Object.fromEntries(entriesByThreadId),
+  };
+
+  getSafeLocalStorage().setItem(PROMPT_HISTORY_STORAGE_KEY, JSON.stringify(persisted));
+}
+
 export function createChatPromptHistory(): ChatPromptHistory {
-  const entriesByThreadId = new Map<ThreadId, string[]>();
+  const entriesByThreadId = loadPersistedPromptHistory();
   const browseStateByThreadId = new Map<ThreadId, PromptHistoryBrowseState>();
 
   return {
@@ -110,6 +175,7 @@ export function createChatPromptHistory(): ChatPromptHistory {
         ...existingHistory.slice(-(MAX_PROMPT_HISTORY_ENTRIES - 1)),
         normalizedPrompt,
       ]);
+      persistPromptHistory(entriesByThreadId);
       browseStateByThreadId.delete(threadId);
     },
 
