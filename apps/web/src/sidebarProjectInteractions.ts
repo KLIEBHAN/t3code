@@ -180,7 +180,6 @@ export function useSidebarVisibilityShortcut(options: { keybindings: ResolvedKey
 
   useEffect(() => {
     const onWindowKeyDown = (event: KeyboardEvent) => {
-      if (event.defaultPrevented) return;
       if (
         !isSidebarToggleShortcut(event, keybindings, {
           context: { terminalFocus: isTerminalFocusedInDocument() },
@@ -194,9 +193,9 @@ export function useSidebarVisibilityShortcut(options: { keybindings: ResolvedKey
       toggleSidebar();
     };
 
-    window.addEventListener("keydown", onWindowKeyDown);
+    window.addEventListener("keydown", onWindowKeyDown, { capture: true });
     return () => {
-      window.removeEventListener("keydown", onWindowKeyDown);
+      window.removeEventListener("keydown", onWindowKeyDown, { capture: true });
     };
   }, [keybindings, toggleSidebar]);
 }
