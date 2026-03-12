@@ -3,7 +3,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 describe("useTheme module", () => {
   const originalWindowDescriptor = Object.getOwnPropertyDescriptor(globalThis, "window");
   const originalDocumentDescriptor = Object.getOwnPropertyDescriptor(globalThis, "document");
-  const originalLocalStorageDescriptor = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+  const originalLocalStorageDescriptor = Object.getOwnPropertyDescriptor(
+    globalThis,
+    "localStorage",
+  );
 
   afterEach(() => {
     vi.resetModules();

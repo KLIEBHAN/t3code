@@ -32,9 +32,12 @@ import { estimateTimelineMessageHeight } from "./timelineHeight";
 const THREAD_ID = "thread-browser-test" as ThreadId;
 const UUID_ROUTE_RE = /^\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const PROJECT_ID = "project-1" as ProjectId;
+const SECOND_PROJECT_ID = "project-2" as ProjectId;
+const SECOND_THREAD_ID = "thread-browser-test-2" as ThreadId;
 const NOW_ISO = "2026-03-04T12:00:00.000Z";
 const BASE_TIME_MS = Date.parse(NOW_ISO);
 const ATTACHMENT_SVG = "<svg xmlns='http://www.w3.org/2000/svg' width='120' height='300'></svg>";
+const PERSISTED_STATE_KEY = "t3code:renderer-state:v8";
 
 interface WsRequestEnvelope {
   id: string;
@@ -366,8 +369,91 @@ function createSnapshotWithLongProposedPlan(): OrchestrationReadModel {
   };
 }
 
-function resolveWsRpc(body: WsRequestEnvelope["body"]): unknown {
-  const tag = body._tag;
+function createSidebarProjectSnapshot(): OrchestrationReadModel {
+  return {
+    snapshotSequence: 1,
+    updatedAt: NOW_ISO,
+    projects: [
+      {
+        id: PROJECT_ID,
+        title: "Alpha",
+        workspaceRoot: "/repo/project",
+        defaultModel: "gpt-5",
+        scripts: [],
+        createdAt: NOW_ISO,
+        updatedAt: NOW_ISO,
+        deletedAt: null,
+      },
+      {
+        id: SECOND_PROJECT_ID,
+        title: "Beta",
+        workspaceRoot: "/repo/project-beta",
+        defaultModel: "gpt-5",
+        scripts: [],
+        createdAt: NOW_ISO,
+        updatedAt: NOW_ISO,
+        deletedAt: null,
+      },
+    ],
+    threads: [
+      {
+        id: THREAD_ID,
+        projectId: PROJECT_ID,
+        title: "Alpha Thread",
+        model: "gpt-5",
+        interactionMode: "default",
+        runtimeMode: "full-access",
+        branch: "main",
+        worktreePath: null,
+        latestTurn: null,
+        createdAt: NOW_ISO,
+        updatedAt: NOW_ISO,
+        deletedAt: null,
+        messages: [],
+        activities: [],
+        proposedPlans: [],
+        checkpoints: [],
+        session: {
+          threadId: THREAD_ID,
+          status: "ready",
+          providerName: "codex",
+          runtimeMode: "full-access",
+          activeTurnId: null,
+          lastError: null,
+          updatedAt: NOW_ISO,
+        },
+      },
+      {
+        id: SECOND_THREAD_ID,
+        projectId: SECOND_PROJECT_ID,
+        title: "Beta Thread",
+        model: "gpt-5",
+        interactionMode: "default",
+        runtimeMode: "full-access",
+        branch: "main",
+        worktreePath: null,
+        latestTurn: null,
+        createdAt: NOW_ISO,
+        updatedAt: NOW_ISO,
+        deletedAt: null,
+        messages: [],
+        activities: [],
+        proposedPlans: [],
+        checkpoints: [],
+        session: {
+          threadId: SECOND_THREAD_ID,
+          status: "ready",
+          providerName: "codex",
+          runtimeMode: "full-access",
+          activeTurnId: null,
+          lastError: null,
+          updatedAt: NOW_ISO,
+        },
+      },
+    ],
+  };
+}
+
 function createToolCallSnapshot(): OrchestrationReadModel {
   return {
     snapshotSequence: 1,
@@ -481,9 +567,7 @@ function createFileChangeDiffSnapshot(): OrchestrationReadModel {
               itemType: "file_change",
               data: {
                 item: {
-                  changes: [
-                    { path: "/repo/project/apps/web/src/components/ChatView.tsx" },
-                  ],
+                  changes: [{ path: "/repo/project/apps/web/src/components/ChatView.tsx" }],
                 },
               },
             },
@@ -493,7 +577,9 @@ function createFileChangeDiffSnapshot(): OrchestrationReadModel {
           {
             turnId: TurnId.makeUnsafe("turn-file-change"),
             checkpointTurnCount: 1,
-            checkpointRef: CheckpointRef.makeUnsafe("refs/t3/checkpoints/thread-browser-test/turn/1"),
+            checkpointRef: CheckpointRef.makeUnsafe(
+              "refs/t3/checkpoints/thread-browser-test/turn/1",
+            ),
             status: "ready",
             assistantMessageId: null,
             files: [
@@ -819,7 +905,9 @@ async function waitForCommandPaletteInput(): Promise<HTMLInputElement> {
   );
 }
 
-async function waitForInteractionModeButton(expectedLabel: "Chat" | "Plan"): Promise<HTMLButtonElement> {
+async function waitForInteractionModeButton(
+  expectedLabel: "Chat" | "Plan",
+): Promise<HTMLButtonElement> {
   return waitForElement(
     () =>
       Array.from(document.querySelectorAll("button")).find(
@@ -837,82 +925,6 @@ function querySidebarProjectButton(projectName: string): HTMLButtonElement | nul
       const label = button.textContent?.replace(/\s+/g, " ").trim() ?? "";
       return label.includes(projectName);
     }) ?? null
-  );
-}
-
-async function waitForSidebarProjectButton(projectName: string): Promise<HTMLButtonElement> {
-  return waitForElement(
-    () => querySidebarProjectButton(projectName),
-    `Unable to find project button for "${projectName}".`,
-  );
-}
-
-function readSidebarProjectOrder(): string[] {
-  return Array.from(
-    document.querySelectorAll<HTMLButtonElement>('[data-sidebar-project-button="true"]'),
-  ).map((button) => button.textContent?.replace(/\s+/g, " ").trim() ?? "");
-}
-
-async function dragSidebarProjectToTarget(options: {
-  source: HTMLButtonElement;
-  target: HTMLButtonElement;
-}): Promise<void> {
-  const sourceRect = options.source.getBoundingClientRect();
-  const targetRect = options.target.getBoundingClientRect();
-  const startX = sourceRect.left + sourceRect.width / 2;
-  const startY = sourceRect.top + sourceRect.height / 2;
-  const targetX = targetRect.left + targetRect.width / 2;
-  const targetY = targetRect.top + targetRect.height / 2;
-  const pointerId = 1;
-  const pointerInit = {
-    bubbles: true,
-    cancelable: true,
-    composed: true,
-    pointerId,
-    pointerType: "mouse",
-    isPrimary: true,
-    button: 0,
-    buttons: 1,
-  } satisfies PointerEventInit;
-
-  options.source.dispatchEvent(
-    new PointerEvent("pointerdown", {
-      ...pointerInit,
-      clientX: startX,
-      clientY: startY,
-    }),
-  );
-  document.dispatchEvent(
-    new PointerEvent("pointermove", {
-      ...pointerInit,
-      clientX: startX,
-      clientY: startY + 12,
-    }),
-  );
-  document.dispatchEvent(
-    new PointerEvent("pointermove", {
-      ...pointerInit,
-      clientX: targetX,
-      clientY: targetY,
-    }),
-  );
-  await waitForLayout();
-  document.dispatchEvent(
-    new PointerEvent("pointerup", {
-      ...pointerInit,
-      clientX: targetX,
-      clientY: targetY,
-      buttons: 0,
-    }),
-  );
-  await waitForLayout();
-}
-
-function readSidebarProjectExpansion(): Record<string, boolean> {
-  return Object.fromEntries(
-    useStore.getState().projects.map((project) => [project.name, project.expanded] as const),
-  );
-}
   );
 }
 
@@ -2019,7 +2031,9 @@ describe("ChatView timeline estimator parity (full app)", () => {
       );
 
       expect(Math.abs(scrollContainer.scrollTop - beforeScrollTop)).toBeLessThanOrEqual(2);
-      expect(Math.abs(reopenedFilePill.getBoundingClientRect().top - beforePillTop)).toBeLessThanOrEqual(4);
+      expect(
+        Math.abs(reopenedFilePill.getBoundingClientRect().top - beforePillTop),
+      ).toBeLessThanOrEqual(4);
     } finally {
       await mounted.cleanup();
     }
@@ -2087,7 +2101,8 @@ describe("ChatView timeline estimator parity (full app)", () => {
     try {
       await vi.waitFor(
         () => {
-          const changedFileHeadings = document.body.textContent?.match(/Changed files \(1\)/g) ?? [];
+          const changedFileHeadings =
+            document.body.textContent?.match(/Changed files \(1\)/g) ?? [];
           expect(changedFileHeadings).toHaveLength(1);
         },
         { timeout: 8_000, interval: 16 },

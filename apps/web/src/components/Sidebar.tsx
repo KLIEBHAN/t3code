@@ -45,11 +45,7 @@ import { readNativeApi } from "../nativeApi";
 import { useComposerDraftStore } from "../composerDraftStore";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
 import { selectThreadTerminalState, useTerminalStateStore } from "../terminalStateStore";
-import {
-  useSidebarNewThreadShortcuts,
-  useSidebarProjectInteractions,
-  useSidebarVisibilityShortcut,
-} from "../sidebarProjectInteractions";
+import { useSidebarVisibilityShortcut } from "../sidebarProjectInteractions";
 import { toastManager } from "./ui/toast";
 import {
   getArm64IntelBuildWarningDescription,
@@ -473,8 +469,6 @@ export default function Sidebar() {
   const handleAddProject = () => {
     void addProjectFromPath(newCwd);
   };
-
-  const canAddProject = newCwd.trim().length > 0 && !isAddingProject;
 
   const handlePickFolder = async () => {
     const api = readNativeApi();
