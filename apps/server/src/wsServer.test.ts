@@ -993,8 +993,7 @@ describe("WebSocket Server", () => {
       ws,
       keybindingsPath,
       "[]",
-      (push) =>
-        push.data.sources.includes("keybindings") && push.data.issues.length === 0,
+      (push) => push.data.sources.includes("keybindings") && push.data.issues.length === 0,
     );
     expect(successPush.data).toEqual({
       issues: [],
@@ -1040,11 +1039,13 @@ describe("WebSocket Server", () => {
       availableEditors: expect.any(Array),
     });
 
-    fs.writeFileSync(path.join(slashCommandsPath, "review.md"), "# Illegal\nReserved name.", "utf8");
-    const invalidPush = await waitForPush(
-      ws,
-      WS_CHANNELS.serverConfigUpdated,
-      (push) => push.data.sources.includes("custom-slash-commands"),
+    fs.writeFileSync(
+      path.join(slashCommandsPath, "review.md"),
+      "# Illegal\nReserved name.",
+      "utf8",
+    );
+    const invalidPush = await waitForPush(ws, WS_CHANNELS.serverConfigUpdated, (push) =>
+      push.data.sources.includes("custom-slash-commands"),
     );
     expect(invalidPush.data).toEqual({
       issues: [

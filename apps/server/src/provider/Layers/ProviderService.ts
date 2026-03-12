@@ -110,9 +110,11 @@ function readPersistedProviderOptions(
   return raw as Record<string, unknown>;
 }
 
-function buildProviderOptionsExtra(providerOptions: unknown): {
-  readonly providerOptions: unknown;
-} | undefined {
+function buildProviderOptionsExtra(providerOptions: unknown):
+  | {
+      readonly providerOptions: unknown;
+    }
+  | undefined {
   return providerOptions !== undefined ? { providerOptions } : undefined;
 }
 

@@ -285,12 +285,10 @@ describe("ProviderRuntimeIngestion", () => {
       },
     });
 
-    const thread = await waitForThread(
-      harness.engine,
-      (entry) =>
-        entry.activities.some(
-          (activity: ProviderRuntimeTestActivity) => activity.id === "evt-file-change-completed",
-        ),
+    const thread = await waitForThread(harness.engine, (entry) =>
+      entry.activities.some(
+        (activity: ProviderRuntimeTestActivity) => activity.id === "evt-file-change-completed",
+      ),
     );
 
     const activity = thread.activities.find(
@@ -366,13 +364,11 @@ describe("ProviderRuntimeIngestion", () => {
       },
     });
 
-    const thread = await waitForThread(
-      harness.engine,
-      (entry) =>
-        entry.activities.some(
-          (activity: ProviderRuntimeTestActivity) =>
-            activity.id === "evt-command-output-large-completed",
-        ),
+    const thread = await waitForThread(harness.engine, (entry) =>
+      entry.activities.some(
+        (activity: ProviderRuntimeTestActivity) =>
+          activity.id === "evt-command-output-large-completed",
+      ),
     );
 
     const activity = thread.activities.find(
@@ -439,12 +435,10 @@ describe("ProviderRuntimeIngestion", () => {
       },
     });
 
-    const thread = await waitForThread(
-      harness.engine,
-      (entry) =>
-        entry.activities.some(
-          (activity: ProviderRuntimeTestActivity) => activity.id === "evt-command-output-completed",
-        ),
+    const thread = await waitForThread(harness.engine, (entry) =>
+      entry.activities.some(
+        (activity: ProviderRuntimeTestActivity) => activity.id === "evt-command-output-completed",
+      ),
     );
 
     const activity = thread.activities.find(
@@ -1591,13 +1585,11 @@ describe("ProviderRuntimeIngestion", () => {
       },
     });
 
-    const thread = await waitForThread(
-      harness.engine,
-      (entry) =>
-        entry.checkpoints.some(
-          (checkpoint: ProviderRuntimeTestCheckpoint) =>
-            checkpoint.turnId === "turn-new" && checkpoint.checkpointTurnCount === 4,
-        ),
+    const thread = await waitForThread(harness.engine, (entry) =>
+      entry.checkpoints.some(
+        (checkpoint: ProviderRuntimeTestCheckpoint) =>
+          checkpoint.turnId === "turn-new" && checkpoint.checkpointTurnCount === 4,
+      ),
     );
 
     const checkpoint = thread.checkpoints.find(
@@ -1624,13 +1616,11 @@ describe("ProviderRuntimeIngestion", () => {
       },
     });
 
-    await waitForThread(
-      harness.engine,
-      (entry) =>
-        entry.checkpoints.some(
-          (checkpoint: ProviderRuntimeTestCheckpoint) =>
-            checkpoint.turnId === "turn-stable-diff" && checkpoint.checkpointTurnCount === 1,
-        ),
+    await waitForThread(harness.engine, (entry) =>
+      entry.checkpoints.some(
+        (checkpoint: ProviderRuntimeTestCheckpoint) =>
+          checkpoint.turnId === "turn-stable-diff" && checkpoint.checkpointTurnCount === 1,
+      ),
     );
 
     harness.emit({
@@ -1647,15 +1637,13 @@ describe("ProviderRuntimeIngestion", () => {
       },
     });
 
-    const thread = await waitForThread(
-      harness.engine,
-      (entry) =>
-        entry.checkpoints.some(
-          (checkpoint: ProviderRuntimeTestCheckpoint) =>
-            checkpoint.turnId === "turn-stable-diff" &&
-            checkpoint.checkpointTurnCount === 1 &&
-            checkpoint.checkpointRef === "provider-diff:evt-turn-diff-updated-second",
-        ),
+    const thread = await waitForThread(harness.engine, (entry) =>
+      entry.checkpoints.some(
+        (checkpoint: ProviderRuntimeTestCheckpoint) =>
+          checkpoint.turnId === "turn-stable-diff" &&
+          checkpoint.checkpointTurnCount === 1 &&
+          checkpoint.checkpointRef === "provider-diff:evt-turn-diff-updated-second",
+      ),
     );
 
     expect(
@@ -1684,13 +1672,11 @@ describe("ProviderRuntimeIngestion", () => {
       },
     });
 
-    await waitForThread(
-      harness.engine,
-      (entry) =>
-        entry.messages.some(
-          (message: ProviderRuntimeTestMessage) =>
-            message.id === "assistant:assistant-item-before-diff" && !message.streaming,
-        ),
+    await waitForThread(harness.engine, (entry) =>
+      entry.messages.some(
+        (message: ProviderRuntimeTestMessage) =>
+          message.id === "assistant:assistant-item-before-diff" && !message.streaming,
+      ),
     );
 
     harness.emit({
@@ -1706,14 +1692,12 @@ describe("ProviderRuntimeIngestion", () => {
       },
     });
 
-    const thread = await waitForThread(
-      harness.engine,
-      (entry) =>
-        entry.checkpoints.some(
-          (checkpoint: ProviderRuntimeTestCheckpoint) =>
-            checkpoint.turnId === "turn-diff-no-item-id" &&
-            checkpoint.assistantMessageId === "assistant:assistant-item-before-diff",
-        ),
+    const thread = await waitForThread(harness.engine, (entry) =>
+      entry.checkpoints.some(
+        (checkpoint: ProviderRuntimeTestCheckpoint) =>
+          checkpoint.turnId === "turn-diff-no-item-id" &&
+          checkpoint.assistantMessageId === "assistant:assistant-item-before-diff",
+      ),
     );
 
     const checkpoint = thread.checkpoints.find(
@@ -1740,12 +1724,10 @@ describe("ProviderRuntimeIngestion", () => {
       },
     });
 
-    const thread = await waitForThread(
-      harness.engine,
-      (entry) =>
-        entry.checkpoints.some(
-          (checkpoint: ProviderRuntimeTestCheckpoint) => checkpoint.turnId === "turn-no-git",
-        ),
+    const thread = await waitForThread(harness.engine, (entry) =>
+      entry.checkpoints.some(
+        (checkpoint: ProviderRuntimeTestCheckpoint) => checkpoint.turnId === "turn-no-git",
+      ),
     );
 
     const checkpoint = thread.checkpoints.find(

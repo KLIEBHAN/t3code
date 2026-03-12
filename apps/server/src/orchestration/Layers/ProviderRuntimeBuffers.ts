@@ -1,7 +1,12 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
-import { type MessageId, type ProviderRuntimeEvent, type ThreadId, type TurnId } from "@t3tools/contracts";
+import {
+  type MessageId,
+  type ProviderRuntimeEvent,
+  type ThreadId,
+  type TurnId,
+} from "@t3tools/contracts";
 import { Cache, Data, Duration, Effect, FileSystem, Option, Ref } from "effect";
 
 const providerTurnKey = (threadId: ThreadId, turnId: TurnId) => `${threadId}:${turnId}`;
@@ -45,7 +50,10 @@ function toolOutputBufferKey(event: ProviderRuntimeEvent): string | undefined {
   return `${event.threadId}:${event.itemId}`;
 }
 
-function mergeToolOutput(existing: string | undefined, buffered: string | undefined): string | undefined {
+function mergeToolOutput(
+  existing: string | undefined,
+  buffered: string | undefined,
+): string | undefined {
   const normalizedExisting = existing?.trim();
   const normalizedBuffered = buffered?.trim();
   if (!normalizedExisting) {
@@ -120,11 +128,13 @@ export const makeProviderRuntimeBuffers = (fileSystem: FileSystem.FileSystem) =>
 
     const bufferedToolOutputByItemKey = yield* Ref.make(new Map<string, BufferedToolOutputState>());
 
-    const bufferedProposedPlanById = yield* Cache.make<string, { text: string; createdAt: string }>({
-      capacity: BUFFERED_PROPOSED_PLAN_BY_ID_CACHE_CAPACITY,
-      timeToLive: BUFFERED_PROPOSED_PLAN_BY_ID_TTL,
-      lookup: () => Effect.succeed({ text: "", createdAt: "" }),
-    });
+    const bufferedProposedPlanById = yield* Cache.make<string, { text: string; createdAt: string }>(
+      {
+        capacity: BUFFERED_PROPOSED_PLAN_BY_ID_CACHE_CAPACITY,
+        timeToLive: BUFFERED_PROPOSED_PLAN_BY_ID_TTL,
+        lookup: () => Effect.succeed({ text: "", createdAt: "" }),
+      },
+    );
 
     const rememberAssistantMessageId: ProviderRuntimeBuffers["rememberAssistantMessageId"] = (
       threadId,
@@ -394,29 +404,28 @@ export const makeProviderRuntimeBuffers = (fileSystem: FileSystem.FileSystem) =>
       }),
     );
 
-    const bufferToolOutputDeltaIfPresent: ProviderRuntimeBuffers["bufferToolOutputDeltaIfPresent"] = (
-      event,
-    ) =>
-      Effect.gen(function* () {
-        if (event.type !== "content.delta") {
-          return;
-        }
+    const bufferToolOutputDeltaIfPresent: ProviderRuntimeBuffers["bufferToolOutputDeltaIfPresent"] =
+      (event) =>
+        Effect.gen(function* () {
+          if (event.type !== "content.delta") {
+            return;
+          }
 
-        const { streamKind, delta } = event.payload;
-        if (
-          (streamKind !== "command_output" && streamKind !== "file_change_output") ||
-          delta.length === 0
-        ) {
-          return;
-        }
+          const { streamKind, delta } = event.payload;
+          if (
+            (streamKind !== "command_output" && streamKind !== "file_change_output") ||
+            delta.length === 0
+          ) {
+            return;
+          }
 
-        const bufferKey = toolOutputBufferKey(event);
-        if (!bufferKey) {
-          return;
-        }
+          const bufferKey = toolOutputBufferKey(event);
+          if (!bufferKey) {
+            return;
+          }
 
-        yield* appendBufferedToolOutput(bufferKey, delta);
-      });
+          yield* appendBufferedToolOutput(bufferKey, delta);
+        });
 
     const withBufferedToolOutput: ProviderRuntimeBuffers["withBufferedToolOutput"] = (event) =>
       Effect.gen(function* () {

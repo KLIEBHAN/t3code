@@ -881,14 +881,14 @@ const makeOrchestrationProjectionPipeline = Effect.gen(function* () {
             requestedAt: event.payload.createdAt,
             startedAt: event.payload.createdAt,
             completedAt: event.payload.streaming ? null : event.payload.updatedAt,
-              checkpointTurnCount: null,
-              checkpointRef: null,
-              checkpointStatus: null,
-              checkpointFiles: [],
-              checkpointUnifiedDiff: null,
-            });
-            return;
-          }
+            checkpointTurnCount: null,
+            checkpointRef: null,
+            checkpointStatus: null,
+            checkpointFiles: [],
+            checkpointUnifiedDiff: null,
+          });
+          return;
+        }
 
         case "thread.turn-interrupt-requested": {
           if (event.payload.turnId === undefined) {
@@ -917,12 +917,12 @@ const makeOrchestrationProjectionPipeline = Effect.gen(function* () {
             requestedAt: event.payload.createdAt,
             startedAt: event.payload.createdAt,
             completedAt: event.payload.createdAt,
-              checkpointTurnCount: null,
-              checkpointRef: null,
-              checkpointStatus: null,
-              checkpointFiles: [],
-              checkpointUnifiedDiff: null,
-            });
+            checkpointTurnCount: null,
+            checkpointRef: null,
+            checkpointStatus: null,
+            checkpointFiles: [],
+            checkpointUnifiedDiff: null,
+          });
           return;
         }
 

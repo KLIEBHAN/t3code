@@ -17,10 +17,12 @@ export function isProviderFallbackCheckpointRef(checkpointRef: string): boolean 
 export function nextCheckpointTurnCount(
   checkpoints: ReadonlyArray<{ readonly checkpointTurnCount: number }>,
 ): number {
-  return checkpoints.reduce(
-    (maxTurnCount, checkpoint) => Math.max(maxTurnCount, checkpoint.checkpointTurnCount),
-    0,
-  ) + 1;
+  return (
+    checkpoints.reduce(
+      (maxTurnCount, checkpoint) => Math.max(maxTurnCount, checkpoint.checkpointTurnCount),
+      0,
+    ) + 1
+  );
 }
 
 export function resolveThreadWorkspaceCwd(input: {

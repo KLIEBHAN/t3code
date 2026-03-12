@@ -497,7 +497,9 @@ const make = Effect.gen(function* () {
       ...(message.attachments !== undefined ? { attachments: message.attachments } : {}),
       ...(event.payload.provider !== undefined ? { provider: event.payload.provider } : {}),
       ...(event.payload.model !== undefined ? { model: event.payload.model } : {}),
-      ...(event.payload.modelOptions !== undefined ? { modelOptions: event.payload.modelOptions } : {}),
+      ...(event.payload.modelOptions !== undefined
+        ? { modelOptions: event.payload.modelOptions }
+        : {}),
       ...buildProviderOptionsOverride(event.payload.providerOptions),
       interactionMode: event.payload.interactionMode,
       createdAt: event.payload.createdAt,
@@ -644,11 +646,10 @@ const make = Effect.gen(function* () {
     });
   });
 
-  const processThreadDeleted = (
-    event: Extract<ProviderIntentEvent, { type: "thread.deleted" }>,
-  ) => Effect.sync(() => {
-    clearThreadProviderOptions(event.payload.threadId);
-  });
+  const processThreadDeleted = (event: Extract<ProviderIntentEvent, { type: "thread.deleted" }>) =>
+    Effect.sync(() => {
+      clearThreadProviderOptions(event.payload.threadId);
+    });
 
   const processDomainEvent = (event: ProviderIntentEvent) =>
     Effect.gen(function* () {
@@ -705,7 +706,7 @@ const make = Effect.gen(function* () {
   const start: ProviderCommandReactorShape["start"] = Effect.forkScoped(
     Stream.runForEach(orchestrationEngine.streamDomainEvents, (event) => {
       if (!isProviderIntentEvent(event)) {
-          return Effect.void;
+        return Effect.void;
       }
 
       return worker.enqueue(event);

@@ -127,16 +127,17 @@ function runtimePayloadRecord(event: ProviderRuntimeEvent): Record<string, unkno
   return payload as Record<string, unknown>;
 }
 
-function toolOutputBufferKey(
-  event: ProviderRuntimeEvent,
-): string | undefined {
+function toolOutputBufferKey(event: ProviderRuntimeEvent): string | undefined {
   if (!event.itemId) {
     return undefined;
   }
   return `${event.threadId}:${event.itemId}`;
 }
 
-function mergeToolOutput(existing: string | undefined, buffered: string | undefined): string | undefined {
+function mergeToolOutput(
+  existing: string | undefined,
+  buffered: string | undefined,
+): string | undefined {
   const normalizedExisting = existing?.trim();
   const normalizedBuffered = buffered?.trim();
   if (!normalizedExisting) {
@@ -198,8 +199,8 @@ function resolveCheckpointTurnCountForTurn(input: {
   turnId: TurnId;
 }): number {
   return (
-    input.checkpoints.find((checkpoint) => checkpoint.turnId === input.turnId)?.checkpointTurnCount ??
-    nextCheckpointTurnCount(input.checkpoints)
+    input.checkpoints.find((checkpoint) => checkpoint.turnId === input.turnId)
+      ?.checkpointTurnCount ?? nextCheckpointTurnCount(input.checkpoints)
   );
 }
 
@@ -613,11 +614,7 @@ const make = Effect.gen(function* () {
     lookup: () => Effect.succeed({ text: "", createdAt: "" }),
   });
 
-  const rememberAssistantMessageId = (
-    threadId: ThreadId,
-    turnId: TurnId,
-    messageId: MessageId,
-  ) =>
+  const rememberAssistantMessageId = (threadId: ThreadId, turnId: TurnId, messageId: MessageId) =>
     Cache.getOption(turnMessageIdsByTurnKey, providerTurnKey(threadId, turnId)).pipe(
       Effect.flatMap((existingIds) =>
         Cache.set(
@@ -846,8 +843,9 @@ const make = Effect.gen(function* () {
   yield* Effect.addFinalizer(() =>
     Effect.gen(function* () {
       const current = yield* Ref.get(bufferedToolOutputByItemKey);
-      const spillPaths = [...current.values()]
-        .flatMap((state) => (state.spillPath ? [state.spillPath] : []));
+      const spillPaths = [...current.values()].flatMap((state) =>
+        state.spillPath ? [state.spillPath] : [],
+      );
       yield* Ref.set(bufferedToolOutputByItemKey, new Map());
       yield* cleanupBufferedToolOutputSpills(spillPaths);
     }),

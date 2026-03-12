@@ -41,7 +41,9 @@ type SystemGeneratedTurnCommand = Extract<
 >;
 
 function buildTurnStartProviderFields(
-  command: Extract<OrchestrationCommand, { type: "thread.turn.start" }> | SystemGeneratedTurnCommand,
+  command:
+    | Extract<OrchestrationCommand, { type: "thread.turn.start" }>
+    | SystemGeneratedTurnCommand,
 ) {
   return {
     ...(command.provider !== undefined ? { provider: command.provider } : {}),
@@ -84,7 +86,9 @@ function withEventBase(
 }
 
 function buildTurnStartEvents(input: {
-  readonly command: Extract<OrchestrationCommand, { type: "thread.turn.start" }> | SystemGeneratedTurnCommand;
+  readonly command:
+    | Extract<OrchestrationCommand, { type: "thread.turn.start" }>
+    | SystemGeneratedTurnCommand;
   readonly readModel: OrchestrationReadModel;
   readonly messageId: MessageId;
   readonly messageText: string;
@@ -127,8 +131,7 @@ function buildTurnStartEvents(input: {
       threadId: input.command.threadId,
       messageId: input.messageId,
       ...buildTurnStartProviderFields(input.command),
-      assistantDeliveryMode:
-        input.command.assistantDeliveryMode ?? DEFAULT_ASSISTANT_DELIVERY_MODE,
+      assistantDeliveryMode: input.command.assistantDeliveryMode ?? DEFAULT_ASSISTANT_DELIVERY_MODE,
       runtimeMode: thread?.runtimeMode ?? input.command.runtimeMode,
       interactionMode: thread?.interactionMode ?? input.command.interactionMode,
       createdAt: input.command.createdAt,

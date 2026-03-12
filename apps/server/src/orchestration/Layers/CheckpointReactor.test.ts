@@ -568,8 +568,9 @@ describe("CheckpointReactor", () => {
     const thread = await waitForThread(
       harness.engine,
       (entry) =>
-        entry.checkpoints.some((checkpoint) => checkpoint.checkpointRef === canonicalCheckpointRef) &&
-        !entry.activities.some((activity) => activity.kind === "checkpoint.capture.failed"),
+        entry.checkpoints.some(
+          (checkpoint) => checkpoint.checkpointRef === canonicalCheckpointRef,
+        ) && !entry.activities.some((activity) => activity.kind === "checkpoint.capture.failed"),
     );
 
     expect(
