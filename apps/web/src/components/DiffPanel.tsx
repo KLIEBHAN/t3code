@@ -791,8 +791,8 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
                       : hasNoNetChanges
                         ? "No net changes in this selection."
                         : "No patch available for this selection."}
-                </p>
-              </div>
+                  </p>
+                </div>
               )
             ) : renderablePatch.kind === "files" && !canRenderVirtualizedPatch ? (
               <div className="flex h-full items-center justify-center px-3 py-2 text-xs text-muted-foreground/70">

@@ -7,9 +7,11 @@ import {
   useVirtualizer,
 } from "@tanstack/react-virtual";
 import type { MessageId, TurnId } from "@t3tools/contracts";
+import type { TimestampFormat } from "../appSettings";
 
 import { AUTO_SCROLL_BOTTOM_THRESHOLD_PX } from "../chat-scroll";
-import { deriveTimelineEntries, formatElapsed, formatTimestamp } from "../session-logic";
+import { deriveTimelineEntries, formatElapsed } from "../session-logic";
+import { formatTimestamp } from "../timestampFormat";
 import type { ChatMessage, TurnDiffSummary } from "../types";
 import {
   buildProposedPlanExport,
@@ -61,9 +63,13 @@ export function buildExpandedImagePreview(
   };
 }
 
-function formatMessageMeta(createdAt: string, duration: string | null): string {
-  if (!duration) return formatTimestamp(createdAt);
-  return `${formatTimestamp(createdAt)} • ${duration}`;
+function formatMessageMeta(
+  createdAt: string,
+  duration: string | null,
+  timestampFormat: TimestampFormat,
+): string {
+  if (!duration) return formatTimestamp(createdAt, timestampFormat);
+  return `${formatTimestamp(createdAt, timestampFormat)} • ${duration}`;
 }
 
 function formatWorkingTimer(startIso: string, endIso: string): string | null {
@@ -209,6 +215,7 @@ export interface MessagesTimelineProps {
   onImageExpand: (preview: ExpandedImagePreview) => void;
   markdownCwd: string | undefined;
   resolvedTheme: "light" | "dark";
+  timestampFormat: TimestampFormat;
   workspaceRoot: string | undefined;
 }
 
@@ -378,6 +385,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   onImageExpand,
   markdownCwd,
   resolvedTheme,
+  timestampFormat,
   workspaceRoot,
 }: MessagesTimelineProps) {
   const timelineRootRef = useRef<HTMLDivElement | null>(null);
@@ -649,7 +657,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
                     )}
                   </div>
                   <p className="text-right text-[10px] text-muted-foreground/30">
-                    {formatTimestamp(row.message.createdAt)}
+                    {formatTimestamp(row.message.createdAt, timestampFormat)}
                   </p>
                 </div>
               </div>
@@ -699,6 +707,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
                     row.message.streaming
                       ? formatElapsed(row.message.createdAt, nowIso)
                       : formatElapsed(row.message.createdAt, row.message.completedAt),
+                    timestampFormat,
                   )}
                 </p>
               </div>

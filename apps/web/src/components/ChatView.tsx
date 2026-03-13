@@ -3472,7 +3472,6 @@ export default function ChatView({ threadId }: ChatViewProps) {
           activePendingProgress.activeQuestion.id,
           nextPrompt,
           nextCursor,
-          expandedCursor,
           cursorAdjacentToMention,
         );
         return;
