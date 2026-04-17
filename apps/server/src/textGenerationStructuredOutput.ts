@@ -1,13 +1,13 @@
 import { Effect, Schema } from "effect";
 
-import { runCodexStructuredOutput } from "./codexStructuredOutput";
-import { runClaudeStructuredOutput } from "./claudeStructuredOutput";
-import { ServerSettingsService } from "./serverSettings";
-import { resolveClaudeTextGenerationFallback } from "./textGenerationFallback";
+import { runCodexStructuredOutput } from "./codexStructuredOutput.ts";
+import { runClaudeStructuredOutput } from "./claudeStructuredOutput.ts";
+import { ServerSettingsService } from "./serverSettings.ts";
+import { resolveClaudeTextGenerationFallback } from "./textGenerationFallback.ts";
 import {
   logTextGenerationFallback,
   logTextGenerationSelection,
-} from "./textGenerationSelectionLog";
+} from "./textGenerationSelectionLog.ts";
 
 export function runTextGenerationStructuredOutput<S extends Schema.Top>(input: {
   operation: string;
