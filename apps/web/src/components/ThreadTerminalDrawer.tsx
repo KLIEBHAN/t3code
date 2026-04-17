@@ -7,6 +7,7 @@ import {
   type TerminalSessionSnapshot,
   type ThreadId,
 } from "@t3tools/contracts";
+import { DEFAULT_TERMINAL_FONT_FAMILY } from "@t3tools/contracts/settings";
 import { Terminal, type ITheme } from "@xterm/xterm";
 import {
   type PointerEvent as ReactPointerEvent,
@@ -320,7 +321,7 @@ export function TerminalViewport({
       lineHeight: 1.2,
       fontSize: 12,
       scrollback: 5_000,
-      fontFamily: '"SF Mono", "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace',
+      fontFamily: DEFAULT_TERMINAL_FONT_FAMILY,
       theme: terminalThemeFromApp(mount),
     });
     terminal.loadAddon(fitAddon);
