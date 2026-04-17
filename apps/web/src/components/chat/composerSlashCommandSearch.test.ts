@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { ProviderDriverKind } from "@t3tools/contracts";
 
 import type { ComposerCommandItem } from "./ComposerCommandMenu";
+import { getSlashCommandDefinitions } from "../../slashCommands";
 import { searchSlashCommandItems } from "./composerSlashCommandSearch";
 
 describe("searchSlashCommandItems", () => {
@@ -12,7 +13,9 @@ describe("searchSlashCommandItems", () => {
       {
         id: "slash:default",
         type: "slash-command",
-        command: "default",
+        command: getSlashCommandDefinitions().find(
+          (command) => command.source === "builtin" && command.id === "default",
+        )!,
         label: "/default",
         description: "Switch this thread back to normal build mode",
       },

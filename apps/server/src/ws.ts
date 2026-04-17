@@ -40,10 +40,13 @@ import { RpcSerialization, RpcServer } from "effect/unstable/rpc";
 import { CheckpointDiffQuery } from "./checkpointing/Services/CheckpointDiffQuery.ts";
 import { ServerConfig } from "./config.ts";
 import { Keybindings } from "./keybindings.ts";
+import { CustomSlashCommands } from "./customSlashCommands.ts";
 import * as ExternalLauncher from "./process/externalLauncher.ts";
 import { normalizeDispatchCommand } from "./orchestration/Normalizer.ts";
 import { OrchestrationEngineService } from "./orchestration/Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "./orchestration/Services/ProjectionSnapshotQuery.ts";
+import { ReplySuggestionGeneration } from "./suggestions/Services/ReplySuggestionGeneration.ts";
+import { PromptImprovementGeneration } from "./promptImprovement/Services/PromptImprovementGeneration.ts";
 import {
   observeRpcEffect,
   observeRpcStream,
@@ -164,7 +167,10 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
       const orchestrationEngine = yield* OrchestrationEngineService;
       const checkpointDiffQuery = yield* CheckpointDiffQuery;
       const keybindings = yield* Keybindings;
+      const customSlashCommands = yield* CustomSlashCommands;
       const externalLauncher = yield* ExternalLauncher.ExternalLauncher;
+      const replySuggestionGeneration = yield* ReplySuggestionGeneration;
+      const promptImprovementGeneration = yield* PromptImprovementGeneration;
       const gitWorkflow = yield* GitWorkflowService;
       const vcsProvisioning = yield* VcsProvisioningService;
       const vcsStatusBroadcaster = yield* VcsStatusBroadcaster;
@@ -572,6 +578,7 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
 
       const loadServerConfig = Effect.gen(function* () {
         const keybindingsConfig = yield* keybindings.loadConfigState;
+        const customSlashCommandsState = yield* customSlashCommands.loadConfigState;
         const providers = yield* providerRegistry.getProviders;
         const settings = redactServerSettingsForClient(yield* serverSettings.getSettings);
         const environment = yield* serverEnvironment.getDescriptor;
@@ -582,8 +589,10 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
           auth,
           cwd: config.cwd,
           keybindingsConfigPath: config.keybindingsConfigPath,
+          customSlashCommandsDirectoryPath: config.customSlashCommandsDirectoryPath,
           keybindings: keybindingsConfig.keybindings,
-          issues: keybindingsConfig.issues,
+          customSlashCommands: customSlashCommandsState.commands,
+          issues: [...keybindingsConfig.issues, ...customSlashCommandsState.issues],
           providers,
           availableEditors: ExternalLauncher.resolveAvailableEditors(),
           observability: {
@@ -997,6 +1006,18 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
             ),
             { "rpc.aggregate": "workspace" },
           ),
+        [WS_METHODS.suggestionsGenerateReplySuggestions]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.suggestionsGenerateReplySuggestions,
+            replySuggestionGeneration.generateReplySuggestions(input),
+            { "rpc.aggregate": "suggestions" },
+          ),
+        [WS_METHODS.promptImprovementGenerate]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.promptImprovementGenerate,
+            promptImprovementGeneration.generatePromptImprovement(input),
+            { "rpc.aggregate": "promptImprovement" },
+          ),
         [WS_METHODS.subscribeVcsStatus]: (input) =>
           observeRpcStream(
             WS_METHODS.subscribeVcsStatus,
@@ -1151,6 +1172,16 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
                   },
                 })),
               );
+              const customSlashCommandsUpdates = customSlashCommands.changes.pipe(
+                Stream.map((event) => ({
+                  version: 1 as const,
+                  type: "customSlashCommandsUpdated" as const,
+                  payload: {
+                    customSlashCommands: event.commands,
+                    issues: event.issues,
+                  },
+                })),
+              );
               const providerStatuses = providerRegistry.streamChanges.pipe(
                 Stream.map((providers) => ({
                   version: 1 as const,
@@ -1173,7 +1204,7 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
                 .pipe(Effect.ignoreCause({ log: true }), Effect.forkScoped);
 
               const liveUpdates = Stream.merge(
-                keybindingsUpdates,
+                Stream.merge(keybindingsUpdates, customSlashCommandsUpdates),
                 Stream.merge(providerStatuses, settingsUpdates),
               );
 

@@ -54,8 +54,7 @@ export function deriveNewThreadDraftOptions(input: {
     branch: input.activeThread?.branch ?? input.activeDraftThread?.branch ?? null,
     worktreePath: input.activeThread?.worktreePath ?? input.activeDraftThread?.worktreePath ?? null,
     envMode:
-      input.activeDraftThread?.envMode ??
-      (input.activeThread?.worktreePath ? "worktree" : "local"),
+      input.activeDraftThread?.envMode ?? (input.activeThread?.worktreePath ? "worktree" : "local"),
   };
 }
 

@@ -1,12 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { ProjectId, ThreadId } from "@t3tools/contracts";
+import type { EnvironmentId, ProjectId, ThreadId } from "@t3tools/contracts";
+import { scopeProjectRef } from "@t3tools/client-runtime";
 
 import type { DraftThreadState, ProjectDraftThread } from "./composerDraftStore";
 import { deriveNewThreadDraftOptions, openThreadDraftForProject } from "./threadDraftNavigation";
 
 const PROJECT_ID = "project-1" as ProjectId;
 const ROUTE_THREAD_ID = "thread-route" as ThreadId;
+const ENVIRONMENT_ID = "environment-1" as EnvironmentId;
 
 function createDependencies(input?: {
   storedDraftThread?: ProjectDraftThread | null;
@@ -24,11 +26,14 @@ function createDependencies(input?: {
     setDraftThreadContext,
     clearProjectDraftThreadId,
     dependencies: {
-      getDraftThreadByProjectId: () => input?.storedDraftThread ?? null,
+      getDraftThreadByProjectId: undefined as never,
+      getDraftThreadByProjectRef: () => input?.storedDraftThread ?? null,
       getDraftThread: () => input?.routeDraftThread ?? null,
-      setProjectDraftThreadId,
+      setProjectDraftThreadId: (projectId: ProjectId, threadId: ThreadId, options?: unknown) =>
+        setProjectDraftThreadId(scopeProjectRef(ENVIRONMENT_ID, projectId), threadId, options),
       setDraftThreadContext,
-      clearProjectDraftThreadId,
+      clearProjectDraftThreadId: (projectId: ProjectId) =>
+        clearProjectDraftThreadId(scopeProjectRef(ENVIRONMENT_ID, projectId)),
       routeThreadId: input?.routeThreadId ?? ROUTE_THREAD_ID,
       navigateToThread,
     },
@@ -70,6 +75,8 @@ describe("openThreadDraftForProject", () => {
     const { dependencies, navigateToThread, setProjectDraftThreadId } = createDependencies({
       storedDraftThread: {
         threadId: "thread-existing" as ThreadId,
+        environmentId: ENVIRONMENT_ID,
+        logicalProjectKey: "environment-1:project-1",
         projectId: PROJECT_ID,
         createdAt: "2026-03-08T10:00:00.000Z",
         branch: null,
@@ -83,13 +90,20 @@ describe("openThreadDraftForProject", () => {
 
     await openThreadDraftForProject(PROJECT_ID, dependencies);
 
-    expect(setProjectDraftThreadId).toHaveBeenCalledWith(PROJECT_ID, "thread-existing");
+    expect(setProjectDraftThreadId).toHaveBeenCalledWith(
+      scopeProjectRef(ENVIRONMENT_ID, PROJECT_ID),
+      "thread-existing",
+      undefined,
+    );
     expect(navigateToThread).toHaveBeenCalledWith("thread-existing");
   });
 
   it("reuses the routed draft thread for the same project without navigating", async () => {
     const { dependencies, navigateToThread, setProjectDraftThreadId } = createDependencies({
       routeDraftThread: {
+        threadId: ROUTE_THREAD_ID,
+        environmentId: ENVIRONMENT_ID,
+        logicalProjectKey: "environment-1:project-1",
         projectId: PROJECT_ID,
         createdAt: "2026-03-08T10:00:00.000Z",
         branch: "main",
@@ -104,7 +118,11 @@ describe("openThreadDraftForProject", () => {
       branch: "feature",
     });
 
-    expect(setProjectDraftThreadId).toHaveBeenCalledWith(PROJECT_ID, ROUTE_THREAD_ID);
+    expect(setProjectDraftThreadId).toHaveBeenCalledWith(
+      scopeProjectRef(ENVIRONMENT_ID, PROJECT_ID),
+      ROUTE_THREAD_ID,
+      undefined,
+    );
     expect(navigateToThread).not.toHaveBeenCalled();
   });
 });

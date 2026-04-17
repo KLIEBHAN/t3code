@@ -18,8 +18,13 @@ import {
   findLatestProposedPlan,
   findSidebarProposedPlan,
   hasActionableProposedPlan,
+  hasCompletedAssistantMessageForTurn,
+  hasStreamingAssistantMessageForTurn,
   hasToolActivityForTurn,
+  isLatestTurnOutputFinalizing,
+  isLatestTurnOutputSettled,
   isLatestTurnSettled,
+  resolveTurnDiffSummaryForAssistantMessage,
   shouldResetSendPhase,
 } from "./session-logic";
 
@@ -172,6 +177,101 @@ describe("derivePendingApprovals", () => {
     ];
 
     expect(derivePendingApprovals(activities)).toEqual([]);
+  });
+});
+
+describe("resolveTurnDiffSummaryForAssistantMessage", () => {
+  it("prefers turn-based lookup when assistantMessageId is unavailable", () => {
+    const turnId = TurnId.make("turn-1");
+    const messageId = MessageId.make("assistant:message-1");
+    const summary = {
+      turnId,
+      completedAt: "2026-02-23T00:00:01.000Z",
+      files: [],
+    };
+
+    expect(
+      resolveTurnDiffSummaryForAssistantMessage({
+        message: {
+          id: messageId,
+          role: "assistant",
+          turnId,
+        },
+        turnDiffSummaryByAssistantMessageId: new Map(),
+        turnDiffSummaryByTurnId: new Map([[turnId, summary]]),
+        latestAssistantMessageIdByTurnId: new Map([[turnId, messageId]]),
+      }),
+    ).toEqual(summary);
+  });
+
+  it("falls back to assistantMessageId lookup when no turn-based summary exists", () => {
+    const messageId = MessageId.make("assistant:message-2");
+    const summary = {
+      turnId: TurnId.make("turn-2"),
+      completedAt: "2026-02-23T00:00:01.000Z",
+      files: [],
+      assistantMessageId: messageId,
+    };
+
+    expect(
+      resolveTurnDiffSummaryForAssistantMessage({
+        message: {
+          id: messageId,
+          role: "assistant",
+          turnId: TurnId.make("turn-missing"),
+        },
+        turnDiffSummaryByAssistantMessageId: new Map([[messageId, summary]]),
+        turnDiffSummaryByTurnId: new Map(),
+        latestAssistantMessageIdByTurnId: new Map(),
+      }),
+    ).toEqual(summary);
+  });
+
+  it("does not attach a turn-based summary to earlier assistant updates in the same turn", () => {
+    const turnId = TurnId.make("turn-3");
+    const latestMessageId = MessageId.make("assistant:message-3-final");
+    const summary = {
+      turnId,
+      completedAt: "2026-02-23T00:00:01.000Z",
+      files: [],
+    };
+
+    expect(
+      resolveTurnDiffSummaryForAssistantMessage({
+        message: {
+          id: MessageId.make("assistant:message-3-commentary"),
+          role: "assistant",
+          turnId,
+        },
+        turnDiffSummaryByAssistantMessageId: new Map(),
+        turnDiffSummaryByTurnId: new Map([[turnId, summary]]),
+        latestAssistantMessageIdByTurnId: new Map([[turnId, latestMessageId]]),
+      }),
+    ).toBeUndefined();
+  });
+
+  it("suppresses turn-based summaries while the turn is still active", () => {
+    const turnId = TurnId.make("turn-4");
+    const messageId = MessageId.make("assistant:message-4");
+    const summary = {
+      turnId,
+      completedAt: "2026-02-23T00:00:01.000Z",
+      files: [],
+    };
+
+    expect(
+      resolveTurnDiffSummaryForAssistantMessage({
+        message: {
+          id: messageId,
+          role: "assistant",
+          turnId,
+        },
+        turnDiffSummaryByAssistantMessageId: new Map(),
+        turnDiffSummaryByTurnId: new Map([[turnId, summary]]),
+        latestAssistantMessageIdByTurnId: new Map([[turnId, messageId]]),
+        activeTurnId: turnId,
+      }),
+    ).toBeUndefined();
   });
 });
 
@@ -343,30 +443,6 @@ describe("deriveActivePlanState", () => {
       steps: [{ step: "Implement Codex user input", status: "inProgress" }],
     });
   });
-
-  it("falls back to the most recent plan from a previous turn", () => {
-    const activities: OrchestrationThreadActivity[] = [
-      makeActivity({
-        id: "plan-from-turn-1",
-        createdAt: "2026-02-23T00:00:01.000Z",
-        kind: "turn.plan.updated",
-        summary: "Plan updated",
-        tone: "info",
-        turnId: "turn-1",
-        payload: {
-          plan: [{ step: "Write tests", status: "completed" }],
-        },
-      }),
-    ];
-
-    // Current turn is turn-2, which has no plan activity — should fall back to turn-1's plan
-    const result = deriveActivePlanState(activities, TurnId.make("turn-2"));
-    expect(result).toEqual({
-      createdAt: "2026-02-23T00:00:01.000Z",
-      turnId: "turn-1",
-      steps: [{ step: "Write tests", status: "completed" }],
-    });
-  });
 });
 
 describe("findLatestProposedPlan", () => {
@@ -445,7 +521,7 @@ describe("findLatestProposedPlan", () => {
 });
 
 describe("hasActionableProposedPlan", () => {
-  it("returns true for an unimplemented proposed plan", () => {
+  it("returns true for an unimplemented proposed plan created after tracking shipped", () => {
     expect(
       hasActionableProposedPlan({
         id: "plan-1",
@@ -453,8 +529,8 @@ describe("hasActionableProposedPlan", () => {
         planMarkdown: "# Plan",
         implementedAt: null,
         implementationThreadId: null,
-        createdAt: "2026-02-23T00:00:00.000Z",
-        updatedAt: "2026-02-23T00:00:01.000Z",
+        createdAt: "2026-03-19T00:00:00.000Z",
+        updatedAt: "2026-03-19T00:00:01.000Z",
       }),
     ).toBe(true);
   });
@@ -467,8 +543,22 @@ describe("hasActionableProposedPlan", () => {
         planMarkdown: "# Plan",
         implementedAt: "2026-02-23T00:00:02.000Z",
         implementationThreadId: ThreadId.make("thread-implement"),
-        createdAt: "2026-02-23T00:00:00.000Z",
-        updatedAt: "2026-02-23T00:00:02.000Z",
+        createdAt: "2026-03-19T00:00:00.000Z",
+        updatedAt: "2026-03-19T00:00:02.000Z",
+      }),
+    ).toBe(false);
+  });
+
+  it("returns false for legacy proposed plans with unknown implementation status", () => {
+    expect(
+      hasActionableProposedPlan({
+        id: "plan-1",
+        turnId: TurnId.make("turn-1"),
+        planMarkdown: "# Plan",
+        implementedAt: null,
+        implementationThreadId: null,
+        createdAt: "2026-03-07T00:00:00.000Z",
+        updatedAt: "2026-03-07T00:00:01.000Z",
       }),
     ).toBe(false);
   });
@@ -592,7 +682,7 @@ describe("deriveWorkLogEntries", () => {
     expect(entries.map((entry) => entry.id)).toEqual(["tool-complete"]);
   });
 
-  it("omits task.started but shows task.progress and task.completed", () => {
+  it("omits task start and completion lifecycle entries", () => {
     const activities: OrchestrationThreadActivity[] = [
       makeActivity({
         id: "task-start",
@@ -618,40 +708,7 @@ describe("deriveWorkLogEntries", () => {
     ];
 
     const entries = deriveWorkLogEntries(activities, undefined);
-    expect(entries.map((entry) => entry.id)).toEqual(["task-progress", "task-complete"]);
-  });
-
-  it("uses payload summary as label for task entries when available", () => {
-    const activities: OrchestrationThreadActivity[] = [
-      makeActivity({
-        id: "task-progress-with-summary",
-        createdAt: "2026-02-23T00:00:02.000Z",
-        kind: "task.progress",
-        summary: "Reasoning update",
-        tone: "info",
-        payload: { summary: "Searching for API endpoints" },
-      }),
-    ];
-
-    const entries = deriveWorkLogEntries(activities, undefined);
-    expect(entries[0]?.label).toBe("Searching for API endpoints");
-  });
-
-  it("uses payload detail as label for task.completed and preserves error tone", () => {
-    const activities: OrchestrationThreadActivity[] = [
-      makeActivity({
-        id: "task-completed-failed",
-        createdAt: "2026-02-23T00:00:03.000Z",
-        kind: "task.completed",
-        summary: "Task failed",
-        tone: "error",
-        payload: { detail: "Failed to deploy changes" },
-      }),
-    ];
-
-    const entries = deriveWorkLogEntries(activities, undefined);
-    expect(entries[0]?.label).toBe("Failed to deploy changes");
-    expect(entries[0]?.tone).toBe("error");
+    expect(entries.map((entry) => entry.id)).toEqual(["task-progress"]);
   });
 
   it("filters by turn id when provided", () => {
@@ -898,6 +955,7 @@ describe("deriveWorkLogEntries", () => {
     const activities: OrchestrationThreadActivity[] = [
       makeActivity({
         id: "file-tool",
+        turnId: "turn-1",
         kind: "tool.completed",
         summary: "File change",
         payload: {
@@ -915,6 +973,7 @@ describe("deriveWorkLogEntries", () => {
     ];
 
     const [entry] = deriveWorkLogEntries(activities, undefined);
+    expect(entry?.turnId).toBe("turn-1");
     expect(entry?.changedFiles).toEqual([
       "apps/web/src/components/ChatView.tsx",
       "apps/web/src/session-logic.ts",
@@ -1265,6 +1324,193 @@ describe("deriveWorkLogEntries", () => {
     expect(entries).toHaveLength(1);
     expect(entries[0]?.id).toBe("a-complete-same-timestamp");
   });
+
+  it("extracts command output text for completed command tool activities", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "command-tool-output",
+        kind: "tool.completed",
+        summary: "Command run complete",
+        payload: {
+          itemType: "command_execution",
+          data: {
+            item: {
+              result: {
+                stdout: "line 1\nline 2",
+                stderr: "warning line",
+              },
+            },
+          },
+        },
+      }),
+    ];
+
+    const [entry] = deriveWorkLogEntries(activities, undefined);
+    expect(entry?.result).toBe("line 1\nline 2\n\nwarning line");
+  });
+
+  it("extracts command output text when the provider returns string arrays", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "command-tool-output-array",
+        kind: "tool.completed",
+        summary: "Command run complete",
+        payload: {
+          itemType: "command_execution",
+          data: {
+            item: {
+              result: {
+                output: ["line 1", "line 2"],
+              },
+            },
+          },
+        },
+      }),
+    ];
+
+    const [entry] = deriveWorkLogEntries(activities, undefined);
+    expect(entry?.result).toBe("line 1\nline 2");
+  });
+
+  it("extracts command output text from top-level tool payload output", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "command-tool-top-level-output",
+        kind: "tool.completed",
+        summary: "Command run complete",
+        payload: {
+          itemType: "command_execution",
+          output: "line 1\nline 2",
+        },
+      }),
+    ];
+
+    const [entry] = deriveWorkLogEntries(activities, undefined);
+    expect(entry?.result).toBe("line 1\nline 2");
+  });
+
+  it("reuses earlier tool output for the matching completed tool entry", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "command-tool-updated-with-output",
+        createdAt: "2026-02-23T00:00:01.000Z",
+        kind: "tool.updated",
+        summary: "Command run",
+        turnId: "turn-1",
+        payload: {
+          itemType: "command_execution",
+          itemId: "item-1",
+          output: "line 1\nline 2",
+          data: {
+            item: {
+              command: ["/bin/zsh", "-lc", "rg -n diff apps/web/src/components/ChatView.tsx"],
+            },
+          },
+        },
+      }),
+      makeActivity({
+        id: "command-tool-completed-without-output",
+        createdAt: "2026-02-23T00:00:02.000Z",
+        kind: "tool.completed",
+        summary: "Command run complete",
+        turnId: "turn-1",
+        payload: {
+          itemType: "command_execution",
+          itemId: "item-1",
+        },
+      }),
+    ];
+
+    const entries = deriveWorkLogEntries(activities, undefined);
+    const completedEntry = entries.find(
+      (entry) => entry.id === "command-tool-completed-without-output",
+    );
+    expect(completedEntry?.result).toBe("line 1\nline 2");
+    expect(completedEntry?.command).toBe(
+      "/bin/zsh -lc rg -n diff apps/web/src/components/ChatView.tsx",
+    );
+  });
+
+  it("does not merge tool output across distinct activities without a stable item id", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "first-command-update",
+        createdAt: "2026-02-23T00:00:01.000Z",
+        kind: "tool.updated",
+        summary: "First command",
+        turnId: "turn-1",
+        payload: {
+          itemType: "command_execution",
+          output: "line 1\nline 2",
+          data: {
+            item: {
+              command: ["rg", "-n", "diff", "apps/web/src/components/ChatView.tsx"],
+            },
+          },
+        },
+      }),
+      makeActivity({
+        id: "second-command-completed",
+        createdAt: "2026-02-23T00:00:02.000Z",
+        kind: "tool.completed",
+        summary: "Second command complete",
+        turnId: "turn-1",
+        payload: {
+          itemType: "command_execution",
+          data: {
+            item: {
+              command: ["rg", "-n", "diff", "apps/web/src/components/ChatView.tsx"],
+            },
+          },
+        },
+      }),
+    ];
+
+    const entries = deriveWorkLogEntries(activities, undefined);
+    const completedEntry = entries.find((entry) => entry.id === "second-command-completed");
+    expect(completedEntry?.result).toBeUndefined();
+  });
+
+  it("promotes command detail to a result when no structured output is available", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "command-tool-detail-result",
+        kind: "tool.completed",
+        summary: "Command run complete",
+        payload: {
+          itemType: "command_execution",
+          detail: "2 matches found",
+          data: {
+            item: {
+              command: ["rg", "-n", "diff", "apps/web/src/components/ChatView.tsx"],
+            },
+          },
+        },
+      }),
+    ];
+
+    const [entry] = deriveWorkLogEntries(activities, undefined);
+    expect(entry?.result).toBe("2 matches found");
+    expect(entry?.detail).toBe("2 matches found");
+  });
+
+  it("keeps non-command detail as inline metadata instead of treating it as a result", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "file-tool-detail",
+        kind: "tool.completed",
+        summary: "File change complete",
+        payload: {
+          itemType: "file_change",
+          detail: "Updated UI text",
+        },
+      }),
+    ];
+
+    const [entry] = deriveWorkLogEntries(activities, undefined);
+    expect(entry?.result).toBeUndefined();
+    expect(entry?.detail).toBe("Updated UI text");
+  });
 });
 
 describe("deriveTimelineEntries", () => {
@@ -1412,6 +1658,7 @@ describe("hasToolActivityForTurn", () => {
 describe("isLatestTurnSettled", () => {
   const latestTurn = {
     turnId: TurnId.make("turn-1"),
+    state: "completed" as const,
     startedAt: "2026-02-27T21:10:00.000Z",
     completedAt: "2026-02-27T21:10:06.000Z",
   } as const;
@@ -1448,6 +1695,7 @@ describe("isLatestTurnSettled", () => {
       isLatestTurnSettled(
         {
           turnId: TurnId.make("turn-1"),
+          state: "running",
           startedAt: null,
           completedAt: "2026-02-27T21:10:06.000Z",
         },
@@ -1457,9 +1705,281 @@ describe("isLatestTurnSettled", () => {
   });
 });
 
+describe("hasCompletedAssistantMessageForTurn", () => {
+  it("returns false while any assistant message for the turn is still streaming", () => {
+    expect(
+      hasCompletedAssistantMessageForTurn(
+        [
+          {
+            role: "assistant",
+            turnId: TurnId.make("turn-1"),
+            text: "Partial reply",
+            streaming: true,
+          },
+        ],
+        TurnId.make("turn-1"),
+      ),
+    ).toBe(false);
+  });
+
+  it("returns true once the turn has at least one non-streaming assistant message with content", () => {
+    expect(
+      hasCompletedAssistantMessageForTurn(
+        [
+          {
+            role: "assistant",
+            turnId: TurnId.make("turn-1"),
+            text: "Final reply",
+            streaming: false,
+          },
+        ],
+        TurnId.make("turn-1"),
+      ),
+    ).toBe(true);
+  });
+});
+
+describe("hasStreamingAssistantMessageForTurn", () => {
+  it("returns true when the turn still has a streaming assistant message", () => {
+    expect(
+      hasStreamingAssistantMessageForTurn(
+        [
+          {
+            role: "assistant",
+            turnId: TurnId.make("turn-1"),
+            text: "Partial reply",
+            streaming: true,
+          },
+        ],
+        TurnId.make("turn-1"),
+      ),
+    ).toBe(true);
+  });
+
+  it("returns false once assistant output is no longer streaming", () => {
+    expect(
+      hasStreamingAssistantMessageForTurn(
+        [
+          {
+            role: "assistant",
+            turnId: TurnId.make("turn-1"),
+            text: "Final reply",
+            streaming: false,
+          },
+        ],
+        TurnId.make("turn-1"),
+      ),
+    ).toBe(false);
+  });
+});
+
+describe("isLatestTurnOutputSettled", () => {
+  const latestTurn = {
+    turnId: TurnId.make("turn-1"),
+    state: "completed" as const,
+    startedAt: "2026-02-27T21:10:00.000Z",
+    completedAt: "2026-02-27T21:10:06.000Z",
+  } as const;
+
+  it("returns false when the session is ready but the assistant message is still streaming", () => {
+    expect(
+      isLatestTurnOutputSettled({
+        latestTurn,
+        session: {
+          orchestrationStatus: "ready",
+          activeTurnId: undefined,
+        },
+        messages: [
+          {
+            role: "assistant",
+            turnId: TurnId.make("turn-1"),
+            text: "Partial reply",
+            streaming: true,
+          },
+        ],
+      }),
+    ).toBe(false);
+  });
+
+  it("returns true only after the assistant output is finalized", () => {
+    expect(
+      isLatestTurnOutputSettled({
+        latestTurn,
+        session: {
+          orchestrationStatus: "ready",
+          activeTurnId: undefined,
+        },
+        messages: [
+          {
+            role: "assistant",
+            turnId: TurnId.make("turn-1"),
+            text: "Final reply",
+            streaming: false,
+          },
+        ],
+      }),
+    ).toBe(true);
+  });
+
+  it("returns true when the latest assistant message completed after the turn started even without a matching turn id", () => {
+    expect(
+      isLatestTurnOutputSettled({
+        latestTurn,
+        session: {
+          orchestrationStatus: "ready",
+          activeTurnId: undefined,
+        },
+        messages: [
+          {
+            role: "assistant",
+            turnId: null,
+            text: "Final reply",
+            streaming: false,
+            createdAt: "2026-02-27T21:10:02.000Z",
+            completedAt: "2026-02-27T21:10:06.000Z",
+          },
+        ],
+      }),
+    ).toBe(true);
+  });
+
+  it("returns true for a settled turn with no assistant message stream", () => {
+    expect(
+      isLatestTurnOutputSettled({
+        latestTurn,
+        session: {
+          orchestrationStatus: "ready",
+          activeTurnId: undefined,
+        },
+        messages: [],
+      }),
+    ).toBe(true);
+  });
+});
+
+describe("isLatestTurnOutputFinalizing", () => {
+  it("returns true when the session is ready but the latest turn still reports running", () => {
+    expect(
+      isLatestTurnOutputFinalizing({
+        latestTurn: {
+          turnId: TurnId.make("turn-1"),
+          state: "running",
+          startedAt: "2026-02-27T21:10:00.000Z",
+          completedAt: null,
+        },
+        session: {
+          orchestrationStatus: "ready",
+          activeTurnId: undefined,
+        },
+        messages: [
+          {
+            role: "assistant",
+            turnId: TurnId.make("turn-1"),
+            text: "Interim reply",
+            streaming: false,
+          },
+        ],
+      }),
+    ).toBe(true);
+  });
+
+  it("returns true while assistant output is still streaming after the turn completed", () => {
+    expect(
+      isLatestTurnOutputFinalizing({
+        latestTurn: {
+          turnId: TurnId.make("turn-1"),
+          state: "completed",
+          startedAt: "2026-02-27T21:10:00.000Z",
+          completedAt: "2026-02-27T21:10:06.000Z",
+        },
+        session: {
+          orchestrationStatus: "ready",
+          activeTurnId: undefined,
+        },
+        messages: [
+          {
+            role: "assistant",
+            turnId: TurnId.make("turn-1"),
+            text: "Still flushing the last assistant update",
+            streaming: true,
+          },
+        ],
+      }),
+    ).toBe(true);
+  });
+
+  it("returns false once the latest turn output is fully settled", () => {
+    expect(
+      isLatestTurnOutputFinalizing({
+        latestTurn: {
+          turnId: TurnId.make("turn-1"),
+          state: "completed",
+          startedAt: "2026-02-27T21:10:00.000Z",
+          completedAt: "2026-02-27T21:10:06.000Z",
+        },
+        session: {
+          orchestrationStatus: "ready",
+          activeTurnId: undefined,
+        },
+        messages: [
+          {
+            role: "assistant",
+            turnId: TurnId.make("turn-1"),
+            text: "Final reply",
+            streaming: false,
+          },
+        ],
+      }),
+    ).toBe(false);
+  });
+
+  it("returns false once an unscoped assistant message has completed after the turn started", () => {
+    expect(
+      isLatestTurnOutputFinalizing({
+        latestTurn: {
+          turnId: TurnId.make("turn-1"),
+          state: "completed",
+          startedAt: "2026-02-27T21:10:00.000Z",
+          completedAt: "2026-02-27T21:10:06.000Z",
+        },
+        session: {
+          orchestrationStatus: "ready",
+          activeTurnId: undefined,
+        },
+        messages: [
+          {
+            role: "assistant",
+            turnId: null,
+            text: "Final reply",
+            streaming: false,
+            createdAt: "2026-02-27T21:10:02.000Z",
+            completedAt: "2026-02-27T21:10:06.000Z",
+          },
+        ],
+      }),
+    ).toBe(false);
+  });
+
+  it("returns false without an active session snapshot", () => {
+    expect(
+      isLatestTurnOutputFinalizing({
+        latestTurn: {
+          turnId: TurnId.make("turn-1"),
+          state: "running",
+          startedAt: "2026-02-27T21:10:00.000Z",
+          completedAt: null,
+        },
+        session: null,
+        messages: [],
+      }),
+    ).toBe(false);
+  });
+});
+
 describe("deriveActiveWorkStartedAt", () => {
   const latestTurn = {
     turnId: TurnId.make("turn-1"),
+    state: "completed" as const,
     startedAt: "2026-02-27T21:10:00.000Z",
     completedAt: "2026-02-27T21:10:06.000Z",
   } as const;
@@ -1503,11 +2023,26 @@ describe("deriveActiveWorkStartedAt", () => {
     ).toBe("2026-02-27T21:11:00.000Z");
   });
 
+  it("keeps the turn start while assistant output is still finalizing", () => {
+    expect(
+      deriveActiveWorkStartedAt(
+        latestTurn,
+        {
+          orchestrationStatus: "ready",
+          activeTurnId: undefined,
+        },
+        null,
+        false,
+      ),
+    ).toBe("2026-02-27T21:10:00.000Z");
+  });
+
   it("uses sendStartedAt for a fresh send after the prior turn completed", () => {
     expect(
       deriveActiveWorkStartedAt(
         {
           turnId: TurnId.make("turn-1"),
+          state: "completed",
           startedAt: "2026-02-27T21:10:00.000Z",
           completedAt: "2026-02-27T21:10:06.000Z",
         },
@@ -1519,12 +2054,13 @@ describe("deriveActiveWorkStartedAt", () => {
 });
 describe("shouldResetSendPhase", () => {
   const latestTurn = {
-    turnId: TurnId.makeUnsafe("turn-1"),
+    turnId: TurnId.make("turn-2"),
+    state: "completed" as const,
     startedAt: "2026-02-27T21:10:00.000Z",
     completedAt: "2026-02-27T21:10:06.000Z",
   } as const;
 
-  it("resets once a newly started turn has already settled", () => {
+  it("resets once a new turn has settled after the send baseline turn", () => {
     expect(
       shouldResetSendPhase({
         latestTurn,
@@ -1533,6 +2069,8 @@ describe("shouldResetSendPhase", () => {
           activeTurnId: undefined,
         },
         sendStartedAt: "2026-02-27T21:10:01.000Z",
+        sendBaselineLatestTurnId: TurnId.make("turn-1"),
+        sendBaselineLatestTurnCompletedAt: "2026-02-27T21:09:50.000Z",
         hasPendingApproval: false,
         hasPendingUserInput: false,
         hasThreadError: false,
@@ -1540,15 +2078,22 @@ describe("shouldResetSendPhase", () => {
     ).toBe(true);
   });
 
-  it("does not reset from an older completed turn that finished before the new send started", () => {
+  it("does not reset while the settled turn still matches the pre-send baseline", () => {
     expect(
       shouldResetSendPhase({
-        latestTurn,
+        latestTurn: {
+          turnId: TurnId.make("turn-1"),
+          state: "completed",
+          startedAt: "2026-02-27T21:09:40.000Z",
+          completedAt: "2026-02-27T21:09:50.000Z",
+        },
         session: {
           orchestrationStatus: "ready",
           activeTurnId: undefined,
         },
         sendStartedAt: "2026-02-27T21:10:10.000Z",
+        sendBaselineLatestTurnId: TurnId.make("turn-1"),
+        sendBaselineLatestTurnCompletedAt: "2026-02-27T21:09:50.000Z",
         hasPendingApproval: false,
         hasPendingUserInput: false,
         hasThreadError: false,
@@ -1556,15 +2101,59 @@ describe("shouldResetSendPhase", () => {
     ).toBe(false);
   });
 
-  it("resets immediately when the session is actively running", () => {
+  it("does not reset while the latest turn is still running", () => {
     expect(
       shouldResetSendPhase({
         latestTurn,
         session: {
           orchestrationStatus: "running",
-          activeTurnId: TurnId.makeUnsafe("turn-1"),
+          activeTurnId: TurnId.make("turn-2"),
         },
         sendStartedAt: "2026-02-27T21:10:10.000Z",
+        sendBaselineLatestTurnId: TurnId.make("turn-1"),
+        sendBaselineLatestTurnCompletedAt: "2026-02-27T21:09:50.000Z",
+        hasPendingApproval: false,
+        hasPendingUserInput: false,
+        hasThreadError: false,
+      }),
+    ).toBe(false);
+  });
+
+  it("resets only after the latest output is fully settled", () => {
+    expect(
+      shouldResetSendPhase({
+        latestTurn,
+        session: {
+          orchestrationStatus: "ready",
+          activeTurnId: undefined,
+        },
+        sendStartedAt: "2026-02-27T21:10:01.000Z",
+        sendBaselineLatestTurnId: TurnId.make("turn-1"),
+        sendBaselineLatestTurnCompletedAt: "2026-02-27T21:09:50.000Z",
+        latestTurnOutputSettled: false,
+        hasPendingApproval: false,
+        hasPendingUserInput: false,
+        hasThreadError: false,
+      }),
+    ).toBe(false);
+  });
+
+  it("resets when the same turn id gains a new completion timestamp", () => {
+    expect(
+      shouldResetSendPhase({
+        latestTurn: {
+          turnId: TurnId.make("turn-1"),
+          state: "completed",
+          startedAt: "2026-02-27T21:10:00.000Z",
+          completedAt: "2026-02-27T21:10:20.000Z",
+        },
+        session: {
+          orchestrationStatus: "ready",
+          activeTurnId: undefined,
+        },
+        sendStartedAt: "2026-02-27T21:10:10.000Z",
+        sendBaselineLatestTurnId: TurnId.make("turn-1"),
+        sendBaselineLatestTurnCompletedAt: "2026-02-27T21:09:50.000Z",
         hasPendingApproval: false,
         hasPendingUserInput: false,
         hasThreadError: false,

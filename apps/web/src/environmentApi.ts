@@ -28,6 +28,12 @@ export function createEnvironmentApi(rpcClient: WsRpcClient): EnvironmentApi {
       cloneRepository: rpcClient.sourceControl.cloneRepository,
       publishRepository: rpcClient.sourceControl.publishRepository,
     },
+    suggestions: {
+      generateReplySuggestions: rpcClient.suggestions.generateReplySuggestions,
+    },
+    promptImprovement: {
+      generate: rpcClient.promptImprovement.generate,
+    },
     vcs: {
       pull: rpcClient.vcs.pull,
       refreshStatus: rpcClient.vcs.refreshStatus,

@@ -5,6 +5,7 @@ import {
   type ServerConfig,
   type ServerConfigStreamEvent,
   type ServerConfigUpdatedPayload,
+  type ServerConfigUpdateSource,
   type ServerLifecycleWelcomePayload,
   type ServerProvider,
   type ServerProviderUpdatedPayload,
@@ -17,12 +18,12 @@ import { useCallback, useRef } from "react";
 import type { WsRpcClient } from "./wsRpcClient";
 import { appAtomRegistry, resetAppAtomRegistryForTests } from "./atomRegistry";
 
-export type ServerConfigUpdateSource = ServerConfigStreamEvent["type"];
+export type ServerConfigStreamUpdateSource = ServerConfigStreamEvent["type"];
 
 export interface ServerConfigUpdatedNotification {
   readonly id: number;
   readonly payload: ServerConfigUpdatedPayload;
-  readonly source: ServerConfigUpdateSource;
+  readonly source: ServerConfigStreamUpdateSource;
 }
 
 type ServerStateClient = Pick<
@@ -34,16 +35,40 @@ function makeStateAtom<A>(label: string, initialValue: A) {
   return Atom.make(initialValue).pipe(Atom.keepAlive, Atom.withLabel(label));
 }
 
-function toServerConfigUpdatedPayload(config: ServerConfig): ServerConfigUpdatedPayload {
+function toServerConfigUpdatedPayload(
+  config: ServerConfig,
+  options?: {
+    readonly sources?: ReadonlyArray<ServerConfigUpdateSource>;
+    readonly updatedAt?: string;
+  },
+): ServerConfigUpdatedPayload {
   return {
     issues: config.issues,
     providers: config.providers,
     settings: config.settings,
+    sources: [...(options?.sources ?? [])],
+    updatedAt: options?.updatedAt ?? new Date().toISOString(),
   };
 }
 
 const EMPTY_AVAILABLE_EDITORS: ReadonlyArray<EditorId> = [];
 const EMPTY_SERVER_PROVIDERS: ReadonlyArray<ServerProvider> = [];
+
+function isKeybindingIssue(issue: ServerConfig["issues"][number]): boolean {
+  return issue.kind.startsWith("keybindings.");
+}
+
+function isCustomSlashCommandsIssue(issue: ServerConfig["issues"][number]): boolean {
+  return issue.kind.startsWith("custom-slash-commands.");
+}
+
+function replaceConfigIssues(
+  existingIssues: ReadonlyArray<ServerConfig["issues"][number]>,
+  nextIssues: ReadonlyArray<ServerConfig["issues"][number]>,
+  predicate: (issue: ServerConfig["issues"][number]) => boolean,
+): ServerConfig["issues"] {
+  return [...existingIssues.filter((issue) => !predicate(issue)), ...nextIssues];
+}
 
 const selectAvailableEditors = (config: ServerConfig | null): ReadonlyArray<EditorId> =>
   config?.availableEditors ?? EMPTY_AVAILABLE_EDITORS;
@@ -103,10 +128,40 @@ export function applyServerConfigEvent(event: ServerConfigStreamEvent): void {
       const nextConfig = {
         ...latestServerConfig,
         keybindings: event.payload.keybindings,
-        issues: event.payload.issues,
+        issues: replaceConfigIssues(
+          latestServerConfig.issues,
+          event.payload.issues,
+          isKeybindingIssue,
+        ),
       } satisfies ServerConfig;
       resolveServerConfig(nextConfig);
-      emitServerConfigUpdated(toServerConfigUpdatedPayload(nextConfig), event.type);
+      emitServerConfigUpdated(
+        toServerConfigUpdatedPayload(nextConfig, { sources: ["keybindings"] }),
+        event.type,
+      );
+      return;
+    }
+    case "customSlashCommandsUpdated": {
+      const latestServerConfig = getServerConfig();
+      if (!latestServerConfig) {
+        return;
+      }
+      const nextConfig = {
+        ...latestServerConfig,
+        customSlashCommands: event.payload.customSlashCommands,
+        issues: replaceConfigIssues(
+          latestServerConfig.issues,
+          event.payload.issues,
+          isCustomSlashCommandsIssue,
+        ),
+      } satisfies ServerConfig;
+      resolveServerConfig(nextConfig);
+      emitServerConfigUpdated(
+        toServerConfigUpdatedPayload(nextConfig, {
+          sources: ["custom-slash-commands"],
+        }),
+        event.type,
+      );
       return;
     }
     case "providerStatuses": {
@@ -159,7 +214,7 @@ export function onWelcome(listener: (payload: ServerLifecycleWelcomePayload) => 
 }
 
 export function onServerConfigUpdated(
-  listener: (payload: ServerConfigUpdatedPayload, source: ServerConfigUpdateSource) => void,
+  listener: (payload: ServerConfigUpdatedPayload, source: ServerConfigStreamUpdateSource) => void,
 ): () => void {
   return subscribeLatest(serverConfigUpdatedAtom, (notification) => {
     listener(notification.payload, notification.source);
@@ -222,7 +277,7 @@ function emitProvidersUpdated(payload: ServerProviderUpdatedPayload): void {
 
 function emitServerConfigUpdated(
   payload: ServerConfigUpdatedPayload,
-  source: ServerConfigUpdateSource,
+  source: ServerConfigStreamUpdateSource,
 ): void {
   appAtomRegistry.set(serverConfigUpdatedAtom, {
     id: nextServerConfigUpdatedNotificationId++,

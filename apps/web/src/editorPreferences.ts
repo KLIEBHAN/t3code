@@ -1,10 +1,45 @@
 import { EDITORS, EditorId, LocalApi } from "@t3tools/contracts";
 import { useMemo } from "react";
-import { getLocalStorageItem, setLocalStorageItem, useLocalStorage } from "./hooks/useLocalStorage";
+
+import {
+  getLocalStorageItem,
+  removeLocalStorageItem,
+  setLocalStorageItem,
+  useLocalStorage,
+} from "./hooks/useLocalStorage";
+import { getSafeLocalStorage } from "./lib/browserStorage";
 
 const LAST_EDITOR_KEY = "t3code:last-editor";
 
+function isEditorId(value: string): value is EditorId {
+  return EDITORS.some((editor) => editor.id === value);
+}
+
+function normalizeStoredPreferredEditor(): EditorId | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  const storage = getSafeLocalStorage();
+  const stored = storage.getItem(LAST_EDITOR_KEY);
+  if (!stored) {
+    return null;
+  }
+
+  try {
+    return getLocalStorageItem(LAST_EDITOR_KEY, EditorId);
+  } catch {
+    if (isEditorId(stored)) {
+      setLocalStorageItem(LAST_EDITOR_KEY, stored, EditorId);
+      return stored;
+    }
+    removeLocalStorageItem(LAST_EDITOR_KEY);
+    return null;
+  }
+}
+
 export function usePreferredEditor(availableEditors: ReadonlyArray<EditorId>) {
+  normalizeStoredPreferredEditor();
   const [lastEditor, setLastEditor] = useLocalStorage(LAST_EDITOR_KEY, null, EditorId);
 
   const effectiveEditor = useMemo(() => {
@@ -16,10 +51,14 @@ export function usePreferredEditor(availableEditors: ReadonlyArray<EditorId>) {
 }
 
 export function readStoredPreferredEditor(): EditorId | null {
-  return getLocalStorageItem(LAST_EDITOR_KEY, EditorId);
+  return normalizeStoredPreferredEditor();
 }
 
 export function writeStoredPreferredEditor(editor: EditorId): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+
   setLocalStorageItem(LAST_EDITOR_KEY, editor, EditorId);
 }
 
@@ -36,16 +75,16 @@ export function resolveAndPersistPreferredEditor(
   return editor ?? null;
 }
 
-export async function openInPreferredEditor(api: LocalApi, targetPath: string): Promise<EditorId> {
 export function preferredTerminalEditor(): EditorId {
-  const fallback = EDITORS.find((editor) => editor.command)?.id ?? EDITORS[0]?.id ?? "cursor";
+  const fallback =
+    EDITORS.find((editor) => (editor.commands?.length ?? 0) > 0)?.id ?? EDITORS[0]?.id ?? "cursor";
   const stored = readStoredPreferredEditor();
   if (!stored) {
     return fallback;
   }
 
   const configured = EDITORS.find((editor) => editor.id === stored);
-  if (!configured?.command) {
+  if (!configured || (configured.commands?.length ?? 0) === 0) {
     return fallback;
   }
 

@@ -68,6 +68,8 @@ import { AdvertisedEndpoint } from "./remoteAccess.ts";
 import { EditorId } from "./editor.ts";
 import { ExecutionEnvironmentDescriptor } from "./environment.ts";
 import type { ClientSettings, ServerSettings, ServerSettingsPatch } from "./settings.ts";
+import type { PromptImprovementInput, PromptImprovementResult } from "./promptImprovement.ts";
+import type { ReplySuggestionsInput, ReplySuggestionsResult } from "./suggestions.ts";
 import type {
   SourceControlCloneRepositoryInput,
   SourceControlCloneRepositoryResult,
@@ -520,6 +522,12 @@ export interface EnvironmentApi {
     publishRepository: (
       input: SourceControlPublishRepositoryInput,
     ) => Promise<SourceControlPublishRepositoryResult>;
+  };
+  suggestions: {
+    generateReplySuggestions: (input: ReplySuggestionsInput) => Promise<ReplySuggestionsResult>;
+  };
+  promptImprovement: {
+    generate: (input: PromptImprovementInput) => Promise<PromptImprovementResult>;
   };
   vcs: {
     listRefs: (input: VcsListRefsInput) => Promise<VcsListRefsResult>;
