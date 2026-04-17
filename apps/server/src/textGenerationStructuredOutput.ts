@@ -1,3 +1,4 @@
+import { DEFAULT_GIT_TEXT_GENERATION_MODEL_BY_PROVIDER } from "@t3tools/contracts";
 import { Effect, Schema } from "effect";
 
 import { runCodexStructuredOutput } from "./codexStructuredOutput.ts";
@@ -68,6 +69,34 @@ export function runTextGenerationStructuredOutput<S extends Schema.Top>(input: {
           }),
         ),
       );
+    }
+
+    if (modelSelection.provider === "opencode") {
+      const fallbackSelection = {
+        provider: "codex" as const,
+        model: DEFAULT_GIT_TEXT_GENERATION_MODEL_BY_PROVIDER.codex,
+      };
+
+      yield* logTextGenerationFallback({
+        operation: input.operation,
+        from: modelSelection,
+        to: fallbackSelection,
+        reason: "Structured output is not supported for OpenCode; using Codex instead.",
+      });
+
+      return yield* runCodexStructuredOutput({
+        operation: input.operation,
+        cwd: input.cwd,
+        prompt: input.prompt,
+        outputSchema: input.outputSchema,
+        ...(input.imagePaths ? { imagePaths: input.imagePaths } : {}),
+        ...(input.cleanupPaths ? { cleanupPaths: input.cleanupPaths } : {}),
+        modelSelection: fallbackSelection,
+        binaryPath: settings.providers.codex.binaryPath,
+        ...(settings.providers.codex.homePath
+          ? { homePath: settings.providers.codex.homePath }
+          : {}),
+      });
     }
 
     return yield* runCodexStructuredOutput({
