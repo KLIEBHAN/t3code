@@ -26,6 +26,8 @@ export const SidebarThreadSortOrder = Schema.Literals(["updated_at", "created_at
 export type SidebarThreadSortOrder = typeof SidebarThreadSortOrder.Type;
 export const DEFAULT_SIDEBAR_THREAD_SORT_ORDER: SidebarThreadSortOrder = "updated_at";
 export const MAX_TERMINAL_FONT_FAMILY_LENGTH = 1024;
+export const DEFAULT_TERMINAL_FONT_FAMILY =
+  '"MesloLGS Nerd Font Mono", "SF Mono", "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace';
 
 export const SidebarProjectGroupingMode = Schema.Literals([
   "repository",
@@ -97,7 +99,7 @@ export const ClientSettingsSchema = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_THREAD_SORT_ORDER)),
   ),
   terminalFontFamily: Schema.String.check(Schema.isMaxLength(MAX_TERMINAL_FONT_FAMILY_LENGTH)).pipe(
-    Schema.withDecodingDefault(Effect.succeed("")),
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_TERMINAL_FONT_FAMILY)),
   ),
   timestampFormat: TimestampFormat.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_TIMESTAMP_FORMAT)),
