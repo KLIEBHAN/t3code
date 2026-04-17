@@ -81,7 +81,9 @@ const baseServerConfig: ServerConfig = {
   },
   cwd: "/tmp/workspace",
   keybindingsConfigPath: "/tmp/workspace/.config/keybindings.json",
+  customSlashCommandsDirectoryPath: "/tmp/workspace/.config/slash-commands",
   keybindings: [],
+  customSlashCommands: [],
   issues: [],
   providers: defaultProviders,
   availableEditors: ["cursor"],
@@ -163,22 +165,26 @@ describe("serverState", () => {
     expect(serverApi.subscribeLifecycle).toHaveBeenCalledOnce();
     expect(serverApi.getConfig).toHaveBeenCalledOnce();
     expect(configListener).toHaveBeenCalledWith(
-      {
+      expect.objectContaining({
         issues: [],
         providers: defaultProviders,
         settings: DEFAULT_SERVER_SETTINGS,
-      },
+        sources: [],
+        updatedAt: expect.any(String),
+      }),
       "snapshot",
     );
 
     const lateListener = vi.fn();
     const unsubscribeLate = onServerConfigUpdated(lateListener);
     expect(lateListener).toHaveBeenCalledWith(
-      {
+      expect.objectContaining({
         issues: [],
         providers: defaultProviders,
         settings: DEFAULT_SERVER_SETTINGS,
-      },
+        sources: [],
+        updatedAt: expect.any(String),
+      }),
       "snapshot",
     );
 
@@ -334,36 +340,107 @@ describe("serverState", () => {
     expect(providersListener).toHaveBeenLastCalledWith({ providers: nextProviders });
     expect(configListener).toHaveBeenNthCalledWith(
       2,
-      {
+      expect.objectContaining({
         issues: [{ kind: "keybindings.malformed-config", message: "bad json" }],
         providers: defaultProviders,
         settings: DEFAULT_SERVER_SETTINGS,
-      },
+        sources: ["keybindings"],
+        updatedAt: expect.any(String),
+      }),
       "keybindingsUpdated",
     );
     expect(configListener).toHaveBeenNthCalledWith(
       3,
-      {
+      expect.objectContaining({
         issues: [{ kind: "keybindings.malformed-config", message: "bad json" }],
         providers: nextProviders,
         settings: DEFAULT_SERVER_SETTINGS,
-      },
+        sources: [],
+        updatedAt: expect.any(String),
+      }),
       "providerStatuses",
     );
     expect(configListener).toHaveBeenLastCalledWith(
-      {
+      expect.objectContaining({
         issues: [{ kind: "keybindings.malformed-config", message: "bad json" }],
         providers: nextProviders,
         settings: {
           ...DEFAULT_SERVER_SETTINGS,
           enableAssistantStreaming: true,
         },
-      },
+        sources: [],
+        updatedAt: expect.any(String),
+      }),
       "settingsUpdated",
     );
 
     unsubscribeProviders();
     unsubscribeConfig();
+    stop();
+  });
+
+  it("preserves unrelated config issues across keybinding and custom slash command updates", async () => {
+    serverApi.getConfig.mockResolvedValueOnce(baseServerConfig);
+    const stop = startServerStateSync(serverApi);
+
+    await waitFor(() => {
+      expect(getServerConfig()).toEqual(baseServerConfig);
+    });
+
+    emitServerConfigEvent({
+      version: 1,
+      type: "keybindingsUpdated",
+      payload: {
+        keybindings: [],
+        issues: [{ kind: "keybindings.malformed-config", message: "bad keybindings" }],
+      },
+    });
+
+    emitServerConfigEvent({
+      version: 1,
+      type: "customSlashCommandsUpdated",
+      payload: {
+        customSlashCommands: [],
+        issues: [
+          {
+            kind: "custom-slash-commands.invalid-entry",
+            path: "/tmp/workspace/.config/slash-commands/bad.md",
+            message: "bad slash command",
+          },
+        ],
+      },
+    });
+
+    await waitFor(() => {
+      expect(getServerConfig()?.issues).toEqual([
+        { kind: "keybindings.malformed-config", message: "bad keybindings" },
+        {
+          kind: "custom-slash-commands.invalid-entry",
+          path: "/tmp/workspace/.config/slash-commands/bad.md",
+          message: "bad slash command",
+        },
+      ]);
+    });
+
+    emitServerConfigEvent({
+      version: 1,
+      type: "keybindingsUpdated",
+      payload: {
+        keybindings: [],
+        issues: [],
+      },
+    });
+
+    await waitFor(() => {
+      expect(getServerConfig()?.issues).toEqual([
+        {
+          kind: "custom-slash-commands.invalid-entry",
+          path: "/tmp/workspace/.config/slash-commands/bad.md",
+          message: "bad slash command",
+        },
+      ]);
+    });
+
     stop();
   });
 });

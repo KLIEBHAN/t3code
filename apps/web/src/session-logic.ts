@@ -3,6 +3,7 @@ import * as Arr from "effect/Array";
 import {
   ApprovalRequestId,
   isToolLifecycleItemType,
+  type MessageId,
   type OrchestrationLatestTurn,
   type OrchestrationThreadActivity,
   type OrchestrationProposedPlanId,
@@ -21,6 +22,7 @@ import type {
   ThreadSession,
   TurnDiffSummary,
 } from "./types";
+import { deriveProposedPlanImplementationState } from "./proposedPlanImplementationState";
 
 export type ProviderPickerKind = ProviderDriverKind;
 
@@ -50,10 +52,13 @@ export const PROVIDER_OPTIONS: Array<{
 export interface WorkLogEntry {
   id: string;
   createdAt: string;
+  turnId?: TurnId;
   label: string;
   detail?: string;
   command?: string;
   rawCommand?: string;
+  result?: string;
+  output?: string;
   changedFiles?: ReadonlyArray<string>;
   tone: "thinking" | "tool" | "info" | "error";
   toolTitle?: string;
@@ -142,13 +147,23 @@ export function formatElapsed(startIso: string, endIso: string | undefined): str
   return formatDuration(endedAt - startedAt);
 }
 
-type LatestTurnTiming = Pick<OrchestrationLatestTurn, "turnId" | "startedAt" | "completedAt">;
+type LatestTurnTiming = Pick<
+  OrchestrationLatestTurn,
+  "turnId" | "state" | "startedAt" | "completedAt"
+>;
 type SessionActivityState = Pick<ThreadSession, "orchestrationStatus" | "activeTurnId">;
+type LatestTurnMessageState = Pick<ChatMessage, "turnId" | "role" | "streaming" | "text"> & {
+  createdAt?: string;
+  completedAt?: string | undefined;
+};
 
 interface SendPhaseResetInput {
   latestTurn: LatestTurnTiming | null;
   session: SessionActivityState | null;
   sendStartedAt: string | null;
+  sendBaselineLatestTurnId: TurnId | string | null;
+  sendBaselineLatestTurnCompletedAt: string | null;
+  latestTurnOutputSettled?: boolean;
   hasPendingApproval: boolean;
   hasPendingUserInput: boolean;
   hasThreadError: boolean;
@@ -165,10 +180,127 @@ export function isLatestTurnSettled(
   return true;
 }
 
+export function hasCompletedAssistantMessageForTurn(
+  messages: ReadonlyArray<LatestTurnMessageState>,
+  turnId: TurnId | string | null | undefined,
+): boolean {
+  if (!turnId) {
+    return false;
+  }
+
+  const assistantMessages = messages.filter(
+    (message) => message.turnId === turnId && message.role === "assistant",
+  );
+  if (assistantMessages.length === 0) {
+    return false;
+  }
+  if (assistantMessages.some((message) => message.streaming)) {
+    return false;
+  }
+
+  return assistantMessages.some((message) => message.text.trim().length > 0);
+}
+
+export function hasStreamingAssistantMessageForTurn(
+  messages: ReadonlyArray<LatestTurnMessageState>,
+  turnId: TurnId | string | null | undefined,
+): boolean {
+  if (!turnId) {
+    return false;
+  }
+
+  return messages.some(
+    (message) => message.turnId === turnId && message.role === "assistant" && message.streaming,
+  );
+}
+
+function hasAssistantMessageOccurredAfterTurnStart(
+  message: Pick<LatestTurnMessageState, "createdAt" | "completedAt">,
+  latestTurn: LatestTurnTiming | null,
+): boolean {
+  if (!latestTurn?.startedAt) {
+    return false;
+  }
+
+  const turnStartedAtMs = Date.parse(latestTurn.startedAt);
+  if (Number.isNaN(turnStartedAtMs)) {
+    return false;
+  }
+
+  const createdAtMs = message.createdAt ? Date.parse(message.createdAt) : Number.NaN;
+  const completedAtMs = message.completedAt ? Date.parse(message.completedAt) : Number.NaN;
+  const effectiveTimestampMs = !Number.isNaN(completedAtMs) ? completedAtMs : createdAtMs;
+
+  return !Number.isNaN(effectiveTimestampMs) && effectiveTimestampMs >= turnStartedAtMs;
+}
+
+function relevantAssistantMessagesForLatestTurn(
+  messages: ReadonlyArray<LatestTurnMessageState>,
+  latestTurn: LatestTurnTiming | null,
+): LatestTurnMessageState[] {
+  if (!latestTurn?.startedAt) {
+    return [];
+  }
+
+  return messages.filter(
+    (message) =>
+      message.role === "assistant" &&
+      (message.turnId === latestTurn.turnId ||
+        hasAssistantMessageOccurredAfterTurnStart(message, latestTurn)),
+  );
+}
+
+function hasStreamingAssistantOutputForLatestTurn(
+  messages: ReadonlyArray<LatestTurnMessageState>,
+  latestTurn: LatestTurnTiming | null,
+): boolean {
+  return relevantAssistantMessagesForLatestTurn(messages, latestTurn).some(
+    (message) => message.streaming,
+  );
+}
+
+export function isLatestTurnOutputSettled(input: {
+  latestTurn: LatestTurnTiming | null;
+  session: SessionActivityState | null;
+  messages: ReadonlyArray<LatestTurnMessageState>;
+}): boolean {
+  if (!isLatestTurnSettled(input.latestTurn, input.session)) {
+    return false;
+  }
+
+  return !hasStreamingAssistantOutputForLatestTurn(input.messages, input.latestTurn);
+}
+
+export function isLatestTurnOutputFinalizing(input: {
+  latestTurn: LatestTurnTiming | null;
+  session: SessionActivityState | null;
+  messages: ReadonlyArray<LatestTurnMessageState>;
+}): boolean {
+  const { latestTurn, session, messages } = input;
+  if (!latestTurn?.startedAt) {
+    return false;
+  }
+  if (!session) {
+    return false;
+  }
+  if (session.orchestrationStatus === "running") {
+    return false;
+  }
+  if (isLatestTurnOutputSettled(input)) {
+    return false;
+  }
+  if (latestTurn.state === "running") {
+    return true;
+  }
+
+  return hasStreamingAssistantOutputForLatestTurn(messages, latestTurn);
+}
+
 export function deriveActiveWorkStartedAt(
   latestTurn: LatestTurnTiming | null,
   session: SessionActivityState | null,
   sendStartedAt: string | null,
+  latestTurnOutputSettled = isLatestTurnSettled(latestTurn, session),
 ): string | null {
   const runningTurnId =
     session?.orchestrationStatus === "running" ? (session.activeTurnId ?? null) : null;
@@ -178,7 +310,7 @@ export function deriveActiveWorkStartedAt(
     }
     return sendStartedAt;
   }
-  if (!isLatestTurnSettled(latestTurn, session)) {
+  if (!latestTurnOutputSettled) {
     return latestTurn?.startedAt ?? sendStartedAt;
   }
   return sendStartedAt;
@@ -188,28 +320,23 @@ export function shouldResetSendPhase({
   latestTurn,
   session,
   sendStartedAt,
+  sendBaselineLatestTurnId,
+  sendBaselineLatestTurnCompletedAt,
+  latestTurnOutputSettled = isLatestTurnSettled(latestTurn, session),
   hasPendingApproval,
   hasPendingUserInput,
   hasThreadError,
 }: SendPhaseResetInput): boolean {
-  if (session?.orchestrationStatus === "running") return true;
   if (hasPendingApproval || hasPendingUserInput || hasThreadError) return true;
   if (!sendStartedAt) return false;
-  if (!isLatestTurnSettled(latestTurn, session)) return false;
+  if (!latestTurnOutputSettled) return false;
   if (!latestTurn?.completedAt) return false;
-
-  const sendStartedAtMs = Date.parse(sendStartedAt);
-  const completedAtMs = Date.parse(latestTurn.completedAt);
-  if (Number.isNaN(sendStartedAtMs) || Number.isNaN(completedAtMs)) {
-    return false;
-  }
-
-  return completedAtMs >= sendStartedAtMs;
+  if (sendBaselineLatestTurnId === null) return true;
+  if (latestTurn.turnId !== sendBaselineLatestTurnId) return true;
+  return latestTurn.completedAt !== sendBaselineLatestTurnCompletedAt;
 }
 
-function requestKindFromRequestType(
-  requestType: unknown,
-): PendingApproval["requestKind"] | null {
+function requestKindFromRequestType(requestType: unknown): PendingApproval["requestKind"] | null {
   switch (requestType) {
     case "command_execution_approval":
     case "exec_command_approval":
@@ -511,7 +638,15 @@ export function findSidebarProposedPlan(input: {
 export function hasActionableProposedPlan(
   proposedPlan: LatestProposedPlanState | Pick<ProposedPlan, "implementedAt"> | null,
 ): boolean {
-  return proposedPlan !== null && proposedPlan.implementedAt === null;
+  if (proposedPlan === null) {
+    return false;
+  }
+
+  if (!("createdAt" in proposedPlan) || !("implementationThreadId" in proposedPlan)) {
+    return proposedPlan.implementedAt === null;
+  }
+
+  return deriveProposedPlanImplementationState(proposedPlan) === "actionable";
 }
 
 export function deriveWorkLogEntries(
@@ -522,7 +657,7 @@ export function deriveWorkLogEntries(
   const entries = ordered
     .filter((activity) => (latestTurnId ? activity.turnId === latestTurnId : true))
     .filter((activity) => activity.kind !== "tool.started")
-    .filter((activity) => activity.kind !== "task.started")
+    .filter((activity) => activity.kind !== "task.started" && activity.kind !== "task.completed")
     .filter((activity) => activity.kind !== "context-window.updated")
     .filter((activity) => activity.summary !== "Checkpoint captured")
     .filter((activity) => !isPlanBoundaryToolActivity(activity))
@@ -588,6 +723,9 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
   };
   const itemType = extractWorkLogItemType(payload);
   const requestKind = extractWorkLogRequestKind(payload);
+  if (activity.turnId) {
+    entry.turnId = activity.turnId;
+  }
   if (detail) {
     entry.detail = detail;
   }
@@ -596,6 +734,14 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
   }
   if (commandPreview.rawCommand) {
     entry.rawCommand = commandPreview.rawCommand;
+  }
+  const result = extractToolResult(payload, commandPreview.command);
+  if (result) {
+    entry.result = result;
+  }
+  const output = extractToolOutput(payload);
+  if (output) {
+    entry.output = output;
   }
   if (changedFiles.length > 0) {
     entry.changedFiles = changedFiles;
@@ -860,6 +1006,24 @@ function formatCommandArrayPart(value: string): string {
   return /[\s"'`]/.test(value) ? `"${value.replace(/"/g, '\\"')}"` : value;
 }
 
+function asTrimmedText(value: unknown): string | null {
+  const direct = asTrimmedString(value);
+  if (direct) {
+    return direct;
+  }
+  if (!Array.isArray(value)) {
+    return null;
+  }
+
+  const joined = value
+    .map((entry) => asTrimmedString(entry))
+    .filter((entry): entry is string => entry !== null)
+    .join("\n")
+    .trim();
+
+  return joined.length > 0 ? joined : null;
+}
+
 function formatCommandValue(value: unknown): string | null {
   const direct = asTrimmedString(value);
   if (direct) {
@@ -1077,6 +1241,63 @@ function extractWorkLogRequestKind(
   return requestKindFromRequestType(payload?.requestType) ?? undefined;
 }
 
+function extractToolOutput(payload: Record<string, unknown> | null): string | null {
+  const data = asRecord(payload?.data);
+  const item = asRecord(data?.item);
+  const itemResult = asRecord(item?.result);
+  const candidates = [
+    asTrimmedText(payload?.output),
+    asTrimmedText(payload?.stdout),
+    asTrimmedText(payload?.stderr),
+    asTrimmedText(itemResult?.output),
+    asTrimmedText(itemResult?.stdout),
+    asTrimmedText(itemResult?.stderr),
+    asTrimmedText(itemResult?.text),
+    asTrimmedText(item?.output),
+    asTrimmedText(item?.stdout),
+    asTrimmedText(item?.stderr),
+    asTrimmedText(data?.output),
+    asTrimmedText(data?.stdout),
+    asTrimmedText(data?.stderr),
+  ];
+
+  const combinedStdoutStderr = [
+    asTrimmedText(itemResult?.stdout),
+    asTrimmedText(itemResult?.stderr),
+  ]
+    .filter((value): value is string => value !== null)
+    .join("\n\n");
+  if (combinedStdoutStderr.length > 0) {
+    candidates.unshift(combinedStdoutStderr);
+  }
+
+  return candidates.find((candidate) => candidate !== null) ?? null;
+}
+function extractToolResult(
+  payload: Record<string, unknown> | null,
+  command: string | null,
+): string | null {
+  const output = extractToolOutput(payload);
+  if (output) {
+    return output;
+  }
+
+  const detail = asTrimmedString(payload?.detail);
+  if (!detail || detail === command) {
+    return null;
+  }
+
+  const itemType = asTrimmedString(payload?.itemType);
+  if (itemType === "command_execution") {
+    return detail;
+  }
+
+  if (detail.includes("\n")) {
+    return detail;
+  }
+
+  return null;
+}
 function pushChangedFile(target: string[], seen: Set<string>, value: unknown) {
   const normalized = asTrimmedString(value);
   if (!normalized || seen.has(normalized)) {
@@ -1263,6 +1484,66 @@ export function deriveCompletionDividerBeforeEntryId(
     }
   }
   return inRangeMatch ?? fallbackMatch;
+}
+
+export function buildLatestAssistantMessageIdByTurnId(
+  messages: ReadonlyArray<Pick<ChatMessage, "id" | "role" | "turnId">>,
+): Map<TurnId, MessageId> {
+  const latestMessageIdByTurnId = new Map<TurnId, MessageId>();
+
+  for (const message of messages) {
+    if (message.role !== "assistant" || !message.turnId) {
+      continue;
+    }
+    latestMessageIdByTurnId.set(message.turnId, message.id);
+  }
+
+  return latestMessageIdByTurnId;
+}
+
+function canUseTurnLevelDiffSummary(input: {
+  message: Pick<ChatMessage, "id" | "turnId">;
+  latestAssistantMessageIdByTurnId?: ReadonlyMap<TurnId, MessageId>;
+  activeTurnId?: TurnId | null;
+}): input is {
+  message: Pick<ChatMessage, "id" | "turnId"> & { turnId: TurnId };
+  latestAssistantMessageIdByTurnId?: ReadonlyMap<TurnId, MessageId>;
+  activeTurnId?: TurnId | null;
+} {
+  const { turnId } = input.message;
+  if (!turnId) {
+    return false;
+  }
+  if (input.activeTurnId === turnId) {
+    return false;
+  }
+
+  // Turn-level fallback summaries are only safe on the final assistant message for a settled turn.
+  const latestAssistantMessageId = input.latestAssistantMessageIdByTurnId?.get(turnId);
+  return latestAssistantMessageId === undefined || latestAssistantMessageId === input.message.id;
+}
+
+export function resolveTurnDiffSummaryForAssistantMessage(input: {
+  message: Pick<ChatMessage, "id" | "role" | "turnId">;
+  turnDiffSummaryByAssistantMessageId: ReadonlyMap<MessageId, TurnDiffSummary>;
+  turnDiffSummaryByTurnId: ReadonlyMap<TurnId, TurnDiffSummary>;
+  latestAssistantMessageIdByTurnId?: ReadonlyMap<TurnId, MessageId>;
+  activeTurnId?: TurnId | null;
+}): TurnDiffSummary | undefined {
+  if (input.message.role !== "assistant") {
+    return undefined;
+  }
+
+  const byAssistantMessageId = input.turnDiffSummaryByAssistantMessageId.get(input.message.id);
+  if (byAssistantMessageId) {
+    return byAssistantMessageId;
+  }
+
+  if (canUseTurnLevelDiffSummary(input)) {
+    return input.turnDiffSummaryByTurnId.get(input.message.turnId);
+  }
+
+  return undefined;
 }
 
 export function inferCheckpointTurnCountByTurnId(

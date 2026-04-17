@@ -1,5 +1,6 @@
 import {
   CommandId,
+  DEFAULT_CLIENT_SETTINGS,
   DEFAULT_SERVER_SETTINGS,
   type DesktopBridge,
   EnvironmentId,
@@ -285,7 +286,9 @@ const baseServerConfig: ServerConfig = {
   },
   cwd: "/tmp/workspace",
   keybindingsConfigPath: "/tmp/workspace/.config/keybindings.json",
+  customSlashCommandsDirectoryPath: "/tmp/workspace/.config/slash-commands",
   keybindings: [],
+  customSlashCommands: [],
   issues: [],
   providers: defaultProviders,
   availableEditors: ["cursor"],

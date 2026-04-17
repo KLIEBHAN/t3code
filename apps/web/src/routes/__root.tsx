@@ -286,6 +286,7 @@ function EventRouter() {
     sidebarProjectGroupingOverrides: settings.sidebarProjectGroupingOverrides,
   }));
   const readPathname = useEffectEvent(() => pathname);
+  const lastConfigToastSignatureRef = useRef<string | null>(null);
   const handledBootstrapThreadIdRef = useRef<string | null>(null);
   const seenServerConfigUpdateIdRef = useRef(getServerConfigUpdatedNotification()?.id ?? 0);
   const lastKeybindingsSuccessToastAtRef = useRef(0);
@@ -349,61 +350,122 @@ function EventRouter() {
         return;
       }
       seenServerConfigUpdateIdRef.current = id;
-      if (source !== "keybindingsUpdated") {
+      const signature = JSON.stringify({
+        settings: payload.settings ?? null,
+        sources: payload.sources,
+        updatedAt: payload.updatedAt,
+        issues: payload.issues,
+      });
+      if (lastConfigToastSignatureRef.current === signature) {
+        return;
+      }
+      lastConfigToastSignatureRef.current = signature;
+      if (source !== "keybindingsUpdated" && source !== "customSlashCommandsUpdated") {
         return;
       }
 
-      const issue = payload.issues.find((entry) => entry.kind.startsWith("keybindings."));
-      if (!issue) {
-        const now = Date.now();
-        if (now - lastKeybindingsSuccessToastAtRef.current < 2_000) {
+      if (payload.sources.includes("keybindings")) {
+        const issue = payload.issues.find((entry) => entry.kind.startsWith("keybindings."));
+        if (!issue) {
+          const now = Date.now();
+          if (now - lastKeybindingsSuccessToastAtRef.current >= 2_000) {
+            lastKeybindingsSuccessToastAtRef.current = now;
+            toastManager.add({
+              type: "success",
+              title: "Keybindings updated",
+              description: "Keybindings configuration reloaded successfully.",
+            });
+          }
+        } else {
+          toastManager.add(
+            stackedThreadToast({
+              type: "warning",
+              title: "Invalid keybindings configuration",
+              description: issue.message,
+              actionVariant: "outline",
+              actionProps: {
+                children: "Open keybindings.json",
+                onClick: () => {
+                  const api = readLocalApi();
+                  if (!api) {
+                    return;
+                  }
+
+                  void Promise.resolve(serverConfig ?? api.server.getConfig())
+                    .then((config) => {
+                      const editor = resolveAndPersistPreferredEditor(config.availableEditors);
+                      if (!editor) {
+                        throw new Error("No available editors found.");
+                      }
+                      return api.shell.openInEditor(config.keybindingsConfigPath, editor);
+                    })
+                    .catch((error) => {
+                      toastManager.add(
+                        stackedThreadToast({
+                          type: "error",
+                          title: "Unable to open keybindings file",
+                          description:
+                            error instanceof Error ? error.message : "Unknown error opening file.",
+                        }),
+                      );
+                    });
+                },
+              },
+            }),
+          );
+        }
+      }
+
+      if (payload.sources.includes("custom-slash-commands")) {
+        const issue = payload.issues.find((entry) =>
+          entry.kind.startsWith("custom-slash-commands."),
+        );
+        if (!issue) {
+          toastManager.add({
+            type: "success",
+            title: "Slash commands updated",
+            description: "Custom slash commands reloaded successfully.",
+          });
           return;
         }
-        lastKeybindingsSuccessToastAtRef.current = now;
-        toastManager.add({
-          type: "success",
-          title: "Keybindings updated",
-          description: "Keybindings configuration reloaded successfully.",
-        });
-        return;
-      }
 
-      toastManager.add(
-        stackedThreadToast({
-          type: "warning",
-          title: "Invalid keybindings configuration",
-          description: issue.message,
-          actionVariant: "outline",
-          actionProps: {
-            children: "Open keybindings.json",
-            onClick: () => {
-              const api = readLocalApi();
-              if (!api) {
-                return;
-              }
+        toastManager.add(
+          stackedThreadToast({
+            type: "warning",
+            title: "Invalid custom slash command",
+            description: issue.message,
+            actionVariant: "outline",
+            actionProps: {
+              children: "Open commands folder",
+              onClick: () => {
+                const api = readLocalApi();
+                if (!api) {
+                  return;
+                }
 
-              void Promise.resolve(serverConfig ?? api.server.getConfig())
-                .then((config) => {
-                  const editor = resolveAndPersistPreferredEditor(config.availableEditors);
-                  if (!editor) {
-                    throw new Error("No available editors found.");
-                  }
-                  return api.shell.openInEditor(config.keybindingsConfigPath, editor);
-                })
-                .catch((error) => {
-                  toastManager.add(
-                    stackedThreadToast({
-                      type: "error",
-                      title: "Unable to open keybindings file",
-                      description:
-                        error instanceof Error ? error.message : "Unknown error opening file.",
-                    }),
-                  );
-                });
+                void Promise.resolve(serverConfig ?? api.server.getConfig())
+                  .then((config) => {
+                    const editor = resolveAndPersistPreferredEditor(config.availableEditors);
+                    if (!editor) {
+                      throw new Error("No available editors found.");
+                    }
+                    return api.shell.openInEditor(config.customSlashCommandsDirectoryPath, editor);
+                  })
+                  .catch((error) => {
+                    toastManager.add(
+                      stackedThreadToast({
+                        type: "error",
+                        title: "Unable to open commands folder",
+                        description:
+                          error instanceof Error ? error.message : "Unknown error opening folder.",
+                      }),
+                    );
+                  });
+              },
             },
-          },
-        }),
-      );
+          }),
+        );
+      }
     },
   );
 

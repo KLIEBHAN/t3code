@@ -82,6 +82,14 @@ export interface WsRpcClient {
       readonly editor: Parameters<LocalApi["shell"]["openInEditor"]>[1];
     }) => ReturnType<LocalApi["shell"]["openInEditor"]>;
   };
+  readonly suggestions: {
+    readonly generateReplySuggestions: RpcUnaryMethod<
+      typeof WS_METHODS.suggestionsGenerateReplySuggestions
+    >;
+  };
+  readonly promptImprovement: {
+    readonly generate: RpcUnaryMethod<typeof WS_METHODS.promptImprovementGenerate>;
+  };
   readonly vcs: {
     readonly pull: RpcUnaryMethod<typeof WS_METHODS.vcsPull>;
     readonly refreshStatus: RpcUnaryMethod<typeof WS_METHODS.vcsRefreshStatus>;
@@ -187,6 +195,16 @@ export function createWsRpcClient(transport: WsTransport): WsRpcClient {
     shell: {
       openInEditor: (input) =>
         transport.request((client) => client[WS_METHODS.shellOpenInEditor](input)),
+    },
+    suggestions: {
+      generateReplySuggestions: (input) =>
+        transport.request((client) =>
+          client[WS_METHODS.suggestionsGenerateReplySuggestions](input),
+        ),
+    },
+    promptImprovement: {
+      generate: (input) =>
+        transport.request((client) => client[WS_METHODS.promptImprovementGenerate](input)),
     },
     vcs: {
       pull: (input) => transport.request((client) => client[WS_METHODS.vcsPull](input)),

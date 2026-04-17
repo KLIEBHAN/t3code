@@ -508,7 +508,6 @@ function extractPlanStepsFromTodoInput(input: Record<string, unknown>): PlanStep
             : "pending",
     }));
 }
-
 function summarizeToolRequest(toolName: string, input: Record<string, unknown>): string {
   const commandValue = input.command ?? input.cmd;
   const command = typeof commandValue === "string" ? commandValue : undefined;
@@ -516,7 +515,7 @@ function summarizeToolRequest(toolName: string, input: Record<string, unknown>):
     return `${toolName}: ${command.trim().slice(0, 400)}`;
   }
 
-  // For agent/subagent tools, prefer human-readable description or prompt over raw JSON
+  // For agent/subagent tools, prefer human-readable description or prompt over raw JSON.
   const itemType = classifyToolItemType(toolName);
   if (itemType === "collab_agent_tool_call") {
     const description =
@@ -1710,7 +1709,6 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
             payload: message,
           },
         });
-
         // Emit plan update when TodoWrite input is parsed
         if (parsedInput && isTodoTool(nextTool.toolName)) {
           const planSteps = extractPlanStepsFromTodoInput(parsedInput);

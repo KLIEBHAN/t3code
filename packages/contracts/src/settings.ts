@@ -5,6 +5,12 @@ import { TrimmedNonEmptyString, TrimmedString } from "./baseSchemas.ts";
 import { DEFAULT_GIT_TEXT_GENERATION_MODEL, ProviderOptionSelections } from "./model.ts";
 import { ModelSelection } from "./orchestration.ts";
 import { ProviderInstanceConfig, ProviderInstanceId } from "./providerInstance.ts";
+import {
+  DEFAULT_REPLY_SUGGESTION_PROMPT_TEMPLATE_ID,
+  MAX_REPLY_SUGGESTION_PROMPT_TEMPLATE_ID_LENGTH,
+  MAX_REPLY_SUGGESTION_PROMPT_TEMPLATE_LABEL_LENGTH,
+  MAX_REPLY_SUGGESTION_PROMPT_TEMPLATE_LENGTH,
+} from "./suggestions.ts";
 
 // ── Client Settings (local-only) ───────────────────────────────
 
@@ -19,6 +25,7 @@ export const DEFAULT_SIDEBAR_PROJECT_SORT_ORDER: SidebarProjectSortOrder = "upda
 export const SidebarThreadSortOrder = Schema.Literals(["updated_at", "created_at"]);
 export type SidebarThreadSortOrder = typeof SidebarThreadSortOrder.Type;
 export const DEFAULT_SIDEBAR_THREAD_SORT_ORDER: SidebarThreadSortOrder = "updated_at";
+export const MAX_TERMINAL_FONT_FAMILY_LENGTH = 1024;
 
 export const SidebarProjectGroupingMode = Schema.Literals([
   "repository",
@@ -69,11 +76,28 @@ export const ClientSettingsSchema = Schema.Struct({
     TrimmedNonEmptyString,
     SidebarProjectGroupingMode,
   ).pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+  replySuggestionPromptTemplates: Schema.Array(
+    Schema.Struct({
+      id: Schema.String.check(Schema.isMaxLength(MAX_REPLY_SUGGESTION_PROMPT_TEMPLATE_ID_LENGTH)),
+      label: Schema.String.check(
+        Schema.isMaxLength(MAX_REPLY_SUGGESTION_PROMPT_TEMPLATE_LABEL_LENGTH),
+      ),
+      instructions: Schema.String.check(
+        Schema.isMaxLength(MAX_REPLY_SUGGESTION_PROMPT_TEMPLATE_LENGTH),
+      ),
+    }),
+  ).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+  selectedReplySuggestionPromptTemplateId: Schema.String.check(
+    Schema.isMaxLength(MAX_REPLY_SUGGESTION_PROMPT_TEMPLATE_ID_LENGTH),
+  ).pipe(Schema.withDecodingDefault(Effect.succeed(DEFAULT_REPLY_SUGGESTION_PROMPT_TEMPLATE_ID))),
   sidebarProjectSortOrder: SidebarProjectSortOrder.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_PROJECT_SORT_ORDER)),
   ),
   sidebarThreadSortOrder: SidebarThreadSortOrder.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_THREAD_SORT_ORDER)),
+  ),
+  terminalFontFamily: Schema.String.check(Schema.isMaxLength(MAX_TERMINAL_FONT_FAMILY_LENGTH)).pipe(
+    Schema.withDecodingDefault(Effect.succeed("")),
   ),
   timestampFormat: TimestampFormat.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_TIMESTAMP_FORMAT)),

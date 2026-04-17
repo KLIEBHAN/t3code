@@ -60,6 +60,9 @@ import * as SourceControlRepositoryService from "./sourceControl/SourceControlRe
 import { ProjectSetupScriptRunnerLive } from "./project/Layers/ProjectSetupScriptRunner.ts";
 import { ObservabilityLive } from "./observability/Layers/Observability.ts";
 import { ServerEnvironmentLive } from "./environment/Layers/ServerEnvironment.ts";
+import { CustomSlashCommandsLive } from "./customSlashCommands.ts";
+import { ReplySuggestionGenerationLive } from "./suggestions/Layers/ReplySuggestionGenerationLive.ts";
+import { PromptImprovementGenerationLive } from "./promptImprovement/Layers/PromptImprovementGenerationLive.ts";
 import {
   authBearerBootstrapRouteLayer,
   authBootstrapRouteLayer,
@@ -163,6 +166,11 @@ const ProviderLayerLive = ProviderServiceLive.pipe(
 
 const PersistenceLayerLive = Layer.empty.pipe(Layer.provideMerge(SqlitePersistenceLayerLive));
 
+const OrchestrationRuntimeLayerLive = OrchestrationLayerLive.pipe(
+  Layer.provideMerge(RepositoryIdentityResolverLive),
+  Layer.provideMerge(PersistenceLayerLive),
+);
+
 const VcsDriverRegistryLayerLive = VcsDriverRegistry.layer.pipe(
   Layer.provide(VcsProjectConfig.layer),
 );
@@ -239,6 +247,17 @@ const ProviderRuntimeLayerLive = ProviderSessionReaperLive.pipe(
   Layer.provideMerge(OrchestrationLayerLive),
 );
 
+const ComposerAssistLayerLive = Layer.mergeAll(
+  ReplySuggestionGenerationLive.pipe(
+    Layer.provideMerge(ServerSettingsLive),
+    Layer.provideMerge(OrchestrationRuntimeLayerLive),
+  ),
+  PromptImprovementGenerationLive.pipe(
+    Layer.provideMerge(ServerSettingsLive),
+    Layer.provideMerge(OrchestrationRuntimeLayerLive),
+  ),
+);
+
 const RuntimeCoreDependenciesLive = ReactorLayerLive.pipe(
   // Core Services
   Layer.provideMerge(CheckpointingLayerLive),
@@ -249,6 +268,7 @@ const RuntimeCoreDependenciesLive = ReactorLayerLive.pipe(
   Layer.provideMerge(TerminalLayerLive),
   Layer.provideMerge(PersistenceLayerLive),
   Layer.provideMerge(KeybindingsLive),
+  Layer.provideMerge(CustomSlashCommandsLive),
   Layer.provideMerge(ProviderRegistryLive),
   // The instance registry is the new routing keystone — text generation,
   // adapter lookup, and runtime ingestion all resolve `ProviderInstanceId`
@@ -274,6 +294,7 @@ const RuntimeCoreDependenciesLive = ReactorLayerLive.pipe(
   Layer.provideMerge(RepositoryIdentityResolverLive),
   Layer.provideMerge(ServerEnvironmentLive),
   Layer.provideMerge(AuthLayerLive),
+  Layer.provideMerge(ComposerAssistLayerLive),
 );
 
 const RuntimeDependenciesLive = RuntimeCoreDependenciesLive.pipe(

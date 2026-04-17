@@ -48,6 +48,7 @@ import {
   collapseExpandedComposerCursor,
   parseStandaloneComposerSlashCommand,
 } from "../composer-logic";
+import { createChatPromptHistory } from "../chatPromptHistory";
 import {
   deriveCompletionDividerBeforeEntryId,
   derivePendingApprovals,
@@ -58,12 +59,6 @@ import {
   deriveActivePlanState,
   findSidebarProposedPlan,
   findLatestProposedPlan,
-  shouldResetSendPhase,
-  resolveTurnDiffSummaryForAssistantMessage,
-  type PendingApproval,
-  type PendingUserInput,
-  type ProviderPickerKind,
-  PROVIDER_OPTIONS,
   deriveWorkLogEntries,
   hasActionableProposedPlan,
   hasToolActivityForTurn,
@@ -731,6 +726,7 @@ export default function ChatView(props: ChatViewProps) {
   );
   const legendListRef = useRef<LegendListRef | null>(null);
   const isAtEndRef = useRef(true);
+  const promptHistory = useMemo(() => createChatPromptHistory(), []);
   const attachmentPreviewHandoffByMessageIdRef = useRef<Record<string, string[]>>({});
   const attachmentPreviewPromotionInFlightByMessageIdRef = useRef<Record<string, true>>({});
   const sendInFlightRef = useRef(false);
@@ -1341,7 +1337,6 @@ export default function ChatView(props: ChatViewProps) {
     () => deriveActivePlanState(threadActivities, activeLatestTurn?.turnId ?? undefined),
     [activeLatestTurn?.turnId, threadActivities],
   );
-  const planSidebarLabel = sidebarProposedPlan || interactionMode === "plan" ? "Plan" : "Tasks";
   const showPlanFollowUpPrompt =
     pendingUserInputs.length === 0 &&
     interactionMode === "plan" &&
@@ -2139,8 +2134,10 @@ export default function ChatView(props: ChatViewProps) {
   const togglePlanSidebar = useCallback(() => {
     setPlanSidebarOpen((open) => {
       if (open) {
-        planSidebarDismissedForTurnRef.current =
-          activePlan?.turnId ?? sidebarProposedPlan?.turnId ?? "__dismissed__";
+        const turnKey = activePlan?.turnId ?? sidebarProposedPlan?.turnId ?? null;
+        if (turnKey) {
+          planSidebarDismissedForTurnRef.current = turnKey;
+        }
       } else {
         planSidebarDismissedForTurnRef.current = null;
       }
@@ -2613,8 +2610,12 @@ export default function ChatView(props: ChatViewProps) {
     ],
   );
 
-  const onSend = async (e?: { preventDefault: () => void }) => {
-    e?.preventDefault();
+  const sendComposerMessage = async (input?: {
+    event?: { preventDefault: () => void };
+    promptOverride?: string;
+    skipStandaloneSlashParsing?: boolean;
+  }) => {
+    input?.event?.preventDefault();
     const api = readEnvironmentApi(environmentId);
     if (
       !api ||
@@ -2640,14 +2641,34 @@ export default function ChatView(props: ChatViewProps) {
       selectedPromptEffort: ctxSelectedPromptEffort,
       selectedModelSelection: ctxSelectedModelSelection,
     } = sendCtx;
-    const promptForSend = promptRef.current;
+    const promptForSend = input?.promptOverride ?? promptRef.current;
+    const standaloneSlashCommand =
+      !input?.skipStandaloneSlashParsing &&
+      composerImages.length === 0 &&
+      composerTerminalContexts.length === 0
+        ? parseStandaloneComposerSlashCommand(
+            promptForSend.trim(),
+            serverConfig?.customSlashCommands ?? [],
+          )
+        : null;
+    if (standaloneSlashCommand?.source === "builtin") {
+      if (standaloneSlashCommand.id === "plan" || standaloneSlashCommand.id === "default") {
+        handleInteractionModeChange(standaloneSlashCommand.id === "plan" ? "plan" : "default");
+        promptRef.current = "";
+        clearComposerDraftContent(composerDraftTarget);
+        composerRef.current?.resetCursorState();
+      }
+      return;
+    }
+    const effectivePromptForSend =
+      standaloneSlashCommand?.source === "custom" ? standaloneSlashCommand.prompt : promptForSend;
     const {
       trimmedPrompt: trimmed,
       sendableTerminalContexts: sendableComposerTerminalContexts,
       expiredTerminalContextCount,
       hasSendableContent,
     } = deriveComposerSendState({
-      prompt: promptForSend,
+      prompt: effectivePromptForSend,
       imageCount: composerImages.length,
       terminalContexts: composerTerminalContexts,
     });
@@ -2663,17 +2684,6 @@ export default function ChatView(props: ChatViewProps) {
         text: followUp.text,
         interactionMode: followUp.interactionMode,
       });
-      return;
-    }
-    const standaloneSlashCommand =
-      composerImages.length === 0 && sendableComposerTerminalContexts.length === 0
-        ? parseStandaloneComposerSlashCommand(trimmed)
-        : null;
-    if (standaloneSlashCommand) {
-      handleInteractionModeChange(standaloneSlashCommand);
-      promptRef.current = "";
-      clearComposerDraftContent(composerDraftTarget);
-      composerRef.current?.resetCursorState();
       return;
     }
     if (!hasSendableContent) {
@@ -2715,7 +2725,7 @@ export default function ChatView(props: ChatViewProps) {
     const composerImagesSnapshot = [...composerImages];
     const composerTerminalContextsSnapshot = [...sendableComposerTerminalContexts];
     const messageTextForSend = appendTerminalContextsToPrompt(
-      promptForSend,
+      effectivePromptForSend,
       composerTerminalContextsSnapshot,
     );
     const messageIdForSend = newMessageId();
@@ -2876,6 +2886,9 @@ export default function ChatView(props: ChatViewProps) {
         ...(bootstrap ? { bootstrap } : {}),
         createdAt: messageCreatedAt,
       });
+      if (trimmed.length > 0) {
+        promptHistory.recordPrompt(threadIdForSend, trimmed);
+      }
       turnStartSucceeded = true;
     })().catch(async (err: unknown) => {
       if (
@@ -2914,6 +2927,17 @@ export default function ChatView(props: ChatViewProps) {
     if (!turnStartSucceeded) {
       resetLocalDispatch();
     }
+  };
+
+  const onSend = async (e?: { preventDefault: () => void }) => {
+    await sendComposerMessage(e ? { event: e } : undefined);
+  };
+
+  const onSendPromptOverride = (text: string) => {
+    void sendComposerMessage({
+      promptOverride: text,
+      skipStandaloneSlashParsing: true,
+    });
   };
 
   const onInterrupt = async () => {
@@ -3654,12 +3678,16 @@ export default function ChatView(props: ChatViewProps) {
                   keybindings={keybindings}
                   terminalOpen={Boolean(terminalState.terminalOpen)}
                   gitCwd={gitCwd}
+                  latestTurnOutputSettled={latestTurnSettled}
+                  customSlashCommands={serverConfig?.customSlashCommands ?? []}
+                  promptHistory={promptHistory}
                   promptRef={promptRef}
                   composerImagesRef={composerImagesRef}
                   composerTerminalContextsRef={composerTerminalContextsRef}
                   shouldAutoScrollRef={isAtEndRef}
                   scheduleStickToBottom={scrollToEnd}
                   onSend={onSend}
+                  onSendPromptOverride={onSendPromptOverride}
                   onInterrupt={onInterrupt}
                   onImplementPlanInNewThread={onImplementPlanInNewThread}
                   onRespondToApproval={onRespondToApproval}
@@ -3731,7 +3759,6 @@ export default function ChatView(props: ChatViewProps) {
           <PlanSidebar
             activePlan={activePlan}
             activeProposedPlan={sidebarProposedPlan}
-            label={planSidebarLabel}
             environmentId={environmentId}
             markdownCwd={gitCwd ?? undefined}
             workspaceRoot={activeWorkspaceRoot}

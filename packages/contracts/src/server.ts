@@ -31,9 +31,23 @@ const KeybindingsInvalidEntryIssue = Schema.Struct({
   index: Schema.Number,
 });
 
+const CustomSlashCommandsReadFailedIssue = Schema.Struct({
+  kind: Schema.Literal("custom-slash-commands.read-failed"),
+  message: TrimmedNonEmptyString,
+  path: TrimmedNonEmptyString,
+});
+
+const CustomSlashCommandsInvalidEntryIssue = Schema.Struct({
+  kind: Schema.Literal("custom-slash-commands.invalid-entry"),
+  message: TrimmedNonEmptyString,
+  path: TrimmedNonEmptyString,
+});
+
 export const ServerConfigIssue = Schema.Union([
   KeybindingsMalformedConfigIssue,
   KeybindingsInvalidEntryIssue,
+  CustomSlashCommandsReadFailedIssue,
+  CustomSlashCommandsInvalidEntryIssue,
 ]);
 export type ServerConfigIssue = typeof ServerConfigIssue.Type;
 
@@ -341,12 +355,24 @@ export const ServerSignalProcessResult = Schema.Struct({
 });
 export type ServerSignalProcessResult = typeof ServerSignalProcessResult.Type;
 
+export const ServerCustomSlashCommand = Schema.Struct({
+  command: TrimmedNonEmptyString,
+  description: TrimmedNonEmptyString,
+  prompt: TrimmedNonEmptyString,
+  sourcePath: TrimmedNonEmptyString,
+});
+export type ServerCustomSlashCommand = typeof ServerCustomSlashCommand.Type;
+
+const ServerConfigUpdateSource = Schema.Literals(["keybindings", "custom-slash-commands"]);
+export type ServerConfigUpdateSource = typeof ServerConfigUpdateSource.Type;
 export const ServerConfig = Schema.Struct({
   environment: ExecutionEnvironmentDescriptor,
   auth: ServerAuthDescriptor,
   cwd: TrimmedNonEmptyString,
   keybindingsConfigPath: TrimmedNonEmptyString,
+  customSlashCommandsDirectoryPath: TrimmedNonEmptyString,
   keybindings: ResolvedKeybindingsConfig,
+  customSlashCommands: Schema.Array(ServerCustomSlashCommand),
   issues: ServerConfigIssues,
   providers: ServerProviders,
   availableEditors: Schema.Array(EditorId),
@@ -385,6 +411,8 @@ export const ServerConfigUpdatedPayload = Schema.Struct({
   issues: ServerConfigIssues,
   providers: ServerProviders,
   settings: Schema.optional(ServerSettings),
+  sources: Schema.Array(ServerConfigUpdateSource),
+  updatedAt: IsoDateTime,
 });
 export type ServerConfigUpdatedPayload = typeof ServerConfigUpdatedPayload.Type;
 
@@ -404,6 +432,13 @@ export const ServerConfigSettingsUpdatedPayload = Schema.Struct({
   settings: ServerSettings,
 });
 export type ServerConfigSettingsUpdatedPayload = typeof ServerConfigSettingsUpdatedPayload.Type;
+
+export const ServerConfigCustomSlashCommandsUpdatedPayload = Schema.Struct({
+  customSlashCommands: Schema.Array(ServerCustomSlashCommand),
+  issues: ServerConfigIssues,
+});
+export type ServerConfigCustomSlashCommandsUpdatedPayload =
+  typeof ServerConfigCustomSlashCommandsUpdatedPayload.Type;
 
 export const ServerConfigStreamSnapshotEvent = Schema.Struct({
   version: Schema.Literal(1),
@@ -436,11 +471,20 @@ export const ServerConfigStreamSettingsUpdatedEvent = Schema.Struct({
 export type ServerConfigStreamSettingsUpdatedEvent =
   typeof ServerConfigStreamSettingsUpdatedEvent.Type;
 
+export const ServerConfigStreamCustomSlashCommandsUpdatedEvent = Schema.Struct({
+  version: Schema.Literal(1),
+  type: Schema.Literal("customSlashCommandsUpdated"),
+  payload: ServerConfigCustomSlashCommandsUpdatedPayload,
+});
+export type ServerConfigStreamCustomSlashCommandsUpdatedEvent =
+  typeof ServerConfigStreamCustomSlashCommandsUpdatedEvent.Type;
+
 export const ServerConfigStreamEvent = Schema.Union([
   ServerConfigStreamSnapshotEvent,
   ServerConfigStreamKeybindingsUpdatedEvent,
   ServerConfigStreamProviderStatusesEvent,
   ServerConfigStreamSettingsUpdatedEvent,
+  ServerConfigStreamCustomSlashCommandsUpdatedEvent,
 ]);
 export type ServerConfigStreamEvent = typeof ServerConfigStreamEvent.Type;
 

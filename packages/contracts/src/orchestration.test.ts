@@ -250,7 +250,6 @@ it.effect("preserves explicit provider and runtime mode in thread.turn.start", (
   }),
 );
 
-<<<<<<< HEAD
 it.effect("decodes thread.review.start defaults for provider and runtime mode", () =>
   Effect.gen(function* () {
     const parsed = yield* decodeThreadReviewStartCommand({
