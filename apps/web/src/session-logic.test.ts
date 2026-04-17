@@ -20,6 +20,7 @@ import {
   hasActionableProposedPlan,
   hasToolActivityForTurn,
   isLatestTurnSettled,
+  shouldResetSendPhase,
 } from "./session-logic";
 
 function makeActivity(overrides: {
@@ -1514,5 +1515,89 @@ describe("deriveActiveWorkStartedAt", () => {
         "2026-02-27T21:11:00.000Z",
       ),
     ).toBe("2026-02-27T21:11:00.000Z");
+  });
+});
+describe("shouldResetSendPhase", () => {
+  const latestTurn = {
+    turnId: TurnId.makeUnsafe("turn-1"),
+    startedAt: "2026-02-27T21:10:00.000Z",
+    completedAt: "2026-02-27T21:10:06.000Z",
+  } as const;
+
+  it("resets once a newly started turn has already settled", () => {
+    expect(
+      shouldResetSendPhase({
+        latestTurn,
+        session: {
+          orchestrationStatus: "ready",
+          activeTurnId: undefined,
+        },
+        sendStartedAt: "2026-02-27T21:10:01.000Z",
+        hasPendingApproval: false,
+        hasPendingUserInput: false,
+        hasThreadError: false,
+      }),
+    ).toBe(true);
+  });
+
+  it("does not reset from an older completed turn that finished before the new send started", () => {
+    expect(
+      shouldResetSendPhase({
+        latestTurn,
+        session: {
+          orchestrationStatus: "ready",
+          activeTurnId: undefined,
+        },
+        sendStartedAt: "2026-02-27T21:10:10.000Z",
+        hasPendingApproval: false,
+        hasPendingUserInput: false,
+        hasThreadError: false,
+      }),
+    ).toBe(false);
+  });
+
+  it("resets immediately when the session is actively running", () => {
+    expect(
+      shouldResetSendPhase({
+        latestTurn,
+        session: {
+          orchestrationStatus: "running",
+          activeTurnId: TurnId.makeUnsafe("turn-1"),
+        },
+        sendStartedAt: "2026-02-27T21:10:10.000Z",
+        hasPendingApproval: false,
+        hasPendingUserInput: false,
+        hasThreadError: false,
+      }),
+    ).toBe(true);
+  });
+});
+
+describe("PROVIDER_OPTIONS", () => {
+  it("advertises available providers while keeping Cursor as a placeholder", () => {
+    const claude = PROVIDER_OPTIONS.find((option) => option.value === "claudeAgent");
+    const opencode = PROVIDER_OPTIONS.find((option) => option.value === "opencode");
+    const cursor = PROVIDER_OPTIONS.find((option) => option.value === "cursor");
+    expect(PROVIDER_OPTIONS).toEqual([
+      { value: "codex", label: "Codex", available: true },
+      { value: "claudeAgent", label: "Claude", available: true },
+      { value: "opencode", label: "OpenCode", available: true },
+      { value: "cursor", label: "Cursor", available: false },
+    ]);
+    expect(claude).toEqual({
+      value: "claudeAgent",
+      label: "Claude",
+      available: true,
+    });
+    expect(opencode).toEqual({
+      value: "opencode",
+      label: "OpenCode",
+      available: true,
+    });
+    expect(cursor).toEqual({
+      value: "cursor",
+      label: "Cursor",
+      available: false,
+    });
   });
 });

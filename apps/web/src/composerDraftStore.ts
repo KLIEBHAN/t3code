@@ -257,6 +257,8 @@ export type DraftThreadState = DraftSessionState;
  */
 interface ProjectDraftSession extends DraftSessionState {
   draftId: DraftId;
+export interface ProjectDraftThread extends DraftThreadState {
+  threadId: ThreadId;
 }
 
 /**
