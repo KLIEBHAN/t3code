@@ -1,8 +1,14 @@
+import type { ServerCustomSlashCommand } from "@t3tools/contracts";
+
 import { splitPromptIntoComposerSegments } from "./composer-editor-mentions";
 import { INLINE_TERMINAL_CONTEXT_PLACEHOLDER } from "./lib/terminalContext";
+import {
+  hasSlashCommandPrefix,
+  parseStandaloneSlashCommand,
+  type ExecutableSlashCommandDefinition,
+} from "./slashCommands";
 
-export type ComposerTriggerKind = "path" | "slash-command" | "skill";
-export type ComposerSlashCommand = "model" | "plan" | "default";
+export type ComposerTriggerKind = "path" | "slash-command" | "slash-model" | "skill";
 
 export interface ComposerTrigger {
   kind: ComposerTriggerKind;
@@ -18,7 +24,6 @@ const isInlineTokenSegment = (
     | { type: "skill" }
     | { type: "terminal-context" },
 ): boolean => segment.type !== "text";
-
 function clampCursor(text: string, cursor: number): number {
   if (!Number.isFinite(cursor)) return text.length;
   return Math.max(0, Math.min(text.length, Math.floor(cursor)));
@@ -215,7 +220,11 @@ export function isCollapsedCursorAdjacentToInlineToken(
 
 export const isCollapsedCursorAdjacentToMention = isCollapsedCursorAdjacentToInlineToken;
 
-export function detectComposerTrigger(text: string, cursorInput: number): ComposerTrigger | null {
+export function detectComposerTrigger(
+  text: string,
+  cursorInput: number,
+  customCommands: readonly ServerCustomSlashCommand[] = [],
+): ComposerTrigger | null {
   const cursor = clampCursor(text, cursorInput);
   const lineStart = text.lastIndexOf("\n", Math.max(0, cursor - 1)) + 1;
   const linePrefix = text.slice(lineStart, cursor);
@@ -224,9 +233,30 @@ export function detectComposerTrigger(text: string, cursorInput: number): Compos
     const commandMatch = /^\/(\S*)$/.exec(linePrefix);
     if (commandMatch) {
       const commandQuery = commandMatch[1] ?? "";
+      if (commandQuery.toLowerCase() === "model") {
+        return {
+          kind: "slash-model",
+          query: "",
+          rangeStart: lineStart,
+          rangeEnd: cursor,
+        };
+      }
+      if (hasSlashCommandPrefix(commandQuery, customCommands)) {
+        return {
+          kind: "slash-command",
+          query: commandQuery,
+          rangeStart: lineStart,
+          rangeEnd: cursor,
+        };
+      }
+      return null;
+    }
+
+    const modelMatch = /^\/model(?:\s+(.*))?$/.exec(linePrefix);
+    if (modelMatch) {
       return {
-        kind: "slash-command",
-        query: commandQuery,
+        kind: "slash-model",
+        query: (modelMatch[1] ?? "").trim(),
         rangeStart: lineStart,
         rangeEnd: cursor,
       };
@@ -257,14 +287,9 @@ export function detectComposerTrigger(text: string, cursorInput: number): Compos
 
 export function parseStandaloneComposerSlashCommand(
   text: string,
-): Exclude<ComposerSlashCommand, "model"> | null {
-  const match = /^\/(plan|default)\s*$/i.exec(text.trim());
-  if (!match) {
-    return null;
-  }
-  const command = match[1]?.toLowerCase();
-  if (command === "plan") return "plan";
-  return "default";
+  customCommands: readonly ServerCustomSlashCommand[] = [],
+): ExecutableSlashCommandDefinition | null {
+  return parseStandaloneSlashCommand(text, customCommands);
 }
 
 export function replaceTextRange(

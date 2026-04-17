@@ -1,5 +1,7 @@
 import { isMacPlatform } from "./lib/utils";
 
+export { preferredTerminalEditor } from "./editorPreferences";
+
 export type TerminalLinkKind = "url" | "path";
 
 export interface TerminalLinkMatch {

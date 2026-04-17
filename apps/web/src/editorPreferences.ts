@@ -1,6 +1,6 @@
 import { EDITORS, EditorId, LocalApi } from "@t3tools/contracts";
-import { getLocalStorageItem, setLocalStorageItem, useLocalStorage } from "./hooks/useLocalStorage";
 import { useMemo } from "react";
+import { getLocalStorageItem, setLocalStorageItem, useLocalStorage } from "./hooks/useLocalStorage";
 
 const LAST_EDITOR_KEY = "t3code:last-editor";
 
@@ -15,15 +15,49 @@ export function usePreferredEditor(availableEditors: ReadonlyArray<EditorId>) {
   return [effectiveEditor, setLastEditor] as const;
 }
 
+export function readStoredPreferredEditor(): EditorId | null {
+  return getLocalStorageItem(LAST_EDITOR_KEY, EditorId);
+}
+
+export function writeStoredPreferredEditor(editor: EditorId): void {
+  setLocalStorageItem(LAST_EDITOR_KEY, editor, EditorId);
+}
+
 export function resolveAndPersistPreferredEditor(
   availableEditors: readonly EditorId[],
 ): EditorId | null {
   const availableEditorIds = new Set(availableEditors);
-  const stored = getLocalStorageItem(LAST_EDITOR_KEY, EditorId);
+  const stored = readStoredPreferredEditor();
   if (stored && availableEditorIds.has(stored)) return stored;
-  const editor = EDITORS.find((editor) => availableEditorIds.has(editor.id))?.id ?? null;
-  if (editor) setLocalStorageItem(LAST_EDITOR_KEY, editor, EditorId);
+  const editor = EDITORS.find((candidate) => availableEditorIds.has(candidate.id))?.id ?? null;
+  if (editor) {
+    writeStoredPreferredEditor(editor);
+  }
   return editor ?? null;
+}
+
+export async function openInPreferredEditor(api: LocalApi, targetPath: string): Promise<EditorId> {
+export function preferredTerminalEditor(): EditorId {
+  const fallback = EDITORS.find((editor) => editor.command)?.id ?? EDITORS[0]?.id ?? "cursor";
+  const stored = readStoredPreferredEditor();
+  if (!stored) {
+    return fallback;
+  }
+
+  const configured = EDITORS.find((editor) => editor.id === stored);
+  if (!configured?.command) {
+    return fallback;
+  }
+
+  return configured.id;
+}
+
+export function preferredAvailableEditor(availableEditors: readonly EditorId[]): EditorId | null {
+  const stored = readStoredPreferredEditor();
+  if (stored && availableEditors.includes(stored)) {
+    return stored;
+  }
+  return availableEditors[0] ?? null;
 }
 
 export async function openInPreferredEditor(api: LocalApi, targetPath: string): Promise<EditorId> {
