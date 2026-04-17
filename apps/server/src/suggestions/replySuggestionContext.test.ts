@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildReplySuggestionContext } from "./replySuggestionContext";
+import { buildReplySuggestionContext } from "./replySuggestionContext.ts";
 
 describe("buildReplySuggestionContext", () => {
   it("prefers the thread worktree path and concatenates assistant messages for the turn", () => {

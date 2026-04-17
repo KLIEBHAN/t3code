@@ -3244,12 +3244,20 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         },
       });
 
-      const wsUrl = yield* getWsServerUrl("/ws");
-      const snapshotResult = yield* Effect.scoped(
-        withWsRpcClient(wsUrl, (client) => client[ORCHESTRATION_WS_METHODS.getSnapshot]({})),
-      );
+      const sessionCookie = yield* getAuthenticatedSessionCookieHeader();
+      const snapshotResponse = yield* HttpClient.get("/api/orchestration/snapshot", {
+        headers: {
+          cookie: sessionCookie,
+        },
+      });
+      const snapshotResult = (yield* snapshotResponse.json) as typeof snapshot;
+      assert.equal(snapshotResponse.status, 200);
       assert.equal(snapshotResult.snapshotSequence, 1);
 
+      const wsUrl = appendSessionCookieToWsUrl(
+        yield* getWsServerUrl("/ws", { authenticated: false }),
+        sessionCookie,
+      );
       const dispatchResult = yield* Effect.scoped(
         withWsRpcClient(wsUrl, (client) =>
           client[ORCHESTRATION_WS_METHODS.dispatchCommand]({
@@ -4239,7 +4247,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
-  it.effect("routes websocket rpc orchestration.getSnapshot errors", () =>
+  it.effect("routes orchestration snapshot http errors", () =>
     Effect.gen(function* () {
       yield* buildAppUnderTest({
         layers: {
@@ -4255,16 +4263,15 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         },
       });
 
-      const wsUrl = yield* getWsServerUrl("/ws");
-      const result = yield* Effect.scoped(
-        withWsRpcClient(wsUrl, (client) => client[ORCHESTRATION_WS_METHODS.getSnapshot]({})).pipe(
-          Effect.result,
-        ),
-      );
+      const response = yield* HttpClient.get("/api/orchestration/snapshot", {
+        headers: {
+          cookie: yield* getAuthenticatedSessionCookieHeader(),
+        },
+      });
+      const body = (yield* response.json) as { readonly error: string };
 
-      assertTrue(result._tag === "Failure");
-      assertTrue(result.failure._tag === "OrchestrationGetSnapshotError");
-      assertInclude(result.failure.message, "Failed to load orchestration snapshot");
+      assert.equal(response.status, 500);
+      assertInclude(body.error, "Failed to load orchestration snapshot");
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 

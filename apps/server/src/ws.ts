@@ -1,4 +1,4 @@
-import { Cause, Duration, Effect, Layer, Option, Queue, Ref, Schema, Stream } from "effect";
+import { Cause, Effect, Layer, Option, Queue, Ref, Schema, Stream } from "effect";
 import {
   type AuthAccessStreamEvent,
   AuthSessionId,
@@ -102,8 +102,6 @@ function isThreadDetailEvent(event: OrchestrationEvent): event is Extract<
     event.type === "thread.session-set"
   );
 }
-
-const PROVIDER_STATUS_DEBOUNCE_MS = 200;
 
 function toAuthAccessStreamEvent(
   change: BootstrapCredentialChange | SessionCredentialChange,

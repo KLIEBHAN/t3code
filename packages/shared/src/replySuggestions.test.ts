@@ -4,7 +4,7 @@ import {
   DEFAULT_REPLY_SUGGESTION_PROMPT_TEMPLATE_ID,
   normalizeReplySuggestionPromptTemplates,
   resolveReplySuggestionPromptTemplate,
-} from "./replySuggestions";
+} from "./replySuggestions.ts";
 
 describe("normalizeReplySuggestionPromptTemplates", () => {
   it("drops invalid templates and falls back to the default template", () => {

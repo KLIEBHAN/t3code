@@ -65,6 +65,12 @@ const rpcClientMock = {
   shell: {
     openInEditor: vi.fn(),
   },
+  suggestions: {
+    generateReplySuggestions: vi.fn(),
+  },
+  promptImprovement: {
+    generate: vi.fn(),
+  },
   vcs: {
     pull: vi.fn(),
     refreshStatus: vi.fn(),
@@ -95,6 +101,7 @@ const rpcClientMock = {
     subscribeAuthAccess: vi.fn(),
   },
   orchestration: {
+    getSnapshot: vi.fn(),
     dispatchCommand: vi.fn(),
     getTurnDiff: vi.fn(),
     getFullThreadDiff: vi.fn(),
@@ -602,6 +609,7 @@ describe("wsApi", () => {
 
   it("reads and writes persistence through the desktop bridge when available", async () => {
     const clientSettings = {
+      ...DEFAULT_CLIENT_SETTINGS,
       autoOpenPlanSidebar: false,
       confirmThreadArchive: true,
       confirmThreadDelete: false,
@@ -664,6 +672,7 @@ describe("wsApi", () => {
     const { createLocalApi } = await import("./localApi");
     const api = createLocalApi(rpcClientMock as never);
     const clientSettings = {
+      ...DEFAULT_CLIENT_SETTINGS,
       autoOpenPlanSidebar: false,
       confirmThreadArchive: true,
       confirmThreadDelete: false,

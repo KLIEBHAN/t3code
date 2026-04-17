@@ -120,7 +120,7 @@ import {
 import type { UnifiedSettings } from "@t3tools/contracts/settings";
 import type { SessionPhase, Thread } from "../../types";
 import type { PendingUserInputDraftAnswer } from "../../pendingUserInput";
-import type { PendingApproval, PendingUserInput } from "../../session-logic";
+import { type PendingApproval, type PendingUserInput } from "../../session-logic";
 import { deriveLatestContextWindowSnapshot } from "../../lib/contextWindow";
 import { formatProviderSkillDisplayName } from "../../providerSkillPresentation";
 import { searchProviderSkills } from "../../providerSkillSearch";
@@ -785,6 +785,31 @@ export const ChatComposer = memo(
         ? selectedModelForPicker
         : (normalizeModelSlug(selectedModelForPicker, selectedProvider) ?? selectedModelForPicker);
     }, [modelOptionsByInstance, selectedInstanceId, selectedModelForPicker, selectedProvider]);
+    const searchableModelOptions = useMemo(
+      () =>
+        providerInstanceEntries
+          .filter(
+            (entry) =>
+              entry.enabled &&
+              entry.isAvailable &&
+              (lockedProvider === null || entry.driverKind === lockedProvider) &&
+              (!lockedContinuationGroupKey ||
+                entry.continuationGroupKey === lockedContinuationGroupKey),
+          )
+          .flatMap((entry) =>
+            (modelOptionsByInstance.get(entry.instanceId) ?? []).map(({ slug, name }) => ({
+            instanceId: entry.instanceId,
+            provider: entry.driverKind,
+            providerLabel: entry.displayName,
+            slug,
+            name,
+            searchSlug: slug.toLowerCase(),
+            searchName: name.toLowerCase(),
+            searchProvider: entry.displayName.toLowerCase(),
+          })),
+        ),
+      [lockedContinuationGroupKey, lockedProvider, modelOptionsByInstance, providerInstanceEntries],
+    );
 
     // ------------------------------------------------------------------
     // Context window
@@ -940,9 +965,10 @@ export const ChatComposer = memo(
             searchProvider.includes(query)
           );
         })
-        .map(({ provider, providerLabel, slug, name }) => ({
-          id: `model:${provider}:${slug}`,
+        .map(({ instanceId, provider, providerLabel, slug, name }) => ({
+          id: `model:${instanceId}:${slug}`,
           type: "model",
+          instanceId,
           provider,
           model: slug,
           label: name,
@@ -1643,6 +1669,16 @@ export const ChatComposer = memo(
             replacement,
             { expectedText: snapshot.value.slice(trigger.rangeStart, replacementRangeEnd) },
           );
+          if (applied) {
+            setComposerHighlightedItemId(null);
+          }
+          return;
+        }
+        if (item.type === "model") {
+          onProviderModelSelect(item.instanceId, item.model);
+          const applied = applyPromptReplacement(trigger.rangeStart, trigger.rangeEnd, "", {
+            expectedText: snapshot.value.slice(trigger.rangeStart, trigger.rangeEnd),
+          });
           if (applied) {
             setComposerHighlightedItemId(null);
           }

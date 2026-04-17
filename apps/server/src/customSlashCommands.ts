@@ -2,7 +2,7 @@ import type { ServerConfigIssue, ServerCustomSlashCommand } from "@t3tools/contr
 import { RESERVED_SLASH_COMMAND_NAMES } from "@t3tools/shared/slashCommands";
 import { Cache, Effect, FileSystem, Layer, Path, PubSub, Context, Stream } from "effect";
 
-import { ServerConfig } from "./config";
+import { ServerConfig } from "./config.ts";
 
 interface CustomSlashCommandsState {
   readonly commands: readonly ServerCustomSlashCommand[];

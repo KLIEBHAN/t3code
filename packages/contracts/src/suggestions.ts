@@ -1,6 +1,6 @@
 import { Schema } from "effect";
 
-import { ThreadId, TurnId, TrimmedNonEmptyString } from "./baseSchemas";
+import { ThreadId, TurnId, TrimmedNonEmptyString } from "./baseSchemas.ts";
 
 export const DEFAULT_REPLY_SUGGESTION_PROMPT_TEMPLATE_ID = "default";
 export const MAX_REPLY_SUGGESTION_PROMPT_TEMPLATE_ID_LENGTH = 128;

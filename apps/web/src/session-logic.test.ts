@@ -26,6 +26,7 @@ import {
   isLatestTurnSettled,
   resolveTurnDiffSummaryForAssistantMessage,
   shouldResetSendPhase,
+  PROVIDER_OPTIONS,
 } from "./session-logic";
 
 function makeActivity(overrides: {
@@ -1426,9 +1427,7 @@ describe("deriveWorkLogEntries", () => {
       (entry) => entry.id === "command-tool-completed-without-output",
     );
     expect(completedEntry?.result).toBe("line 1\nline 2");
-    expect(completedEntry?.command).toBe(
-      "/bin/zsh -lc rg -n diff apps/web/src/components/ChatView.tsx",
-    );
+    expect(completedEntry?.command).toBe("rg -n diff apps/web/src/components/ChatView.tsx");
   });
 
   it("does not merge tool output across distinct activities without a stable item id", () => {
@@ -2163,15 +2162,15 @@ describe("shouldResetSendPhase", () => {
 });
 
 describe("PROVIDER_OPTIONS", () => {
-  it("advertises available providers while keeping Cursor as a placeholder", () => {
+  it("advertises available providers including Cursor", () => {
     const claude = PROVIDER_OPTIONS.find((option) => option.value === "claudeAgent");
     const opencode = PROVIDER_OPTIONS.find((option) => option.value === "opencode");
     const cursor = PROVIDER_OPTIONS.find((option) => option.value === "cursor");
     expect(PROVIDER_OPTIONS).toEqual([
       { value: "codex", label: "Codex", available: true },
       { value: "claudeAgent", label: "Claude", available: true },
-      { value: "opencode", label: "OpenCode", available: true },
-      { value: "cursor", label: "Cursor", available: false },
+      { value: "opencode", label: "OpenCode", available: true, pickerSidebarBadge: "new" },
+      { value: "cursor", label: "Cursor", available: true, pickerSidebarBadge: "new" },
     ]);
     expect(claude).toEqual({
       value: "claudeAgent",
@@ -2182,11 +2181,13 @@ describe("PROVIDER_OPTIONS", () => {
       value: "opencode",
       label: "OpenCode",
       available: true,
+      pickerSidebarBadge: "new",
     });
     expect(cursor).toEqual({
       value: "cursor",
       label: "Cursor",
-      available: false,
+      available: true,
+      pickerSidebarBadge: "new",
     });
   });
 });

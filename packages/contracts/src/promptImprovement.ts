@@ -1,6 +1,6 @@
 import { Schema } from "effect";
 
-import { ThreadId, TrimmedNonEmptyString } from "./baseSchemas";
+import { ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
 
 export const MAX_PROMPT_IMPROVEMENT_LENGTH = 12_000;
 export const MAX_PROMPT_IMPROVEMENT_REASON_LENGTH = 240;

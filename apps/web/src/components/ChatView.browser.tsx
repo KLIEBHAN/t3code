@@ -210,6 +210,20 @@ function createMockEnvironmentApi(input: {
       browse: input.browse,
     },
     sourceControl: {} as EnvironmentApi["sourceControl"],
+    suggestions: {
+      generateReplySuggestions: (() =>
+        Promise.resolve({
+          suggestions: [],
+        })) as EnvironmentApi["suggestions"]["generateReplySuggestions"],
+    },
+    promptImprovement: {
+      generate: (() =>
+        Promise.resolve({
+          reason: null,
+          improvedPrompt: "",
+          changed: false,
+        })) as EnvironmentApi["promptImprovement"]["generate"],
+    },
     vcs: {} as EnvironmentApi["vcs"],
     git: {} as EnvironmentApi["git"],
     orchestration: {

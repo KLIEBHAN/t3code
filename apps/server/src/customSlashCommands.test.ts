@@ -2,8 +2,8 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "vitest";
 import { Effect, FileSystem, Layer, Path } from "effect";
 
-import { ServerConfig, type ServerConfigShape } from "./config";
-import { CustomSlashCommands, CustomSlashCommandsLive } from "./customSlashCommands";
+import { ServerConfig, type ServerConfigShape } from "./config.ts";
+import { CustomSlashCommands, CustomSlashCommandsLive } from "./customSlashCommands.ts";
 
 const makeCustomSlashCommandsLayer = () =>
   CustomSlashCommandsLive.pipe(

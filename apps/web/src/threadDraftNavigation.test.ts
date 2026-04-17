@@ -26,8 +26,7 @@ function createDependencies(input?: {
     setDraftThreadContext,
     clearProjectDraftThreadId,
     dependencies: {
-      getDraftThreadByProjectId: undefined as never,
-      getDraftThreadByProjectRef: () => input?.storedDraftThread ?? null,
+      getDraftThreadByProjectId: () => input?.storedDraftThread ?? null,
       getDraftThread: () => input?.routeDraftThread ?? null,
       setProjectDraftThreadId: (projectId: ProjectId, threadId: ThreadId, options?: unknown) =>
         setProjectDraftThreadId(scopeProjectRef(ENVIRONMENT_ID, projectId), threadId, options),
