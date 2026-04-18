@@ -71,7 +71,7 @@ export function runTextGenerationStructuredOutput<S extends Schema.Top>(input: {
       );
     }
 
-    if (modelSelection.provider === "opencode") {
+    if (modelSelection.provider === "opencode" || modelSelection.provider === "cursor") {
       const fallbackSelection = {
         provider: "codex" as const,
         model: DEFAULT_GIT_TEXT_GENERATION_MODEL_BY_PROVIDER.codex,
@@ -81,7 +81,7 @@ export function runTextGenerationStructuredOutput<S extends Schema.Top>(input: {
         operation: input.operation,
         from: modelSelection,
         to: fallbackSelection,
-        reason: "Structured output is not supported for OpenCode; using Codex instead.",
+        reason: `Structured output is not supported for ${modelSelection.provider}; using Codex instead.`,
       });
 
       return yield* runCodexStructuredOutput({
