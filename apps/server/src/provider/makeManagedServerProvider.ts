@@ -120,7 +120,21 @@ export const makeManagedServerProvider = Effect.fn("makeManagedServerProvider")(
     return nextSnapshot;
   });
   const applySnapshot = (nextSettings: Settings, options?: { readonly forceRefresh?: boolean }) =>
-    refreshSemaphore.withPermits(1)(applySnapshotBase(nextSettings, options));
+    Effect.gen(function* () {
+      const forceRefresh = options?.forceRefresh === true;
+      const previousSettings = yield* Ref.get(settingsRef);
+
+      if (!forceRefresh && !input.haveSettingsChanged(previousSettings, nextSettings)) {
+        // Surface the latest snapshot immediately instead of queueing behind an
+        // in-flight background refresh. This keeps startup consumers from
+        // blocking on slow provider probes when the pending snapshot is already
+        // good enough to render.
+        yield* Ref.set(settingsRef, nextSettings);
+        return yield* Ref.get(snapshotStateRef).pipe(Effect.map((state) => state.snapshot));
+      }
+
+      return yield* refreshSemaphore.withPermits(1)(applySnapshotBase(nextSettings, options));
+    });
 
   const refreshSnapshot = Effect.fn("refreshSnapshot")(function* () {
     const nextSettings = yield* input.getSettings;

@@ -137,6 +137,31 @@ describe("makeManagedServerProvider", () => {
       ),
   );
 
+  it.effect("returns the pending snapshot even after the background refresh has started", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const releaseCheck = yield* Deferred.make<void>();
+        const provider = yield* makeManagedServerProvider<TestSettings>({
+          getSettings: Effect.succeed({ enabled: true }),
+          streamSettings: Stream.empty,
+          haveSettingsChanged: (previous, next) => previous.enabled !== next.enabled,
+          initialSnapshot: () => initialSnapshot,
+          checkProvider: Deferred.await(releaseCheck).pipe(Effect.as(refreshedSnapshot)),
+          refreshInterval: "1 hour",
+        });
+
+        yield* Effect.yieldNow;
+
+        const initial = yield* provider.getSnapshot;
+        assert.deepStrictEqual(initial, initialSnapshot);
+
+        yield* Deferred.succeed(releaseCheck, undefined);
+        const latest = yield* provider.refresh;
+        assert.deepStrictEqual(latest, refreshedSnapshot);
+      }),
+    ),
+  );
+
   it.effect("reruns the provider check when streamed settings change", () =>
     Effect.scoped(
       Effect.gen(function* () {

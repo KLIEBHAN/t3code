@@ -798,16 +798,16 @@ export const ChatComposer = memo(
           )
           .flatMap((entry) =>
             (modelOptionsByInstance.get(entry.instanceId) ?? []).map(({ slug, name }) => ({
-            instanceId: entry.instanceId,
-            provider: entry.driverKind,
-            providerLabel: entry.displayName,
-            slug,
-            name,
-            searchSlug: slug.toLowerCase(),
-            searchName: name.toLowerCase(),
-            searchProvider: entry.displayName.toLowerCase(),
-          })),
-        ),
+              instanceId: entry.instanceId,
+              provider: entry.driverKind,
+              providerLabel: entry.displayName,
+              slug,
+              name,
+              searchSlug: slug.toLowerCase(),
+              searchName: name.toLowerCase(),
+              searchProvider: entry.displayName.toLowerCase(),
+            })),
+          ),
       [lockedContinuationGroupKey, lockedProvider, modelOptionsByInstance, providerInstanceEntries],
     );
 
