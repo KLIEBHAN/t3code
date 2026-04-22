@@ -3,8 +3,10 @@ import { randomUUID } from "node:crypto";
 import { Effect, FileSystem, Option, Path, Schema, Stream } from "effect";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 import {
-  type CodexModelSelection,
+  DEFAULT_GIT_TEXT_GENERATION_MODEL,
   DEFAULT_GIT_TEXT_GENERATION_MODEL_BY_PROVIDER,
+  type ModelSelection,
+  ProviderDriverKind,
 } from "@t3tools/contracts";
 import {
   getModelSelectionBooleanOptionValue,
@@ -13,6 +15,10 @@ import {
 
 const CODEX_REASONING_EFFORT = "low";
 const CODEX_TIMEOUT_MS = 180_000;
+const CODEX_DRIVER_KIND = ProviderDriverKind.make("codex");
+const DEFAULT_CODEX_TEXT_GENERATION_MODEL =
+  DEFAULT_GIT_TEXT_GENERATION_MODEL_BY_PROVIDER[CODEX_DRIVER_KIND] ??
+  DEFAULT_GIT_TEXT_GENERATION_MODEL;
 
 export class CodexStructuredOutputError extends Schema.TaggedErrorClass<CodexStructuredOutputError>()(
   "CodexStructuredOutputError",
@@ -83,7 +89,7 @@ export function runCodexStructuredOutput<S extends Schema.Top>(input: {
   imagePaths?: ReadonlyArray<string>;
   cleanupPaths?: ReadonlyArray<string>;
   model?: string;
-  modelSelection?: CodexModelSelection;
+  modelSelection?: ModelSelection;
   binaryPath?: string;
   homePath?: string;
 }): Effect.Effect<
@@ -159,7 +165,7 @@ export function runCodexStructuredOutput<S extends Schema.Top>(input: {
           "-s",
           "read-only",
           "--model",
-          model ?? DEFAULT_GIT_TEXT_GENERATION_MODEL_BY_PROVIDER.codex,
+          model ?? DEFAULT_CODEX_TEXT_GENERATION_MODEL,
           "--config",
           `model_reasoning_effort="${reasoningEffort}"`,
           ...(getModelSelectionBooleanOptionValue(input.modelSelection, "fastMode") === true

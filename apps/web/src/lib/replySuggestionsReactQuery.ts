@@ -26,7 +26,7 @@ export const replySuggestionsQueryKeys = {
       input?.turnId ?? null,
       input?.promptTemplateId ?? null,
       input?.promptTemplateInstructions ?? null,
-      modelSelection?.provider ?? null,
+      modelSelection?.instanceId ?? null,
       modelSelection?.model ?? null,
       modelSelection?.options ?? null,
     ] as const,

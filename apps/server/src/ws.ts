@@ -96,6 +96,8 @@ const isWorkspacePathOutsideRootError = Schema.is(WorkspacePathOutsideRootError)
 
 const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
 
+const PROVIDER_STATUS_DEBOUNCE_MS = 200;
+
 function isThreadDetailEvent(event: OrchestrationEvent): event is Extract<
   OrchestrationEvent,
   {

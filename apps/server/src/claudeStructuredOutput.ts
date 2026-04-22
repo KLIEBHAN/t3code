@@ -1,8 +1,11 @@
 import { Effect, Option, Schema, Stream } from "effect";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 import {
-  type ClaudeModelSelection,
+  DEFAULT_GIT_TEXT_GENERATION_MODEL,
   DEFAULT_GIT_TEXT_GENERATION_MODEL_BY_PROVIDER,
+  type ModelSelection,
+  ProviderDriverKind,
+  ProviderInstanceId,
 } from "@t3tools/contracts";
 import {
   getModelSelectionStringOptionValue,
@@ -16,6 +19,11 @@ import {
 } from "./provider/Layers/ClaudeProvider.ts";
 
 const CLAUDE_TIMEOUT_MS = 180_000;
+const CLAUDE_DRIVER_KIND = ProviderDriverKind.make("claudeAgent");
+const CLAUDE_INSTANCE_ID = ProviderInstanceId.make("claudeAgent");
+const DEFAULT_CLAUDE_TEXT_GENERATION_MODEL =
+  DEFAULT_GIT_TEXT_GENERATION_MODEL_BY_PROVIDER[CLAUDE_DRIVER_KIND] ??
+  DEFAULT_GIT_TEXT_GENERATION_MODEL;
 
 export class ClaudeStructuredOutputError extends Schema.TaggedErrorClass<ClaudeStructuredOutputError>()(
   "ClaudeStructuredOutputError",
@@ -87,7 +95,7 @@ export function runClaudeStructuredOutput<S extends Schema.Top>(input: {
   cwd: string;
   prompt: string;
   outputSchema: S;
-  modelSelection?: ClaudeModelSelection;
+  modelSelection?: ModelSelection;
   binaryPath?: string;
 }): Effect.Effect<
   S["Type"],
@@ -113,8 +121,8 @@ export function runClaudeStructuredOutput<S extends Schema.Top>(input: {
       );
 
     const modelSelection = input.modelSelection ?? {
-      provider: "claudeAgent" as const,
-      model: DEFAULT_GIT_TEXT_GENERATION_MODEL_BY_PROVIDER.claudeAgent,
+      instanceId: CLAUDE_INSTANCE_ID,
+      model: DEFAULT_CLAUDE_TEXT_GENERATION_MODEL,
     };
     const caps = getClaudeModelCapabilities(modelSelection.model);
     const descriptors = getProviderOptionDescriptors({

@@ -1,8 +1,17 @@
 import {
+  DEFAULT_GIT_TEXT_GENERATION_MODEL,
   DEFAULT_GIT_TEXT_GENERATION_MODEL_BY_PROVIDER,
-  type CodexModelSelection,
+  type ModelSelection,
+  ProviderDriverKind,
+  ProviderInstanceId,
   type ServerSettings,
 } from "@t3tools/contracts";
+
+const CODEX_DRIVER_KIND = ProviderDriverKind.make("codex");
+const CODEX_INSTANCE_ID = ProviderInstanceId.make("codex");
+const DEFAULT_CODEX_TEXT_GENERATION_MODEL =
+  DEFAULT_GIT_TEXT_GENERATION_MODEL_BY_PROVIDER[CODEX_DRIVER_KIND] ??
+  DEFAULT_GIT_TEXT_GENERATION_MODEL;
 
 const CLAUDE_LIMIT_ERROR_PATTERNS = [
   "429",
@@ -30,17 +39,23 @@ export function isClaudeTextGenerationFallbackDetail(detail: string): boolean {
 export function resolveClaudeTextGenerationFallback(input: {
   settings: ServerSettings;
   errorDetail: string;
-}): CodexModelSelection | null {
+}): ModelSelection | null {
   if (!isClaudeTextGenerationFallbackDetail(input.errorDetail)) {
     return null;
   }
 
-  if (!input.settings.providers.codex.enabled) {
+  const configuredCodexInstance = input.settings.providerInstances[CODEX_INSTANCE_ID];
+  const codexEnabled =
+    configuredCodexInstance !== undefined
+      ? (configuredCodexInstance.enabled ?? true)
+      : input.settings.providers.codex.enabled;
+
+  if (!codexEnabled) {
     return null;
   }
 
   return {
-    provider: "codex",
-    model: DEFAULT_GIT_TEXT_GENERATION_MODEL_BY_PROVIDER.codex,
+    instanceId: CODEX_INSTANCE_ID,
+    model: DEFAULT_CODEX_TEXT_GENERATION_MODEL,
   };
 }

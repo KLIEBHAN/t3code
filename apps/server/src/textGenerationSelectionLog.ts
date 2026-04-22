@@ -8,7 +8,7 @@ export function logTextGenerationSelection(input: {
   return Effect.logInfo("using configured text generation model").pipe(
     Effect.annotateLogs({
       operation: input.operation,
-      provider: input.modelSelection.provider,
+      providerInstanceId: input.modelSelection.instanceId,
       model: input.modelSelection.model,
       options: input.modelSelection.options ?? null,
     }),
@@ -24,9 +24,9 @@ export function logTextGenerationFallback(input: {
   return Effect.logWarning("falling back to alternate text generation model").pipe(
     Effect.annotateLogs({
       operation: input.operation,
-      fromProvider: input.from.provider,
+      fromProviderInstanceId: input.from.instanceId,
       fromModel: input.from.model,
-      toProvider: input.to.provider,
+      toProviderInstanceId: input.to.instanceId,
       toModel: input.to.model,
       reason: input.reason,
     }),

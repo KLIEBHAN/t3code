@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   MessageId,
   ProjectId,
+  ProviderInstanceId,
   ThreadId,
   TurnId,
   type OrchestrationReadModel,
@@ -19,7 +20,7 @@ const readModel: OrchestrationReadModel = {
       title: "Workspace",
       workspaceRoot: "/repo/project",
       defaultModelSelection: {
-        provider: "codex",
+        instanceId: ProviderInstanceId.make("codex"),
         model: "gpt-5",
       },
       scripts: [],
@@ -34,7 +35,7 @@ const readModel: OrchestrationReadModel = {
       projectId: ProjectId.make("project-1"),
       title: "Prompt help",
       modelSelection: {
-        provider: "codex",
+        instanceId: ProviderInstanceId.make("codex"),
         model: "gpt-5",
       },
       interactionMode: "default",
