@@ -42,6 +42,7 @@ import Migration0026 from "./Migrations/026_CanonicalizeModelSelectionOptions.ts
 import Migration0027 from "./Migrations/027_ProviderSessionRuntimeInstanceId.ts";
 import Migration0028 from "./Migrations/028_ProjectionThreadSessionInstanceId.ts";
 import Migration0029 from "./Migrations/029_ProjectionThreadDetailOrderingIndexes.ts";
+import EnsureProviderInstanceIdColumns from "./Migrations/029_EnsureProviderInstanceIdColumns.ts";
 
 /**
  * Migration loader with all migrations defined inline.
@@ -123,6 +124,9 @@ export const runMigrations = Effect.fn("runMigrations")(function* ({
       : `Running migrations 1 through ${toMigrationInclusive}...`,
   );
   const executedMigrations = yield* run({ loader: makeMigrationLoader(toMigrationInclusive) });
+  if (toMigrationInclusive === undefined) {
+    yield* EnsureProviderInstanceIdColumns;
+  }
   yield* Effect.log("Migrations ran successfully").pipe(
     Effect.annotateLogs({ migrations: executedMigrations.map(([id, name]) => `${id}_${name}`) }),
   );
