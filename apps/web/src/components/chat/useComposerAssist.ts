@@ -1,23 +1,14 @@
-import type { EnvironmentId, ModelSelection, ReplySuggestion } from "@t3tools/contracts";
-import { useQuery } from "@tanstack/react-query";
+import type { EnvironmentId, ModelSelection } from "@t3tools/contracts";
 import { useCallback, useMemo, type MutableRefObject } from "react";
 
-import { useReplySuggestionVisibility } from "../../hooks/useReplySuggestionVisibility";
 import { usePromptAutocomplete } from "../../hooks/usePromptAutocomplete";
 import { usePromptImprovement } from "../../hooks/usePromptImprovement";
-import { replySuggestionsQueryOptions } from "../../lib/replySuggestionsReactQuery";
 import { derivePromptAutocompleteRequest } from "../../promptAutocomplete";
 import { derivePromptImprovementRequest } from "../../promptImprovement";
-import { deriveReplySuggestionsRequest } from "../../replySuggestions";
 import type { ComposerTrigger } from "../../composer-logic";
 import type { PendingApproval, PendingUserInput } from "../../session-logic";
 import type { SessionPhase, Thread } from "../../types";
 import { toastManager } from "../ui/toast";
-
-interface ReplySuggestionPromptTemplateSelection {
-  id: string;
-  instructions: string;
-}
 
 interface UseComposerAssistOptions {
   activePendingApproval: PendingApproval | null;
@@ -33,71 +24,26 @@ interface UseComposerAssistOptions {
   isSendBusy: boolean;
   isServerThread: boolean;
   isComposerFocused: boolean;
-  latestTurnOutputSettled: boolean;
   phase: SessionPhase;
   prompt: string;
   promptRef: MutableRefObject<string>;
   replaceComposerPrompt: (nextPrompt: string) => void;
-  selectedReplySuggestionPromptTemplate: ReplySuggestionPromptTemplateSelection;
   showPlanFollowUpPrompt: boolean;
   textGenerationModelSelection: ModelSelection | null;
 }
 
 type ComposerPromptImprovementState = ReturnType<typeof usePromptImprovement>;
 type ComposerPromptAutocompleteState = ReturnType<typeof usePromptAutocomplete>;
-type ComposerReplySuggestionVisibility = ReturnType<typeof useReplySuggestionVisibility>;
 
 interface UseComposerAssistResult {
-  editReplySuggestion: (text: string) => void;
   insertPromptImprovementBelow: () => void;
   onImprovePrompt: () => Promise<void>;
   promptAutocomplete: ComposerPromptAutocompleteState;
   promptImprovement: ComposerPromptImprovementState;
-  replySuggestionVisibility: ComposerReplySuggestionVisibility;
-  replySuggestions: readonly ReplySuggestion[];
   replacePromptWithImprovement: () => void;
-  showReplySuggestions: boolean;
 }
 
 export function useComposerAssist(options: UseComposerAssistOptions): UseComposerAssistResult {
-  const replySuggestionRequest = useMemo(
-    () =>
-      deriveReplySuggestionsRequest({
-        activeThread: options.activeThread,
-        latestTurnOutputSettled: options.latestTurnOutputSettled,
-        hasPendingApproval: options.activePendingApproval !== null,
-        hasPendingUserInput: options.activePendingUserInput !== null,
-        showPlanFollowUpPrompt: options.showPlanFollowUpPrompt,
-        prompt: options.prompt,
-        composerImageCount: options.composerImageCount,
-        promptTemplateId: options.selectedReplySuggestionPromptTemplate.id,
-        promptTemplateInstructions: options.selectedReplySuggestionPromptTemplate.instructions,
-      }),
-    [
-      options.activePendingApproval,
-      options.activePendingUserInput,
-      options.activeThread,
-      options.composerImageCount,
-      options.latestTurnOutputSettled,
-      options.prompt,
-      options.selectedReplySuggestionPromptTemplate.id,
-      options.selectedReplySuggestionPromptTemplate.instructions,
-      options.showPlanFollowUpPrompt,
-    ],
-  );
-
-  const replySuggestionsQuery = useQuery(
-    replySuggestionsQueryOptions(
-      options.environmentId,
-      replySuggestionRequest,
-      options.textGenerationModelSelection,
-    ),
-  );
-  const replySuggestions = replySuggestionsQuery.data?.suggestions ?? [];
-  const replySuggestionsTurnId = options.activeThread?.latestTurn?.turnId ?? null;
-  const replySuggestionVisibility = useReplySuggestionVisibility(replySuggestionsTurnId);
-  const showReplySuggestions = replySuggestions.length > 0 && !options.isSendBusy;
-
   const promptImprovementRequest = useMemo(
     () =>
       derivePromptImprovementRequest({
@@ -179,14 +125,6 @@ export function useComposerAssist(options: UseComposerAssistOptions): UseCompose
     modelSelection: options.textGenerationModelSelection,
   });
 
-  const editReplySuggestion = useCallback(
-    (text: string) => {
-      promptImprovement.dismiss();
-      options.replaceComposerPrompt(text);
-    },
-    [options, promptImprovement],
-  );
-
   const replacePromptWithImprovement = useCallback(() => {
     const improvedPrompt = promptImprovement.currentImprovedPrompt;
     if (!improvedPrompt) {
@@ -230,14 +168,10 @@ export function useComposerAssist(options: UseComposerAssistOptions): UseCompose
   }, [promptImprovement]);
 
   return {
-    editReplySuggestion,
     insertPromptImprovementBelow,
     onImprovePrompt,
     promptAutocomplete,
     promptImprovement,
-    replySuggestionVisibility,
-    replySuggestions,
     replacePromptWithImprovement,
-    showReplySuggestions,
   };
 }

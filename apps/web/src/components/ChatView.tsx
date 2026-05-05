@@ -3679,7 +3679,6 @@ export default function ChatView(props: ChatViewProps) {
                   keybindings={keybindings}
                   terminalOpen={Boolean(terminalState.terminalOpen)}
                   gitCwd={gitCwd}
-                  latestTurnOutputSettled={latestTurnSettled}
                   customSlashCommands={serverConfig?.customSlashCommands ?? []}
                   promptHistory={promptHistory}
                   promptRef={promptRef}

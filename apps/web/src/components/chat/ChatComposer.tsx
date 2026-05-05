@@ -33,7 +33,6 @@ import {
 } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useDebouncedValue } from "@tanstack/react-pacer";
-import { resolveReplySuggestionPromptTemplate } from "@t3tools/shared/replySuggestions";
 import { projectSearchEntriesQueryOptions } from "~/lib/projectReactQuery";
 import {
   clampCollapsedComposerCursor,
@@ -80,7 +79,6 @@ import { ComposerPendingUserInputPanel } from "./ComposerPendingUserInputPanel";
 import { ComposerPlanFollowUpBanner } from "./ComposerPlanFollowUpBanner";
 import { PromptImproveActionButton } from "./PromptImproveActionButton";
 import { PromptImprovePreview } from "./PromptImprovePreview";
-import { ReplySuggestionsBar } from "./ReplySuggestionsBar";
 import { searchSlashCommandItems } from "./composerSlashCommandSearch";
 import {
   getComposerProviderState,
@@ -412,7 +410,6 @@ export interface ChatComposerProps {
     readonly label: string;
     readonly connectionState: "connecting" | "disconnected" | "error";
   } | null;
-  latestTurnOutputSettled: boolean;
 
   // Pending approvals / inputs
   activePendingApproval: PendingApproval | null;
@@ -524,7 +521,6 @@ export const ChatComposer = memo(
       isSendBusy,
       isPreparingWorktree,
       environmentUnavailable,
-      latestTurnOutputSettled,
       activePendingApproval,
       pendingApprovals,
       pendingUserInputs,
@@ -822,14 +818,6 @@ export const ChatComposer = memo(
     const activeContextWindow = useMemo(
       () => deriveLatestContextWindowSnapshot(activeThreadActivities ?? []),
       [activeThreadActivities],
-    );
-    const selectedReplySuggestionPromptTemplate = useMemo(
-      () =>
-        resolveReplySuggestionPromptTemplate(
-          settings.replySuggestionPromptTemplates,
-          settings.selectedReplySuggestionPromptTemplateId,
-        ),
-      [settings.replySuggestionPromptTemplates, settings.selectedReplySuggestionPromptTemplateId],
     );
     const textGenerationModelSelection = useMemo(
       () => resolveAppModelSelectionState(settings, providerStatuses),
@@ -1564,15 +1552,11 @@ export const ChatComposer = memo(
       showPlanFollowUpPrompt,
     });
     const {
-      editReplySuggestion,
       insertPromptImprovementBelow,
       onImprovePrompt,
       promptAutocomplete,
       promptImprovement,
-      replySuggestionVisibility,
-      replySuggestions,
       replacePromptWithImprovement,
-      showReplySuggestions,
     } = useComposerAssist({
       activePendingApproval,
       activePendingUserInput,
@@ -1587,12 +1571,10 @@ export const ChatComposer = memo(
       isPreparingWorktree,
       isSendBusy,
       isServerThread: routeKind === "server",
-      latestTurnOutputSettled,
       phase,
       prompt,
       promptRef,
       replaceComposerPrompt,
-      selectedReplySuggestionPromptTemplate,
       showPlanFollowUpPrompt,
       textGenerationModelSelection,
     });
@@ -2021,14 +2003,6 @@ export const ChatComposer = memo(
         }
       };
     }, []);
-    const sendReplySuggestion = useCallback(
-      (text: string) => {
-        promptImprovement.dismiss();
-        onSendPromptOverride(text);
-      },
-      [onSendPromptOverride, promptImprovement],
-    );
-
     // ------------------------------------------------------------------
     // Imperative handle
     // ------------------------------------------------------------------
@@ -2365,16 +2339,6 @@ export const ChatComposer = memo(
                         onReplace={replacePromptWithImprovement}
                         onInsertBelow={insertPromptImprovementBelow}
                         onDismiss={promptImprovement.dismiss}
-                      />
-                    ) : null}
-                    {showReplySuggestions ? (
-                      <ReplySuggestionsBar
-                        suggestions={replySuggestions}
-                        collapsed={replySuggestionVisibility.collapsed}
-                        onCollapse={replySuggestionVisibility.hide}
-                        onExpand={replySuggestionVisibility.show}
-                        onSend={sendReplySuggestion}
-                        onEdit={editReplySuggestion}
                       />
                     ) : null}
                     {composerImages.length > 0 && (
