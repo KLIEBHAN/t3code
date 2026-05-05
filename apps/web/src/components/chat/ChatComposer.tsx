@@ -64,7 +64,11 @@ import {
   shouldUseCompactComposerPrimaryActions,
   shouldUseCompactComposerFooter,
 } from "../composerFooterLayout";
-import { type ComposerPromptEditorHandle, ComposerPromptEditor } from "../ComposerPromptEditor";
+import {
+  type ComposerCommandKey,
+  type ComposerPromptEditorHandle,
+  ComposerPromptEditor,
+} from "../ComposerPromptEditor";
 import { ProviderModelPicker } from "./ProviderModelPicker";
 import { type ComposerCommandItem, ComposerCommandMenu } from "./ComposerCommandMenu";
 import { ComposerPendingApprovalActions } from "./ComposerPendingApprovalActions";
@@ -94,6 +98,7 @@ import { Button } from "../ui/button";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { toastManager } from "../ui/toast";
+import { Spinner } from "../ui/spinner";
 import {
   BotIcon,
   CircleAlertIcon,
@@ -1592,6 +1597,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     editReplySuggestion,
     insertPromptImprovementBelow,
     onImprovePrompt,
+    promptAutocomplete,
     promptImprovement,
     replySuggestionVisibility,
     replySuggestions,
@@ -1601,8 +1607,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     activePendingApproval,
     activePendingUserInput,
     activeThread,
+    composerCursor: expandCollapsedComposerCursor(prompt, composerCursor),
     composerImageCount: composerImages.length,
+    composerTerminalContextCount: composerTerminalContexts.length,
+    composerTrigger,
     environmentId,
+    isComposerFocused,
     isConnecting,
     isPreparingWorktree,
     isSendBusy,
@@ -1616,6 +1626,28 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     showPlanFollowUpPrompt,
     textGenerationModelSelection,
   });
+
+  const acceptPromptAutocompleteSuggestion = useCallback((): boolean => {
+    const suggestion = promptAutocomplete.suggestion;
+    if (!suggestion) {
+      return false;
+    }
+
+    const snapshot = readComposerSnapshot();
+    if (snapshot.expandedCursor !== snapshot.value.length) {
+      return false;
+    }
+
+    const nextPrompt = replaceTextRange(
+      snapshot.value,
+      snapshot.expandedCursor,
+      snapshot.expandedCursor,
+      suggestion,
+    );
+    promptAutocomplete.dismiss();
+    replaceComposerPrompt(nextPrompt.text);
+    return true;
+  }, [promptAutocomplete, readComposerSnapshot, replaceComposerPrompt]);
 
   const onSelectComposerItem = useCallback(
     (item: ComposerCommandItem) => {
@@ -1833,19 +1865,22 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   // ------------------------------------------------------------------
   // Callbacks: command key
   // ------------------------------------------------------------------
-  const onComposerCommandKey = (
-    key: "ArrowDown" | "ArrowUp" | "Enter" | "Tab",
-    event: KeyboardEvent,
-  ) => {
+  const onComposerCommandKey = (key: ComposerCommandKey, event: KeyboardEvent) => {
     if (key === "Tab" && event.shiftKey) {
       toggleInteractionMode();
       return true;
     }
+    if (key === "PromptAutocompleteNext") {
+      return promptAutocomplete.cycleNext();
+    }
+    if (key === "PromptAutocompletePrevious") {
+      return promptAutocomplete.cyclePrevious();
+    }
     const { trigger } = resolveActiveComposerTrigger();
     const menuIsActive = composerMenuOpenRef.current || trigger !== null;
-      if (menuIsActive) {
-        const currentItems = composerMenuItemsRef.current;
-        const selectedItem = activeComposerMenuItemRef.current ?? currentItems[0];
+    if (menuIsActive) {
+      const currentItems = composerMenuItemsRef.current;
+      const selectedItem = activeComposerMenuItemRef.current ?? currentItems[0];
       if (key === "ArrowDown" && currentItems.length > 0) {
         nudgeComposerMenuHighlight("ArrowDown");
         return true;
@@ -1856,14 +1891,17 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       }
       if ((key === "Enter" || key === "Tab") && selectedItem) {
         onSelectComposerItem(selectedItem);
-          return true;
-        }
-      }
-      if ((key === "ArrowUp" || key === "ArrowDown") && handlePromptHistoryKey(key, event)) {
         return true;
       }
-      if (key === "Enter" && !event.shiftKey) {
-        submitComposer();
+    }
+    if ((key === "ArrowUp" || key === "ArrowDown") && handlePromptHistoryKey(key, event)) {
+      return true;
+    }
+    if (key === "Tab" && acceptPromptAutocompleteSuggestion()) {
+      return true;
+    }
+    if (key === "Enter" && !event.shiftKey) {
+      submitComposer();
       return true;
     }
     return false;
@@ -2494,7 +2532,24 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   isComposerApprovalState ||
                   (environmentUnavailable !== null && activePendingProgress === null)
                 }
+                inlineSuggestion={
+                  !isComposerApprovalState && pendingUserInputs.length === 0
+                    ? promptAutocomplete.suggestion
+                    : null
+                }
+                inlineSuggestionSelectedIndex={promptAutocomplete.selectedIndex}
+                inlineSuggestionCount={promptAutocomplete.suggestionCount}
               />
+              {!isComposerApprovalState &&
+              pendingUserInputs.length === 0 &&
+              promptAutocomplete.isLoading ? (
+                <div className="pointer-events-none mt-1 flex justify-end px-1">
+                  <div className="flex h-5 max-w-full items-center gap-1.5 rounded bg-background/90 px-1.5 text-[11px] leading-none text-muted-foreground shadow-sm ring-1 ring-border/60 backdrop-blur-sm">
+                    <Spinner className="size-3" aria-hidden />
+                    <span className="truncate">Generating suggestion...</span>
+                  </div>
+                </div>
+              ) : null}
               {showMobilePendingAnswerActions ? (
                 <div
                   data-chat-composer-mobile-pending-actions="true"

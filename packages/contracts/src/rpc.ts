@@ -87,6 +87,7 @@ import {
   ServerUpsertKeybindingResult,
 } from "./server.ts";
 import { PromptImprovementInput, PromptImprovementResult } from "./promptImprovement.ts";
+import { PromptAutocompleteInput, PromptAutocompleteResult } from "./promptAutocomplete.ts";
 import { ServerSettings, ServerSettingsError, ServerSettingsPatch } from "./settings.ts";
 import { ReplySuggestionsInput, ReplySuggestionsResult } from "./suggestions.ts";
 import {
@@ -117,6 +118,7 @@ export const WS_METHODS = {
 
   // Suggestions
   suggestionsGenerateReplySuggestions: "suggestions.generateReplySuggestions",
+  promptAutocompleteGenerate: "promptAutocomplete.generate",
   promptImprovementGenerate: "promptImprovement.generate",
 
   // VCS methods
@@ -304,6 +306,11 @@ export const WsSuggestionsGenerateReplySuggestionsRpc = Rpc.make(
 export const WsPromptImprovementGenerateRpc = Rpc.make(WS_METHODS.promptImprovementGenerate, {
   payload: PromptImprovementInput,
   success: PromptImprovementResult,
+});
+
+export const WsPromptAutocompleteGenerateRpc = Rpc.make(WS_METHODS.promptAutocompleteGenerate, {
+  payload: PromptAutocompleteInput,
+  success: PromptAutocompleteResult,
 });
 
 export const WsSubscribeVcsStatusRpc = Rpc.make(WS_METHODS.subscribeVcsStatus, {
@@ -512,6 +519,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsShellOpenInEditorRpc,
   WsFilesystemBrowseRpc,
   WsSuggestionsGenerateReplySuggestionsRpc,
+  WsPromptAutocompleteGenerateRpc,
   WsPromptImprovementGenerateRpc,
   WsSubscribeVcsStatusRpc,
   WsVcsPullRpc,

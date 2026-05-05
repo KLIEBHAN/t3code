@@ -89,6 +89,9 @@ export interface WsRpcClient {
       typeof WS_METHODS.suggestionsGenerateReplySuggestions
     >;
   };
+  readonly promptAutocomplete: {
+    readonly generate: RpcUnaryMethod<typeof WS_METHODS.promptAutocompleteGenerate>;
+  };
   readonly promptImprovement: {
     readonly generate: RpcUnaryMethod<typeof WS_METHODS.promptImprovementGenerate>;
   };
@@ -210,6 +213,10 @@ export function createWsRpcClient(transport: WsTransport): WsRpcClient {
         transport.request((client) =>
           client[WS_METHODS.suggestionsGenerateReplySuggestions](input),
         ),
+    },
+    promptAutocomplete: {
+      generate: (input) =>
+        transport.request((client) => client[WS_METHODS.promptAutocompleteGenerate](input)),
     },
     promptImprovement: {
       generate: (input) =>

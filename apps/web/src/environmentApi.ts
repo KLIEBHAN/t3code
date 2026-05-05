@@ -31,6 +31,9 @@ export function createEnvironmentApi(rpcClient: WsRpcClient): EnvironmentApi {
     suggestions: {
       generateReplySuggestions: rpcClient.suggestions.generateReplySuggestions,
     },
+    promptAutocomplete: {
+      generate: rpcClient.promptAutocomplete.generate,
+    },
     promptImprovement: {
       generate: rpcClient.promptImprovement.generate,
     },
