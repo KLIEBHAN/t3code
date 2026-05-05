@@ -21,3 +21,4 @@ export * from "./filesystem.ts";
 export * from "./rpc.ts";
 export * from "./suggestions.ts";
 export * from "./promptImprovement.ts";
+export * from "./promptAutocomplete.ts";

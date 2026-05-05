@@ -63,6 +63,7 @@ import { ServerEnvironmentLive } from "./environment/Layers/ServerEnvironment.ts
 import { CustomSlashCommandsLive } from "./customSlashCommands.ts";
 import { ReplySuggestionGenerationLive } from "./suggestions/Layers/ReplySuggestionGenerationLive.ts";
 import { PromptImprovementGenerationLive } from "./promptImprovement/Layers/PromptImprovementGenerationLive.ts";
+import { PromptAutocompleteGenerationLive } from "./promptAutocomplete/Layers/PromptAutocompleteGenerationLive.ts";
 import {
   authBearerBootstrapRouteLayer,
   authBootstrapRouteLayer,
@@ -249,6 +250,10 @@ const ProviderRuntimeLayerLive = ProviderSessionReaperLive.pipe(
 
 const ComposerAssistLayerLive = Layer.mergeAll(
   ReplySuggestionGenerationLive.pipe(
+    Layer.provideMerge(ServerSettingsLive),
+    Layer.provideMerge(OrchestrationRuntimeLayerLive),
+  ),
+  PromptAutocompleteGenerationLive.pipe(
     Layer.provideMerge(ServerSettingsLive),
     Layer.provideMerge(OrchestrationRuntimeLayerLive),
   ),

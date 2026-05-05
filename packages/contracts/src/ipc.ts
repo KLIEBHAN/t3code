@@ -69,6 +69,7 @@ import { EditorId } from "./editor.ts";
 import type { ExecutionEnvironmentDescriptor } from "./environment.ts";
 import type { ClientSettings, ServerSettings, ServerSettingsPatch } from "./settings.ts";
 import type { PromptImprovementInput, PromptImprovementResult } from "./promptImprovement.ts";
+import type { PromptAutocompleteInput, PromptAutocompleteResult } from "./promptAutocomplete.ts";
 import type { ReplySuggestionsInput, ReplySuggestionsResult } from "./suggestions.ts";
 import type {
   SourceControlCloneRepositoryInput,
@@ -355,6 +356,9 @@ export interface EnvironmentApi {
   };
   suggestions: {
     generateReplySuggestions: (input: ReplySuggestionsInput) => Promise<ReplySuggestionsResult>;
+  };
+  promptAutocomplete: {
+    generate: (input: PromptAutocompleteInput) => Promise<PromptAutocompleteResult>;
   };
   promptImprovement: {
     generate: (input: PromptImprovementInput) => Promise<PromptImprovementResult>;

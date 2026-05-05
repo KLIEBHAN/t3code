@@ -41,8 +41,11 @@ function normalizeSuggestionForComparison(text: string): string {
 function sanitizeReplySuggestionText(text: string): string {
   const trimmed = text
     .trim()
+    .replace(/^```[^\n]*\n?/, "")
+    .replace(/\n?```\s*$/, "")
     .replace(/^[-*•]\s+/, "")
     .replace(/^\d+[.)]\s+/, "")
+    .replace(/^(?:reply|suggestion)\s*:\s*/i, "")
     .replace(/^["'`“”‘’]+|["'`“”‘’]+$/g, "")
     .trim();
   if (trimmed.length === 0) {
@@ -127,10 +130,15 @@ export function buildReplySuggestionPrompt(input: {
     "Rules:",
     "- Generate 2 to 4 suggestions.",
     `- Each suggestion must be a short user message, <= ${MAX_REPLY_SUGGESTION_LENGTH} characters.`,
+    "- Prefer 3-10 words when possible.",
     "- Use the same language as the last user message.",
+    "- Strongly use the latest assistant response as primary context.",
     "- Suggestions must be specific, concrete, and plausible next replies in this exact conversation.",
+    "- Suggest the next prompt most likely to move the overall project forward.",
     "- Make the suggestions meaningfully distinct from each other.",
+    "- Prefer direct imperative phrasing over questions when natural.",
     "- Avoid generic praise or filler like 'Thanks', 'Looks good', or 'Great'.",
+    "- Avoid politeness, hedging, meta-commentary, and unnecessary setup.",
     "- Avoid repeating the last user message or copying the assistant response verbatim.",
     "- If changed files are listed, ground at least one suggestion in verification/testing and one in a concrete follow-up change or polish request.",
     "- Only suggest commit, push, or PR actions if changed files exist or the assistant explicitly discussed shipping work.",

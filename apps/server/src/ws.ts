@@ -37,6 +37,7 @@ import { OrchestrationEngineService } from "./orchestration/Services/Orchestrati
 import { ProjectionSnapshotQuery } from "./orchestration/Services/ProjectionSnapshotQuery.ts";
 import { ReplySuggestionGeneration } from "./suggestions/Services/ReplySuggestionGeneration.ts";
 import { PromptImprovementGeneration } from "./promptImprovement/Services/PromptImprovementGeneration.ts";
+import { PromptAutocompleteGeneration } from "./promptAutocomplete/Services/PromptAutocompleteGeneration.ts";
 import {
   observeRpcEffect,
   observeRpcStream,
@@ -155,6 +156,7 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
       const customSlashCommands = yield* CustomSlashCommands;
       const open = yield* Open;
       const replySuggestionGeneration = yield* ReplySuggestionGeneration;
+      const promptAutocompleteGeneration = yield* PromptAutocompleteGeneration;
       const promptImprovementGeneration = yield* PromptImprovementGeneration;
       const gitWorkflow = yield* GitWorkflowService;
       const vcsProvisioning = yield* VcsProvisioningService;
@@ -947,6 +949,12 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
             WS_METHODS.suggestionsGenerateReplySuggestions,
             replySuggestionGeneration.generateReplySuggestions(input),
             { "rpc.aggregate": "suggestions" },
+          ),
+        [WS_METHODS.promptAutocompleteGenerate]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.promptAutocompleteGenerate,
+            promptAutocompleteGeneration.generatePromptAutocomplete(input),
+            { "rpc.aggregate": "promptAutocomplete" },
           ),
         [WS_METHODS.promptImprovementGenerate]: (input) =>
           observeRpcEffect(

@@ -75,6 +75,10 @@ import {
   type PromptImprovementGenerationShape,
 } from "./promptImprovement/Services/PromptImprovementGeneration.ts";
 import {
+  PromptAutocompleteGeneration,
+  type PromptAutocompleteGenerationShape,
+} from "./promptAutocomplete/Services/PromptAutocompleteGeneration.ts";
+import {
   OrchestrationEngineService,
   type OrchestrationEngineShape,
 } from "./orchestration/Services/OrchestrationEngine.ts";
@@ -331,6 +335,7 @@ const buildAppUnderTest = (options?: {
     providerRegistry?: Partial<ProviderRegistryShape>;
     serverSettings?: Partial<ServerSettingsShape>;
     replySuggestionGeneration?: Partial<ReplySuggestionGenerationShape>;
+    promptAutocompleteGeneration?: Partial<PromptAutocompleteGenerationShape>;
     promptImprovementGeneration?: Partial<PromptImprovementGenerationShape>;
     open?: Partial<OpenShape>;
     vcsDriver?: Partial<VcsDriver.VcsDriverShape>;
@@ -567,6 +572,12 @@ const buildAppUnderTest = (options?: {
         Layer.mock(ReplySuggestionGeneration)({
           generateReplySuggestions: () => Effect.succeed({ suggestions: [] }),
           ...options?.layers?.replySuggestionGeneration,
+        }),
+      ),
+      Layer.provide(
+        Layer.mock(PromptAutocompleteGeneration)({
+          generatePromptAutocomplete: () => Effect.succeed({ suggestions: [] }),
+          ...options?.layers?.promptAutocompleteGeneration,
         }),
       ),
       Layer.provide(

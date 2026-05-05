@@ -216,6 +216,12 @@ function createMockEnvironmentApi(input: {
           suggestions: [],
         })) as EnvironmentApi["suggestions"]["generateReplySuggestions"],
     },
+    promptAutocomplete: {
+      generate: (() =>
+        Promise.resolve({
+          suggestions: [],
+        })) as EnvironmentApi["promptAutocomplete"]["generate"],
+    },
     promptImprovement: {
       generate: (() =>
         Promise.resolve({

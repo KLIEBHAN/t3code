@@ -3,10 +3,13 @@ import { useQuery } from "@tanstack/react-query";
 import { useCallback, useMemo, type MutableRefObject } from "react";
 
 import { useReplySuggestionVisibility } from "../../hooks/useReplySuggestionVisibility";
+import { usePromptAutocomplete } from "../../hooks/usePromptAutocomplete";
 import { usePromptImprovement } from "../../hooks/usePromptImprovement";
 import { replySuggestionsQueryOptions } from "../../lib/replySuggestionsReactQuery";
+import { derivePromptAutocompleteRequest } from "../../promptAutocomplete";
 import { derivePromptImprovementRequest } from "../../promptImprovement";
 import { deriveReplySuggestionsRequest } from "../../replySuggestions";
+import type { ComposerTrigger } from "../../composer-logic";
 import type { PendingApproval, PendingUserInput } from "../../session-logic";
 import type { SessionPhase, Thread } from "../../types";
 import { toastManager } from "../ui/toast";
@@ -21,11 +24,15 @@ interface UseComposerAssistOptions {
   activePendingUserInput: PendingUserInput | null;
   activeThread: Thread | undefined;
   composerImageCount: number;
+  composerCursor: number;
+  composerTerminalContextCount: number;
+  composerTrigger: ComposerTrigger | null;
   environmentId: EnvironmentId;
   isConnecting: boolean;
   isPreparingWorktree: boolean;
   isSendBusy: boolean;
   isServerThread: boolean;
+  isComposerFocused: boolean;
   latestTurnOutputSettled: boolean;
   phase: SessionPhase;
   prompt: string;
@@ -37,12 +44,14 @@ interface UseComposerAssistOptions {
 }
 
 type ComposerPromptImprovementState = ReturnType<typeof usePromptImprovement>;
+type ComposerPromptAutocompleteState = ReturnType<typeof usePromptAutocomplete>;
 type ComposerReplySuggestionVisibility = ReturnType<typeof useReplySuggestionVisibility>;
 
 interface UseComposerAssistResult {
   editReplySuggestion: (text: string) => void;
   insertPromptImprovementBelow: () => void;
   onImprovePrompt: () => Promise<void>;
+  promptAutocomplete: ComposerPromptAutocompleteState;
   promptImprovement: ComposerPromptImprovementState;
   replySuggestionVisibility: ComposerReplySuggestionVisibility;
   replySuggestions: readonly ReplySuggestion[];
@@ -126,6 +135,50 @@ export function useComposerAssist(options: UseComposerAssistOptions): UseCompose
     currentPrompt: options.prompt,
   });
 
+  const promptAutocompleteRequest = useMemo(
+    () =>
+      derivePromptAutocompleteRequest({
+        activeThread: options.activeThread,
+        isServerThread: options.isServerThread,
+        prompt: options.prompt,
+        cursor: options.composerCursor,
+        isFocused: options.isComposerFocused,
+        isBusy:
+          options.phase === "running" ||
+          options.isSendBusy ||
+          options.isConnecting ||
+          options.isPreparingWorktree,
+        hasPendingApproval: options.activePendingApproval !== null,
+        hasPendingUserInput: options.activePendingUserInput !== null,
+        showPlanFollowUpPrompt: options.showPlanFollowUpPrompt,
+        composerImageCount: options.composerImageCount,
+        composerTerminalContextCount: options.composerTerminalContextCount,
+        composerTrigger: options.composerTrigger,
+      }),
+    [
+      options.activePendingApproval,
+      options.activePendingUserInput,
+      options.activeThread,
+      options.composerCursor,
+      options.composerImageCount,
+      options.composerTerminalContextCount,
+      options.composerTrigger,
+      options.isComposerFocused,
+      options.isConnecting,
+      options.isPreparingWorktree,
+      options.isSendBusy,
+      options.isServerThread,
+      options.phase,
+      options.prompt,
+      options.showPlanFollowUpPrompt,
+    ],
+  );
+  const promptAutocomplete = usePromptAutocomplete({
+    environmentId: options.environmentId,
+    request: promptAutocompleteRequest,
+    modelSelection: options.textGenerationModelSelection,
+  });
+
   const editReplySuggestion = useCallback(
     (text: string) => {
       promptImprovement.dismiss();
@@ -180,6 +233,7 @@ export function useComposerAssist(options: UseComposerAssistOptions): UseCompose
     editReplySuggestion,
     insertPromptImprovementBelow,
     onImprovePrompt,
+    promptAutocomplete,
     promptImprovement,
     replySuggestionVisibility,
     replySuggestions,

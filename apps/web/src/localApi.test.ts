@@ -68,6 +68,9 @@ const rpcClientMock = {
   suggestions: {
     generateReplySuggestions: vi.fn(),
   },
+  promptAutocomplete: {
+    generate: vi.fn(),
+  },
   promptImprovement: {
     generate: vi.fn(),
   },
