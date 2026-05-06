@@ -1105,6 +1105,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
         yield* runGit(repoDir, ["config", "remote.my-org/upstream.pushurl", upstreamDir]);
         yield* runGit(repoDir, [
           "config",
+          "--add",
           `url.${upstreamDir}.insteadOf`,
           "git@github.com:pingdotgg/codething-mvp.git",
         ]);
@@ -1960,6 +1961,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
         yield* runGit(repoDir, ["config", "remote.my-org/upstream.pushurl", upstreamDir]);
         yield* runGit(repoDir, [
           "config",
+          "--add",
           `url.${upstreamDir}.insteadOf`,
           "git@github.com:pingdotgg/codething-mvp.git",
         ]);
