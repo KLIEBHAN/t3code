@@ -1,6 +1,13 @@
 import type { ServerConfigIssue, ServerCustomSlashCommand } from "@t3tools/contracts";
 import { RESERVED_SLASH_COMMAND_NAMES } from "@t3tools/shared/slashCommands";
-import { Cache, Effect, FileSystem, Layer, Path, PubSub, Context, Stream } from "effect";
+import * as Cache from "effect/Cache";
+import * as Context from "effect/Context";
+import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
+import * as Layer from "effect/Layer";
+import * as Path from "effect/Path";
+import * as PubSub from "effect/PubSub";
+import * as Stream from "effect/Stream";
 
 import { ServerConfig } from "./config.ts";
 

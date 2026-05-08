@@ -151,7 +151,7 @@ describe("makeManagedServerProvider", () => {
           getSettings: Effect.succeed({ enabled: true }),
           streamSettings: Stream.empty,
           haveSettingsChanged: (previous, next) => previous.enabled !== next.enabled,
-          initialSnapshot: () => initialSnapshot,
+          initialSnapshot: () => Effect.succeed(initialSnapshot),
           checkProvider: Deferred.await(releaseCheck).pipe(Effect.as(refreshedSnapshot)),
           refreshInterval: "1 hour",
         });

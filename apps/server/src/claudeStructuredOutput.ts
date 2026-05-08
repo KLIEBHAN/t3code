@@ -1,4 +1,7 @@
-import { Effect, Option, Schema, Stream } from "effect";
+import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
+import * as Stream from "effect/Stream";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 import {
   DEFAULT_GIT_TEXT_GENERATION_MODEL,
@@ -41,6 +44,11 @@ export class ClaudeStructuredOutputError extends Schema.TaggedErrorClass<ClaudeS
 const ClaudeOutputEnvelope = Schema.Struct({
   structured_output: Schema.Unknown,
 });
+const isClaudeStructuredOutputError = Schema.is(ClaudeStructuredOutputError);
+const encodeUnknownJsonString = Schema.encodeUnknownSync(Schema.UnknownFromJsonString);
+const decodeClaudeOutputEnvelopeJson = Schema.decodeEffect(
+  Schema.fromJsonString(ClaudeOutputEnvelope),
+);
 
 function toClaudeOutputJsonSchema(schema: Schema.Top): unknown {
   const document = Schema.toJsonSchemaDocument(schema);
@@ -58,7 +66,7 @@ function normalizeClaudeError(
   error: unknown,
   fallback: string,
 ): ClaudeStructuredOutputError {
-  if (Schema.is(ClaudeStructuredOutputError)(error)) {
+  if (isClaudeStructuredOutputError(error)) {
     return error;
   }
 
@@ -143,7 +151,7 @@ export function runClaudeStructuredOutput<S extends Schema.Top>(input: {
       ...(typeof thinking === "boolean" ? { alwaysThinkingEnabled: thinking } : {}),
       ...(fastMode ? { fastMode: true } : {}),
     };
-    const jsonSchemaStr = JSON.stringify(toClaudeOutputJsonSchema(input.outputSchema));
+    const jsonSchemaStr = encodeUnknownJsonString(toClaudeOutputJsonSchema(input.outputSchema));
 
     const runClaudeCommand = Effect.gen(function* () {
       const command = ChildProcess.make(
@@ -157,7 +165,9 @@ export function runClaudeStructuredOutput<S extends Schema.Top>(input: {
           "--model",
           resolveClaudeApiModelId(modelSelection),
           ...(cliEffort ? ["--effort", cliEffort] : []),
-          ...(Object.keys(settings).length > 0 ? ["--settings", JSON.stringify(settings)] : []),
+          ...(Object.keys(settings).length > 0
+            ? ["--settings", encodeUnknownJsonString(settings)]
+            : []),
           "--dangerously-skip-permissions",
         ],
         {
@@ -224,9 +234,7 @@ export function runClaudeStructuredOutput<S extends Schema.Top>(input: {
       ),
     );
 
-    const envelope = yield* Schema.decodeEffect(Schema.fromJsonString(ClaudeOutputEnvelope))(
-      rawStdout,
-    ).pipe(
+    const envelope = yield* decodeClaudeOutputEnvelopeJson(rawStdout).pipe(
       Effect.catchTag("SchemaError", (cause) =>
         Effect.fail(
           new ClaudeStructuredOutputError({
@@ -238,7 +246,8 @@ export function runClaudeStructuredOutput<S extends Schema.Top>(input: {
       ),
     );
 
-    return yield* Schema.decodeEffect(input.outputSchema)(envelope.structured_output).pipe(
+    const decodeStructuredOutput = Schema.decodeEffect(input.outputSchema);
+    return yield* decodeStructuredOutput(envelope.structured_output).pipe(
       Effect.catchTag("SchemaError", (cause) =>
         Effect.fail(
           new ClaudeStructuredOutputError({

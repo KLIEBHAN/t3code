@@ -121,8 +121,6 @@ function isThreadDetailEvent(event: OrchestrationEvent): event is Extract<
   );
 }
 
-const PROVIDER_STATUS_DEBOUNCE_MS = 200;
-
 function toAuthAccessStreamEvent(
   change: BootstrapCredentialChange | SessionCredentialChange,
   revision: number,

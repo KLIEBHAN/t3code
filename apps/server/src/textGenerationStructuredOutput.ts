@@ -8,7 +8,8 @@ import {
   ProviderInstanceId,
   type ServerSettings,
 } from "@t3tools/contracts";
-import { Effect, Schema } from "effect";
+import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
 
 import { runCodexStructuredOutput } from "./codexStructuredOutput.ts";
 import { runClaudeStructuredOutput } from "./claudeStructuredOutput.ts";
@@ -32,6 +33,8 @@ const OPENCODE_INSTANCE_ID = ProviderInstanceId.make("opencode");
 const DEFAULT_CODEX_TEXT_GENERATION_MODEL =
   DEFAULT_GIT_TEXT_GENERATION_MODEL_BY_PROVIDER[CODEX_DRIVER_KIND] ??
   DEFAULT_GIT_TEXT_GENERATION_MODEL;
+const decodeCodexSettings = Schema.decodeEffect(CodexSettings);
+const decodeClaudeSettings = Schema.decodeEffect(ClaudeSettings);
 
 function resolveTextGenerationDriver(settings: ServerSettings, modelSelection: ModelSelection) {
   const instanceConfig = settings.providerInstances[modelSelection.instanceId];
@@ -57,7 +60,7 @@ function resolveCodexSettings(settings: ServerSettings, modelSelection: ModelSel
     return Effect.succeed(settings.providers.codex);
   }
 
-  return Schema.decodeEffect(CodexSettings)(instanceConfig.config ?? {}).pipe(
+  return decodeCodexSettings(instanceConfig.config ?? {}).pipe(
     Effect.orElseSucceed(() => settings.providers.codex),
   );
 }
@@ -68,7 +71,7 @@ function resolveClaudeSettings(settings: ServerSettings, modelSelection: ModelSe
     return Effect.succeed(settings.providers.claudeAgent);
   }
 
-  return Schema.decodeEffect(ClaudeSettings)(instanceConfig.config ?? {}).pipe(
+  return decodeClaudeSettings(instanceConfig.config ?? {}).pipe(
     Effect.orElseSucceed(() => settings.providers.claudeAgent),
   );
 }

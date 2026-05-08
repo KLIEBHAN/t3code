@@ -1,6 +1,11 @@
 import { randomUUID } from "node:crypto";
 
-import { Effect, FileSystem, Option, Path, Schema, Stream } from "effect";
+import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
+import * as Option from "effect/Option";
+import * as Path from "effect/Path";
+import * as Schema from "effect/Schema";
+import * as Stream from "effect/Stream";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 import {
   DEFAULT_GIT_TEXT_GENERATION_MODEL,
@@ -33,6 +38,9 @@ export class CodexStructuredOutputError extends Schema.TaggedErrorClass<CodexStr
   }
 }
 
+const isCodexStructuredOutputError = Schema.is(CodexStructuredOutputError);
+const encodeUnknownJsonString = Schema.encodeUnknownSync(Schema.UnknownFromJsonString);
+
 function toCodexOutputJsonSchema(schema: Schema.Top): unknown {
   const document = Schema.toJsonSchemaDocument(schema);
   if (document.definitions && Object.keys(document.definitions).length > 0) {
@@ -49,7 +57,7 @@ function normalizeCodexError(
   error: unknown,
   fallback: string,
 ): CodexStructuredOutputError {
-  if (Schema.is(CodexStructuredOutputError)(error)) {
+  if (isCodexStructuredOutputError(error)) {
     return error;
   }
 
@@ -148,7 +156,7 @@ export function runCodexStructuredOutput<S extends Schema.Top>(input: {
 
     const schemaPath = yield* writeTempFile(
       "codex-schema",
-      JSON.stringify(toCodexOutputJsonSchema(input.outputSchema)),
+      encodeUnknownJsonString(toCodexOutputJsonSchema(input.outputSchema)),
     );
     const outputPath = yield* writeTempFile("codex-output", "");
 

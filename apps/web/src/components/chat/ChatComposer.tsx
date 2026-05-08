@@ -1171,7 +1171,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       removeComposerDraftTerminalContext(composerDraftTarget, contextId);
       const nextCursor = collapseExpandedComposerCursor(removal.prompt, removal.cursor);
       setComposerCursor(nextCursor);
-      setComposerTrigger(detectComposerTrigger(removal.prompt, removal.cursor, customSlashCommands));
+      setComposerTrigger(
+        detectComposerTrigger(removal.prompt, removal.cursor, customSlashCommands),
+      );
     },
     [
       composerDraftTarget,
@@ -1559,11 +1561,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     const snapshot = readComposerSnapshot();
     return {
       snapshot,
-      trigger: detectComposerTrigger(
-        snapshot.value,
-        snapshot.expandedCursor,
-        customSlashCommands,
-      ),
+      trigger: detectComposerTrigger(snapshot.value, snapshot.expandedCursor, customSlashCommands),
     };
   }, [customSlashCommands, readComposerSnapshot]);
 

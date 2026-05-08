@@ -1,5 +1,5 @@
 import type { ModelSelection } from "@t3tools/contracts";
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 
 export function logTextGenerationSelection(input: {
   operation: string;
