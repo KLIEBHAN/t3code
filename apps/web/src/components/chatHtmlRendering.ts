@@ -29,6 +29,21 @@ const CHAT_HTML_STRIPPED_TAG_NAMES = [
 ] as const;
 
 const CHAT_HTML_WRAPPER_TAG_NAMES = ["body", "html"] as const;
+const CHAT_HTML_VOID_TAG_NAMES = [
+  "area",
+  "base",
+  "br",
+  "col",
+  "embed",
+  "hr",
+  "img",
+  "input",
+  "link",
+  "meta",
+  "source",
+  "track",
+  "wbr",
+] as const;
 
 const CHAT_HTML_RENDER_TAG_NAMES = [
   ...new Set([...(defaultSchema.tagNames ?? []), ...CHAT_HTML_EXTRA_TAG_NAMES]),
@@ -42,10 +57,10 @@ const CHAT_HTML_DETECTION_TAG_NAMES = [
   ]),
 ];
 
-const LEADING_HTML_FRAGMENT_PATTERN = new RegExp(
-  `^\\s*(?:<!doctype\\s+html\\b|<\\/?(?:${CHAT_HTML_DETECTION_TAG_NAMES.join("|")})\\b[^>]*>)`,
-  "i",
-);
+const CHAT_HTML_DETECTION_TAG_NAME_SET = new Set<string>(CHAT_HTML_DETECTION_TAG_NAMES);
+const CHAT_HTML_VOID_TAG_NAME_SET = new Set<string>(CHAT_HTML_VOID_TAG_NAMES);
+const LEADING_HTML_DOCTYPE_PATTERN = /^\s*<!doctype\s+html\b/i;
+const LEADING_HTML_OPEN_TAG_PATTERN = /^\s*<([A-Za-z][A-Za-z0-9-]*)\b[^>]*>/;
 
 const chatHtmlSanitizeSchema: HastSanitizeSchema = {
   ...defaultSchema,
@@ -58,16 +73,59 @@ const chatHtmlSanitizeSchema: HastSanitizeSchema = {
 };
 
 export function shouldRenderHtmlFragment(text: string): boolean {
-  return LEADING_HTML_FRAGMENT_PATTERN.test(text);
+  if (LEADING_HTML_DOCTYPE_PATTERN.test(text)) return true;
+
+  const match = text.match(LEADING_HTML_OPEN_TAG_PATTERN);
+  if (!match) return false;
+
+  const tagName = match[1]?.toLowerCase();
+  if (!tagName || !CHAT_HTML_DETECTION_TAG_NAME_SET.has(tagName)) return false;
+
+  const openingTag = match[0];
+  if (/\/>\s*$/.test(openingTag) || CHAT_HTML_VOID_TAG_NAME_SET.has(tagName)) {
+    return true;
+  }
+
+  return new RegExp(`</${tagName}\\s*>`, "i").test(text.slice(openingTag.length));
+}
+
+export function createSanitizedHtmlFragment(text: string) {
+  return sanitize(fromHtml(text, { fragment: true }), chatHtmlSanitizeSchema);
+}
+
+export type SanitizedHtmlFragment = ReturnType<typeof createSanitizedHtmlFragment>;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function collectLinkHrefs(node: unknown, hrefs: string[]): void {
+  if (!isRecord(node)) return;
+
+  if (node.type === "element" && node.tagName === "a" && isRecord(node.properties)) {
+    const href = node.properties.href;
+    if (typeof href === "string") {
+      hrefs.push(href);
+    }
+  }
+
+  if (!Array.isArray(node.children)) return;
+  for (const child of node.children) {
+    collectLinkHrefs(child, hrefs);
+  }
+}
+
+export function extractSanitizedHtmlLinkHrefs(fragment: SanitizedHtmlFragment): string[] {
+  const hrefs: string[] = [];
+  collectLinkHrefs(fragment, hrefs);
+  return hrefs;
 }
 
 export function renderSanitizedHtmlFragment(
-  text: string,
+  fragment: SanitizedHtmlFragment,
   components: Partial<HastComponents>,
 ): ReactNode {
-  const unsafeTree = fromHtml(text, { fragment: true });
-  const safeTree = sanitize(unsafeTree, chatHtmlSanitizeSchema);
-  return toJsxRuntime(safeTree, {
+  return toJsxRuntime(fragment, {
     Fragment,
     jsx,
     jsxs,

@@ -20,7 +20,12 @@ import type { Components } from "react-markdown";
 import ReactMarkdown from "react-markdown";
 import { defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { renderSanitizedHtmlFragment, shouldRenderHtmlFragment } from "./chatHtmlRendering";
+import {
+  createSanitizedHtmlFragment,
+  extractSanitizedHtmlLinkHrefs,
+  renderSanitizedHtmlFragment,
+  shouldRenderHtmlFragment,
+} from "./chatHtmlRendering";
 import { VscodeEntryIcon } from "./chat/VscodeEntryIcon";
 import { renderSkillInlineMarkdownChildren } from "./chat/SkillInlineText";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
@@ -523,12 +528,19 @@ function ChatMarkdown({
   const { resolvedTheme } = useTheme();
   const diffThemeName = resolveDiffThemeName(resolvedTheme);
   const renderAsHtmlFragment = !isStreaming && shouldRenderHtmlFragment(text);
+  const sanitizedHtmlFragment = useMemo(
+    () => (renderAsHtmlFragment ? createSanitizedHtmlFragment(text) : null),
+    [renderAsHtmlFragment, text],
+  );
   const markdownFileLinkMetaByHref = useMemo(() => {
     const metaByHref = new Map<
       string,
       NonNullable<ReturnType<typeof resolveMarkdownFileLinkMeta>>
     >();
-    for (const href of extractMarkdownLinkHrefs(text)) {
+    const linkHrefs = sanitizedHtmlFragment
+      ? extractSanitizedHtmlLinkHrefs(sanitizedHtmlFragment)
+      : extractMarkdownLinkHrefs(text);
+    for (const href of linkHrefs) {
       const normalizedHref = normalizeMarkdownLinkHrefKey(href);
       if (metaByHref.has(normalizedHref)) continue;
       const meta = resolveMarkdownFileLinkMeta(normalizedHref, cwd);
@@ -537,7 +549,7 @@ function ChatMarkdown({
       }
     }
     return metaByHref;
-  }, [cwd, text]);
+  }, [cwd, sanitizedHtmlFragment, text]);
   const fileLinkParentSuffixByPath = useMemo(() => {
     const filePaths = [...markdownFileLinkMetaByHref.values()].map((meta) => meta.filePath);
     return buildFileLinkParentSuffixByPath(filePaths);
@@ -632,10 +644,13 @@ function ChatMarkdown({
   );
   const renderedHtmlFragment = useMemo(
     () =>
-      renderAsHtmlFragment
-        ? renderSanitizedHtmlFragment(text, markdownComponents as Partial<HastComponents>)
+      sanitizedHtmlFragment
+        ? renderSanitizedHtmlFragment(
+            sanitizedHtmlFragment,
+            markdownComponents as Partial<HastComponents>,
+          )
         : null,
-    [markdownComponents, renderAsHtmlFragment, text],
+    [markdownComponents, sanitizedHtmlFragment],
   );
 
   return (

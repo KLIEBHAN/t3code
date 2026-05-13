@@ -199,6 +199,19 @@ describe("ChatMarkdown", () => {
     }
   });
 
+  it("does not treat leading unclosed tag mentions as raw HTML fragments", async () => {
+    const screen = await render(
+      <ChatMarkdown text="<section> for semantic grouping." cwd="/repo/project" />,
+    );
+
+    try {
+      expect(document.querySelector(".chat-markdown section")).toBeNull();
+      expect(document.body.textContent ?? "").toContain("<section> for semantic grouping.");
+    } finally {
+      await screen.unmount();
+    }
+  });
+
   it("keeps mixed markdown with later tag examples on the markdown path", async () => {
     const screen = await render(
       <ChatMarkdown
@@ -257,6 +270,69 @@ describe("ChatMarkdown", () => {
     }
   });
 
+  it("keeps safe disclosure interactivity inside raw HTML fragments", async () => {
+    const screen = await render(
+      <ChatMarkdown
+        text="<section><details><summary>More</summary><p>Hidden detail</p></details></section>"
+        cwd="/repo/project"
+      />,
+    );
+
+    try {
+      const details = document.querySelector(".chat-markdown details") as HTMLDetailsElement | null;
+      expect(details).not.toBeNull();
+      expect(details?.open).toBe(false);
+
+      await page.getByText("More").click();
+
+      expect(details?.open).toBe(true);
+    } finally {
+      await screen.unmount();
+    }
+  });
+
+  it("keeps raw HTML checkboxes disabled", async () => {
+    const screen = await render(
+      <ChatMarkdown
+        text='<section><label><input type="checkbox" checked /> Done</label></section>'
+        cwd="/repo/project"
+      />,
+    );
+
+    try {
+      const checkbox = document.querySelector(
+        '.chat-markdown input[type="checkbox"]',
+      ) as HTMLInputElement | null;
+      expect(checkbox).not.toBeNull();
+      expect(checkbox?.disabled).toBe(true);
+      expect(checkbox?.checked).toBe(true);
+
+      checkbox?.click();
+
+      expect(checkbox?.checked).toBe(true);
+    } finally {
+      await screen.unmount();
+    }
+  });
+
+  it("strips unsupported interactive controls from raw HTML fragments", async () => {
+    const screen = await render(
+      <ChatMarkdown
+        text={`<section><button onclick="alert('x')">Run action</button><form action="https://example.com"><input type="text" value="unsafe" /></form></section>`}
+        cwd="/repo/project"
+      />,
+    );
+
+    try {
+      expect(document.querySelector(".chat-markdown button")).toBeNull();
+      expect(document.querySelector(".chat-markdown form")).toBeNull();
+      expect(document.querySelector('.chat-markdown input[type="text"]')).toBeNull();
+      expect(document.body.textContent ?? "").toContain("Run action");
+    } finally {
+      await screen.unmount();
+    }
+  });
+
   it("keeps editor-aware file links inside raw HTML fragments", async () => {
     const filePath =
       "/Users/yashsingh/p/sco/claude-code-extract/src/utils/permissions/PermissionRule.ts";
@@ -277,6 +353,28 @@ describe("ChatMarkdown", () => {
       await vi.waitFor(() => {
         expect(openInPreferredEditorMock).toHaveBeenCalledWith(expect.anything(), filePath);
       });
+    } finally {
+      await screen.unmount();
+    }
+  });
+
+  it("disambiguates duplicate file basenames inside raw HTML fragments", async () => {
+    const firstPath = "/Users/yashsingh/p/t3code/apps/web/src/components/chat/MessagesTimeline.tsx";
+    const secondPath = "/Users/yashsingh/p/t3code/apps/web/src/components/MessagesTimeline.tsx";
+    const screen = await render(
+      <ChatMarkdown
+        text={`<section><a href="file://${firstPath}">MessagesTimeline.tsx</a> and <a href="file://${secondPath}">MessagesTimeline.tsx</a></section>`}
+        cwd="/repo/project"
+      />,
+    );
+
+    try {
+      await expect
+        .element(page.getByRole("link", { name: "MessagesTimeline.tsx · components/chat" }))
+        .toBeInTheDocument();
+      await expect
+        .element(page.getByRole("link", { name: "MessagesTimeline.tsx · src/components" }))
+        .toBeInTheDocument();
     } finally {
       await screen.unmount();
     }
