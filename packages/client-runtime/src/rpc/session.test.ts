@@ -120,6 +120,8 @@ const SERVER_CONFIG: ServerConfigType = {
   cwd: "/tmp/workspace",
   keybindingsConfigPath: "/tmp/workspace/keybindings.json",
   keybindings: [],
+  customSlashCommandsDirectoryPath: "/tmp/workspace/.config/slash-commands",
+  customSlashCommands: [],
   issues: [],
   providers: [],
   availableEditors: [],

@@ -1,5 +1,6 @@
 import {
   EventId,
+  type MessageId,
   type OrchestrationCommand,
   type OrchestrationEvent,
   type OrchestrationReadModel,
@@ -22,6 +23,44 @@ import {
 import { projectEvent } from "./projector.ts";
 
 const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
+
+const REVIEW_COMMAND_PROMPT =
+  "Review the current changes in this project. Focus on correctness, regressions, missing tests, and notable risks. Use the relevant diff and files as needed.";
+const COMPACT_COMMAND_PROMPT =
+  "Create a compact handoff summary for this thread so work can continue with less context. Preserve the goal, current state, important constraints, files touched, open questions, and the next concrete steps. Keep it concise and actionable.";
+
+type SystemGeneratedTurnCommand = Extract<
+  OrchestrationCommand,
+  {
+    type: "thread.review.start" | "thread.compact.start";
+  }
+>;
+
+function buildTurnStartProviderFields(
+  command:
+    | Extract<OrchestrationCommand, { type: "thread.turn.start" }>
+    | SystemGeneratedTurnCommand,
+) {
+  return {
+    ...(command.modelSelection !== undefined ? { modelSelection: command.modelSelection } : {}),
+    ...("titleSeed" in command && command.titleSeed !== undefined
+      ? { titleSeed: command.titleSeed }
+      : {}),
+    ...("providerOptions" in command && command.providerOptions !== undefined
+      ? { providerOptions: command.providerOptions }
+      : {}),
+  };
+}
+
+function buildSystemGeneratedPrompt(
+  basePrompt: string,
+  instructions: string | undefined,
+  instructionsLabel: string,
+): string {
+  return instructions && instructions.length > 0
+    ? `${basePrompt}\n\n${instructionsLabel}:\n${instructions}`
+    : basePrompt;
+}
 
 function withEventBase(
   input: Pick<OrchestrationCommand, "commandId"> & {
@@ -58,6 +97,63 @@ type PlannedOrchestrationEvent = Omit<OrchestrationEvent, "sequence">;
 type DecideOrchestrationCommandResult =
   | PlannedOrchestrationEvent
   | ReadonlyArray<PlannedOrchestrationEvent>;
+
+const buildTurnStartEvents = Effect.fn("buildTurnStartEvents")(function* (input: {
+  readonly command:
+    | Extract<OrchestrationCommand, { type: "thread.turn.start" }>
+    | SystemGeneratedTurnCommand;
+  readonly readModel: OrchestrationReadModel;
+  readonly messageId: MessageId;
+  readonly messageText: string;
+  readonly attachments: Extract<
+    OrchestrationCommand,
+    { type: "thread.turn.start" }
+  >["message"]["attachments"];
+}) {
+  const thread = input.readModel.threads.find((entry) => entry.id === input.command.threadId);
+  const userMessageEvent: Omit<OrchestrationEvent, "sequence"> = {
+    ...(yield* withEventBase({
+      aggregateKind: "thread",
+      aggregateId: input.command.threadId,
+      occurredAt: input.command.createdAt,
+      commandId: input.command.commandId,
+    })),
+    type: "thread.message-sent",
+    payload: {
+      threadId: input.command.threadId,
+      messageId: input.messageId,
+      role: "user",
+      text: input.messageText,
+      attachments: input.attachments,
+      turnId: null,
+      streaming: false,
+      createdAt: input.command.createdAt,
+      updatedAt: input.command.createdAt,
+    },
+  };
+  const turnStartRequestedEvent: Omit<OrchestrationEvent, "sequence"> = {
+    ...(yield* withEventBase({
+      aggregateKind: "thread",
+      aggregateId: input.command.threadId,
+      occurredAt: input.command.createdAt,
+      commandId: input.command.commandId,
+    })),
+    causationEventId: userMessageEvent.eventId,
+    type: "thread.turn-start-requested",
+    payload: {
+      threadId: input.command.threadId,
+      messageId: input.messageId,
+      ...buildTurnStartProviderFields(input.command),
+      runtimeMode: thread?.runtimeMode ?? input.command.runtimeMode,
+      interactionMode: thread?.interactionMode ?? input.command.interactionMode,
+      ...("sourceProposedPlan" in input.command && input.command.sourceProposedPlan !== undefined
+        ? { sourceProposedPlan: input.command.sourceProposedPlan }
+        : {}),
+      createdAt: input.command.createdAt,
+    },
+  };
+  return [userMessageEvent, turnStartRequestedEvent] as const;
+});
 
 const decideCommandSequence = Effect.fn("decideCommandSequence")(function* ({
   commands,
@@ -416,49 +512,51 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           detail: `Proposed plan '${sourceProposedPlan?.planId}' belongs to thread '${sourceThread.id}' in a different project.`,
         });
       }
-      const userMessageEvent: Omit<OrchestrationEvent, "sequence"> = {
-        ...(yield* withEventBase({
-          aggregateKind: "thread",
-          aggregateId: command.threadId,
-          occurredAt: command.createdAt,
-          commandId: command.commandId,
-        })),
-        type: "thread.message-sent",
-        payload: {
-          threadId: command.threadId,
-          messageId: command.message.messageId,
-          role: "user",
-          text: command.message.text,
-          attachments: command.message.attachments,
-          turnId: null,
-          streaming: false,
-          createdAt: command.createdAt,
-          updatedAt: command.createdAt,
-        },
-      };
-      const turnStartRequestedEvent: Omit<OrchestrationEvent, "sequence"> = {
-        ...(yield* withEventBase({
-          aggregateKind: "thread",
-          aggregateId: command.threadId,
-          occurredAt: command.createdAt,
-          commandId: command.commandId,
-        })),
-        causationEventId: userMessageEvent.eventId,
-        type: "thread.turn-start-requested",
-        payload: {
-          threadId: command.threadId,
-          messageId: command.message.messageId,
-          ...(command.modelSelection !== undefined
-            ? { modelSelection: command.modelSelection }
-            : {}),
-          ...(command.titleSeed !== undefined ? { titleSeed: command.titleSeed } : {}),
-          runtimeMode: targetThread.runtimeMode,
-          interactionMode: targetThread.interactionMode,
-          ...(sourceProposedPlan !== undefined ? { sourceProposedPlan } : {}),
-          createdAt: command.createdAt,
-        },
-      };
-      return [userMessageEvent, turnStartRequestedEvent];
+      return yield* buildTurnStartEvents({
+        command,
+        readModel,
+        messageId: command.message.messageId,
+        messageText: command.message.text,
+        attachments: command.message.attachments,
+      });
+    }
+
+    case "thread.review.start": {
+      yield* requireThread({
+        readModel,
+        command,
+        threadId: command.threadId,
+      });
+      return yield* buildTurnStartEvents({
+        command,
+        readModel,
+        messageId: command.messageId,
+        messageText: buildSystemGeneratedPrompt(
+          REVIEW_COMMAND_PROMPT,
+          command.instructions,
+          "Additional review instructions",
+        ),
+        attachments: [],
+      });
+    }
+
+    case "thread.compact.start": {
+      yield* requireThread({
+        readModel,
+        command,
+        threadId: command.threadId,
+      });
+      return yield* buildTurnStartEvents({
+        command,
+        readModel,
+        messageId: command.messageId,
+        messageText: buildSystemGeneratedPrompt(
+          COMPACT_COMMAND_PROMPT,
+          command.instructions,
+          "Additional compaction instructions",
+        ),
+        attachments: [],
+      });
     }
 
     case "thread.turn.interrupt": {

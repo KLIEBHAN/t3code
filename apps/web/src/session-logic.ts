@@ -21,6 +21,7 @@ import type {
   ThreadSession,
   TurnDiffSummary,
 } from "./types";
+import { deriveProposedPlanImplementationState } from "./proposedPlanImplementationState";
 
 export type ProviderPickerKind = ProviderDriverKind;
 
@@ -68,6 +69,8 @@ export interface WorkLogEntry {
   detail?: string;
   command?: string;
   rawCommand?: string;
+  result?: string;
+  output?: string;
   changedFiles?: ReadonlyArray<string>;
   tone: "thinking" | "tool" | "info" | "error";
   toolTitle?: string;
@@ -288,8 +291,27 @@ export function formatElapsed(startIso: string, endIso: string | undefined): str
   return formatDuration(endedAt - startedAt);
 }
 
-type LatestTurnTiming = Pick<OrchestrationLatestTurn, "turnId" | "startedAt" | "completedAt">;
+type LatestTurnTiming = Pick<
+  OrchestrationLatestTurn,
+  "turnId" | "state" | "startedAt" | "completedAt"
+>;
 type SessionActivityState = Pick<NonNullable<Thread["session"]>, "status" | "activeTurnId">;
+type LatestTurnMessageState = Pick<ChatMessage, "turnId" | "role" | "streaming" | "text"> & {
+  createdAt?: string;
+  completedAt?: string | undefined;
+};
+
+interface SendPhaseResetInput {
+  latestTurn: LatestTurnTiming | null;
+  session: SessionActivityState | null;
+  sendStartedAt: string | null;
+  sendBaselineLatestTurnId: TurnId | string | null;
+  sendBaselineLatestTurnCompletedAt: string | null;
+  latestTurnOutputSettled?: boolean;
+  hasPendingApproval: boolean;
+  hasPendingUserInput: boolean;
+  hasThreadError: boolean;
+}
 
 export function isLatestTurnSettled(
   latestTurn: LatestTurnTiming | null,
@@ -302,10 +324,127 @@ export function isLatestTurnSettled(
   return true;
 }
 
+export function hasCompletedAssistantMessageForTurn(
+  messages: ReadonlyArray<LatestTurnMessageState>,
+  turnId: TurnId | string | null | undefined,
+): boolean {
+  if (!turnId) {
+    return false;
+  }
+
+  const assistantMessages = messages.filter(
+    (message) => message.turnId === turnId && message.role === "assistant",
+  );
+  if (assistantMessages.length === 0) {
+    return false;
+  }
+  if (assistantMessages.some((message) => message.streaming)) {
+    return false;
+  }
+
+  return assistantMessages.some((message) => message.text.trim().length > 0);
+}
+
+export function hasStreamingAssistantMessageForTurn(
+  messages: ReadonlyArray<LatestTurnMessageState>,
+  turnId: TurnId | string | null | undefined,
+): boolean {
+  if (!turnId) {
+    return false;
+  }
+
+  return messages.some(
+    (message) => message.turnId === turnId && message.role === "assistant" && message.streaming,
+  );
+}
+
+function hasAssistantMessageOccurredAfterTurnStart(
+  message: Pick<LatestTurnMessageState, "createdAt" | "completedAt">,
+  latestTurn: LatestTurnTiming | null,
+): boolean {
+  if (!latestTurn?.startedAt) {
+    return false;
+  }
+
+  const turnStartedAtMs = Date.parse(latestTurn.startedAt);
+  if (Number.isNaN(turnStartedAtMs)) {
+    return false;
+  }
+
+  const createdAtMs = message.createdAt ? Date.parse(message.createdAt) : Number.NaN;
+  const completedAtMs = message.completedAt ? Date.parse(message.completedAt) : Number.NaN;
+  const effectiveTimestampMs = !Number.isNaN(completedAtMs) ? completedAtMs : createdAtMs;
+
+  return !Number.isNaN(effectiveTimestampMs) && effectiveTimestampMs >= turnStartedAtMs;
+}
+
+function relevantAssistantMessagesForLatestTurn(
+  messages: ReadonlyArray<LatestTurnMessageState>,
+  latestTurn: LatestTurnTiming | null,
+): LatestTurnMessageState[] {
+  if (!latestTurn?.startedAt) {
+    return [];
+  }
+
+  return messages.filter(
+    (message) =>
+      message.role === "assistant" &&
+      (message.turnId === latestTurn.turnId ||
+        hasAssistantMessageOccurredAfterTurnStart(message, latestTurn)),
+  );
+}
+
+function hasStreamingAssistantOutputForLatestTurn(
+  messages: ReadonlyArray<LatestTurnMessageState>,
+  latestTurn: LatestTurnTiming | null,
+): boolean {
+  return relevantAssistantMessagesForLatestTurn(messages, latestTurn).some(
+    (message) => message.streaming,
+  );
+}
+
+export function isLatestTurnOutputSettled(input: {
+  latestTurn: LatestTurnTiming | null;
+  session: SessionActivityState | null;
+  messages: ReadonlyArray<LatestTurnMessageState>;
+}): boolean {
+  if (!isLatestTurnSettled(input.latestTurn, input.session)) {
+    return false;
+  }
+
+  return !hasStreamingAssistantOutputForLatestTurn(input.messages, input.latestTurn);
+}
+
+export function isLatestTurnOutputFinalizing(input: {
+  latestTurn: LatestTurnTiming | null;
+  session: SessionActivityState | null;
+  messages: ReadonlyArray<LatestTurnMessageState>;
+}): boolean {
+  const { latestTurn, session, messages } = input;
+  if (!latestTurn?.startedAt) {
+    return false;
+  }
+  if (!session) {
+    return false;
+  }
+  if (session.status === "running") {
+    return false;
+  }
+  if (isLatestTurnOutputSettled(input)) {
+    return false;
+  }
+  if (latestTurn.state === "running") {
+    return true;
+  }
+
+  return hasStreamingAssistantOutputForLatestTurn(messages, latestTurn);
+}
+
 export function deriveActiveWorkStartedAt(
   latestTurn: LatestTurnTiming | null,
   session: SessionActivityState | null,
   sendStartedAt: string | null,
+  latestTurnOutputSettled = isLatestTurnSettled(latestTurn, session),
 ): string | null {
   const runningTurnId = session?.status === "running" ? session.activeTurnId : null;
   if (runningTurnId !== null) {
@@ -314,10 +453,30 @@ export function deriveActiveWorkStartedAt(
     }
     return sendStartedAt;
   }
-  if (!isLatestTurnSettled(latestTurn, session)) {
+  if (!latestTurnOutputSettled) {
     return latestTurn?.startedAt ?? sendStartedAt;
   }
   return sendStartedAt;
+}
+
+export function shouldResetSendPhase({
+  latestTurn,
+  session,
+  sendStartedAt,
+  sendBaselineLatestTurnId,
+  sendBaselineLatestTurnCompletedAt,
+  latestTurnOutputSettled = isLatestTurnSettled(latestTurn, session),
+  hasPendingApproval,
+  hasPendingUserInput,
+  hasThreadError,
+}: SendPhaseResetInput): boolean {
+  if (hasPendingApproval || hasPendingUserInput || hasThreadError) return true;
+  if (!sendStartedAt) return false;
+  if (!latestTurnOutputSettled) return false;
+  if (!latestTurn?.completedAt) return false;
+  if (sendBaselineLatestTurnId === null) return true;
+  if (latestTurn.turnId !== sendBaselineLatestTurnId) return true;
+  return latestTurn.completedAt !== sendBaselineLatestTurnCompletedAt;
 }
 
 function requestKindFromRequestType(requestType: unknown): PendingApproval["requestKind"] | null {
@@ -621,7 +780,15 @@ export function findSidebarProposedPlan(input: {
 export function hasActionableProposedPlan(
   proposedPlan: LatestProposedPlanState | Pick<ProposedPlan, "implementedAt"> | null,
 ): boolean {
-  return proposedPlan !== null && proposedPlan.implementedAt === null;
+  if (proposedPlan === null) {
+    return false;
+  }
+
+  if (!("createdAt" in proposedPlan) || !("implementationThreadId" in proposedPlan)) {
+    return proposedPlan.implementedAt === null;
+  }
+
+  return deriveProposedPlanImplementationState(proposedPlan) === "actionable";
 }
 
 export function deriveWorkLogEntries(
@@ -719,6 +886,9 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
   };
   const itemType = extractWorkLogItemType(payload);
   const requestKind = extractWorkLogRequestKind(payload);
+  if (activity.turnId) {
+    entry.turnId = activity.turnId;
+  }
   if (detail) {
     entry.detail = detail;
   }
@@ -727,6 +897,14 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
   }
   if (commandPreview.rawCommand) {
     entry.rawCommand = commandPreview.rawCommand;
+  }
+  const result = extractToolResult(payload, commandPreview.command);
+  if (result) {
+    entry.result = result;
+  }
+  const output = extractToolOutput(payload);
+  if (output) {
+    entry.output = output;
   }
   if (changedFiles.length > 0) {
     entry.changedFiles = changedFiles;
@@ -1008,6 +1186,24 @@ function formatCommandArrayPart(value: string): string {
   return /[\s"'`]/.test(value) ? `"${value.replace(/"/g, '\\"')}"` : value;
 }
 
+function asTrimmedText(value: unknown): string | null {
+  const direct = asTrimmedString(value);
+  if (direct) {
+    return direct;
+  }
+  if (!Array.isArray(value)) {
+    return null;
+  }
+
+  const joined = value
+    .map((entry) => asTrimmedString(entry))
+    .filter((entry): entry is string => entry !== null)
+    .join("\n")
+    .trim();
+
+  return joined.length > 0 ? joined : null;
+}
+
 function formatCommandValue(value: unknown): string | null {
   const direct = asTrimmedString(value);
   if (direct) {
@@ -1232,6 +1428,63 @@ function extractWorkLogRequestKind(
   return requestKindFromRequestType(payload?.requestType) ?? undefined;
 }
 
+function extractToolOutput(payload: Record<string, unknown> | null): string | null {
+  const data = asRecord(payload?.data);
+  const item = asRecord(data?.item);
+  const itemResult = asRecord(item?.result);
+  const candidates = [
+    asTrimmedText(payload?.output),
+    asTrimmedText(payload?.stdout),
+    asTrimmedText(payload?.stderr),
+    asTrimmedText(itemResult?.output),
+    asTrimmedText(itemResult?.stdout),
+    asTrimmedText(itemResult?.stderr),
+    asTrimmedText(itemResult?.text),
+    asTrimmedText(item?.output),
+    asTrimmedText(item?.stdout),
+    asTrimmedText(item?.stderr),
+    asTrimmedText(data?.output),
+    asTrimmedText(data?.stdout),
+    asTrimmedText(data?.stderr),
+  ];
+
+  const combinedStdoutStderr = [
+    asTrimmedText(itemResult?.stdout),
+    asTrimmedText(itemResult?.stderr),
+  ]
+    .filter((value): value is string => value !== null)
+    .join("\n\n");
+  if (combinedStdoutStderr.length > 0) {
+    candidates.unshift(combinedStdoutStderr);
+  }
+
+  return candidates.find((candidate) => candidate !== null) ?? null;
+}
+function extractToolResult(
+  payload: Record<string, unknown> | null,
+  command: string | null,
+): string | null {
+  const output = extractToolOutput(payload);
+  if (output) {
+    return output;
+  }
+
+  const detail = asTrimmedString(payload?.detail);
+  if (!detail || detail === command) {
+    return null;
+  }
+
+  const itemType = asTrimmedString(payload?.itemType);
+  if (itemType === "command_execution") {
+    return detail;
+  }
+
+  if (detail.includes("\n")) {
+    return detail;
+  }
+
+  return null;
+}
 function pushChangedFile(target: string[], seen: Set<string>, value: unknown) {
   const normalized = asTrimmedString(value);
   if (!normalized || seen.has(normalized)) {

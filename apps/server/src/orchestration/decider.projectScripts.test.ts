@@ -191,6 +191,182 @@ it.layer(NodeServices.layer)("decider project scripts", (it) => {
     }),
   );
 
+  it.effect("emits review prompt events for thread.review.start", () =>
+    Effect.gen(function* () {
+      const now = "2026-01-01T00:00:00.000Z";
+      const initial = createEmptyReadModel(now);
+      const withProject = yield* projectEvent(initial, {
+        sequence: 1,
+        eventId: asEventId("evt-project-create-review"),
+        aggregateKind: "project",
+        aggregateId: asProjectId("project-1"),
+        type: "project.created",
+        occurredAt: now,
+        commandId: CommandId.make("cmd-project-create-review"),
+        causationEventId: null,
+        correlationId: CommandId.make("cmd-project-create-review"),
+        metadata: {},
+        payload: {
+          projectId: asProjectId("project-1"),
+          title: "Project",
+          workspaceRoot: "/tmp/project",
+          defaultModelSelection: null,
+          scripts: [],
+          createdAt: now,
+          updatedAt: now,
+        },
+      });
+      const readModel = yield* projectEvent(withProject, {
+        sequence: 2,
+        eventId: asEventId("evt-thread-create-review"),
+        aggregateKind: "thread",
+        aggregateId: ThreadId.make("thread-1"),
+        type: "thread.created",
+        occurredAt: now,
+        commandId: CommandId.make("cmd-thread-create-review"),
+        causationEventId: null,
+        correlationId: CommandId.make("cmd-thread-create-review"),
+        metadata: {},
+        payload: {
+          threadId: ThreadId.make("thread-1"),
+          projectId: asProjectId("project-1"),
+          title: "Thread",
+          modelSelection: createModelSelection(ProviderInstanceId.make("codex"), "gpt-5-codex"),
+          interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+          runtimeMode: "full-access",
+          branch: null,
+          worktreePath: null,
+          createdAt: now,
+          updatedAt: now,
+        },
+      });
+
+      const result = yield* decideOrchestrationCommand({
+        command: {
+          type: "thread.review.start",
+          commandId: CommandId.make("cmd-review-start"),
+          threadId: ThreadId.make("thread-1"),
+          messageId: asMessageId("message-review-1"),
+          modelSelection: createModelSelection(ProviderInstanceId.make("codex"), "gpt-5.3-codex"),
+          runtimeMode: "full-access",
+          interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+          instructions: "Prioritize security-sensitive issues.",
+          createdAt: now,
+        },
+        readModel,
+      });
+
+      const events = Array.isArray(result) ? result : [result];
+      expect(events).toHaveLength(2);
+      expect(events[0]?.type).toBe("thread.message-sent");
+      if (events[0]?.type === "thread.message-sent") {
+        expect(events[0].payload.text).toContain("Review the current changes in this project.");
+        expect(events[0].payload.text).toContain("Prioritize security-sensitive issues.");
+      }
+
+      const turnStartEvent = events[1];
+      expect(turnStartEvent?.type).toBe("thread.turn-start-requested");
+      if (turnStartEvent?.type !== "thread.turn-start-requested") {
+        return;
+      }
+      expect(turnStartEvent.payload).toMatchObject({
+        threadId: ThreadId.make("thread-1"),
+        messageId: asMessageId("message-review-1"),
+        modelSelection: createModelSelection(ProviderInstanceId.make("codex"), "gpt-5.3-codex"),
+        runtimeMode: "full-access",
+      });
+    }),
+  );
+
+  it.effect("emits compact prompt events for thread.compact.start", () =>
+    Effect.gen(function* () {
+      const now = "2026-01-01T00:00:00.000Z";
+      const initial = createEmptyReadModel(now);
+      const withProject = yield* projectEvent(initial, {
+        sequence: 1,
+        eventId: asEventId("evt-project-create-compact"),
+        aggregateKind: "project",
+        aggregateId: asProjectId("project-1"),
+        type: "project.created",
+        occurredAt: now,
+        commandId: CommandId.make("cmd-project-create-compact"),
+        causationEventId: null,
+        correlationId: CommandId.make("cmd-project-create-compact"),
+        metadata: {},
+        payload: {
+          projectId: asProjectId("project-1"),
+          title: "Project",
+          workspaceRoot: "/tmp/project",
+          defaultModelSelection: null,
+          scripts: [],
+          createdAt: now,
+          updatedAt: now,
+        },
+      });
+      const readModel = yield* projectEvent(withProject, {
+        sequence: 2,
+        eventId: asEventId("evt-thread-create-compact"),
+        aggregateKind: "thread",
+        aggregateId: ThreadId.make("thread-1"),
+        type: "thread.created",
+        occurredAt: now,
+        commandId: CommandId.make("cmd-thread-create-compact"),
+        causationEventId: null,
+        correlationId: CommandId.make("cmd-thread-create-compact"),
+        metadata: {},
+        payload: {
+          threadId: ThreadId.make("thread-1"),
+          projectId: asProjectId("project-1"),
+          title: "Thread",
+          modelSelection: createModelSelection(ProviderInstanceId.make("codex"), "gpt-5-codex"),
+          interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+          runtimeMode: "full-access",
+          branch: null,
+          worktreePath: null,
+          createdAt: now,
+          updatedAt: now,
+        },
+      });
+
+      const result = yield* decideOrchestrationCommand({
+        command: {
+          type: "thread.compact.start",
+          commandId: CommandId.make("cmd-compact-start"),
+          threadId: ThreadId.make("thread-1"),
+          messageId: asMessageId("message-compact-1"),
+          modelSelection: createModelSelection(ProviderInstanceId.make("codex"), "gpt-5.3-codex"),
+          runtimeMode: "full-access",
+          interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+          instructions: "Preserve unresolved architecture decisions.",
+          createdAt: now,
+        },
+        readModel,
+      });
+
+      const events = Array.isArray(result) ? result : [result];
+      expect(events).toHaveLength(2);
+      expect(events[0]?.type).toBe("thread.message-sent");
+      if (events[0]?.type === "thread.message-sent") {
+        expect(events[0].payload.text).toContain(
+          "Create a compact handoff summary for this thread",
+        );
+        expect(events[0].payload.text).toContain("Preserve unresolved architecture decisions.");
+      }
+
+      const turnStartEvent = events[1];
+      expect(turnStartEvent?.type).toBe("thread.turn-start-requested");
+      if (turnStartEvent?.type !== "thread.turn-start-requested") {
+        return;
+      }
+      expect(turnStartEvent.payload).toMatchObject({
+        threadId: ThreadId.make("thread-1"),
+        messageId: asMessageId("message-compact-1"),
+        modelSelection: createModelSelection(ProviderInstanceId.make("codex"), "gpt-5.3-codex"),
+        runtimeMode: "full-access",
+      });
+    }),
+  );
+
   it.effect("emits thread.runtime-mode-set from thread.runtime-mode.set", () =>
     Effect.gen(function* () {
       const now = "2026-01-01T00:00:00.000Z";

@@ -1,5 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
 import { DiffsHighlighter, getSharedHighlighter, SupportedLanguages } from "@pierre/diffs";
+import type { Components as HastComponents } from "hast-util-to-jsx-runtime";
 import {
   CheckIcon,
   ChevronRightIcon,
@@ -39,6 +40,12 @@ import rehypeRaw from "rehype-raw";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
+import {
+  createSanitizedHtmlFragment,
+  extractSanitizedHtmlLinkHrefs,
+  renderSanitizedHtmlFragment,
+  shouldRenderHtmlFragment,
+} from "./chatHtmlRendering";
 import { renderSkillInlineMarkdownChildren } from "./chat/SkillInlineText";
 import { CHAT_FILE_TAG_CHIP_CLASS_NAME, FileTagChipContent } from "./chat/FileTagChip";
 import { PierreEntryIcon } from "./chat/PierreEntryIcon";
@@ -1253,12 +1260,20 @@ function ChatMarkdown({
     serverConfig?.availableEditors ?? [],
   );
   const diffThemeName = resolveDiffThemeName(resolvedTheme);
+  const renderAsHtmlFragment = !isStreaming && shouldRenderHtmlFragment(text);
+  const sanitizedHtmlFragment = useMemo(
+    () => (renderAsHtmlFragment ? createSanitizedHtmlFragment(text) : null),
+    [renderAsHtmlFragment, text],
+  );
   const markdownFileLinkMetaByHref = useMemo(() => {
     const metaByHref = new Map<
       string,
       NonNullable<ReturnType<typeof resolveMarkdownFileLinkMeta>>
     >();
-    for (const href of extractMarkdownLinkHrefs(text)) {
+    const linkHrefs = sanitizedHtmlFragment
+      ? extractSanitizedHtmlLinkHrefs(sanitizedHtmlFragment)
+      : extractMarkdownLinkHrefs(text);
+    for (const href of linkHrefs) {
       const normalizedHref = normalizeMarkdownLinkHrefKey(href);
       if (metaByHref.has(normalizedHref)) continue;
       const meta = resolveMarkdownFileLinkMeta(normalizedHref, cwd);
@@ -1267,7 +1282,7 @@ function ChatMarkdown({
       }
     }
     return metaByHref;
-  }, [cwd, text]);
+  }, [cwd, sanitizedHtmlFragment, text]);
   const fileLinkParentSuffixByPath = useMemo(() => {
     const filePaths = [...markdownFileLinkMetaByHref.values()].map((meta) => meta.filePath);
     return buildFileLinkParentSuffixByPath(filePaths);
@@ -1371,8 +1386,19 @@ function ChatMarkdown({
         );
       },
       a({ node, href, children, ...props }) {
+        if (!href) {
+          return (
+            <span {...props} className={cn("chat-markdown-disabled-link", props.className)}>
+              {children}
+            </span>
+          );
+        }
+
         const normalizedHref = href ? normalizeMarkdownLinkHrefKey(href) : "";
-        const fileLinkMeta = normalizedHref ? markdownFileLinkMetaByHref.get(normalizedHref) : null;
+        const fileLinkMeta = normalizedHref
+          ? (markdownFileLinkMetaByHref.get(normalizedHref) ??
+            resolveMarkdownFileLinkMeta(normalizedHref, cwd))
+          : null;
         if (!fileLinkMeta) {
           const faviconHost = resolveExternalLinkHost(href);
           const isSameDocumentLink = href?.startsWith("#") ?? false;
@@ -1520,6 +1546,7 @@ function ChatMarkdown({
       },
     }),
     [
+      cwd,
       diffThemeName,
       fileLinkParentSuffixByPath,
       isStreaming,
@@ -1534,6 +1561,16 @@ function ChatMarkdown({
       threadRef,
     ],
   );
+  const renderedHtmlFragment = useMemo(
+    () =>
+      sanitizedHtmlFragment
+        ? renderSanitizedHtmlFragment(
+            sanitizedHtmlFragment,
+            markdownComponents as Partial<HastComponents>,
+          )
+        : null,
+    [markdownComponents, sanitizedHtmlFragment],
+  );
 
   return (
     <div
@@ -1543,18 +1580,20 @@ function ChatMarkdown({
       )}
       onCopy={handleCopy}
     >
-      <ReactMarkdown
-        remarkPlugins={
-          lineBreaks
-            ? [remarkGfm, remarkBreaks, remarkPreserveCodeMeta]
-            : [remarkGfm, remarkPreserveCodeMeta]
-        }
-        rehypePlugins={[rehypeRaw, [rehypeSanitize, CHAT_MARKDOWN_SANITIZE_SCHEMA]]}
-        components={markdownComponents}
-        urlTransform={markdownUrlTransform}
-      >
-        {text}
-      </ReactMarkdown>
+      {renderedHtmlFragment ?? (
+        <ReactMarkdown
+          remarkPlugins={
+            lineBreaks
+              ? [remarkGfm, remarkBreaks, remarkPreserveCodeMeta]
+              : [remarkGfm, remarkPreserveCodeMeta]
+          }
+          rehypePlugins={[rehypeRaw, [rehypeSanitize, CHAT_MARKDOWN_SANITIZE_SCHEMA]]}
+          components={markdownComponents}
+          urlTransform={markdownUrlTransform}
+        >
+          {text}
+        </ReactMarkdown>
+      )}
     </div>
   );
 }

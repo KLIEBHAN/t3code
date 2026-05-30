@@ -75,8 +75,12 @@ import { makeRoutesLayer } from "./server.ts";
 import * as CheckpointDiffQuery from "./checkpointing/CheckpointDiffQuery.ts";
 import * as GitManager from "./git/GitManager.ts";
 import * as Keybindings from "./keybindings.ts";
+import * as CustomSlashCommands from "./customSlashCommands.ts";
 import * as ExternalLauncher from "./process/externalLauncher.ts";
 import * as OrchestrationEngine from "./orchestration/Services/OrchestrationEngine.ts";
+import * as ReplySuggestionGeneration from "./suggestions/Services/ReplySuggestionGeneration.ts";
+import * as PromptImprovementGeneration from "./promptImprovement/Services/PromptImprovementGeneration.ts";
+import * as PromptAutocompleteGeneration from "./promptAutocomplete/Services/PromptAutocompleteGeneration.ts";
 import { OrchestrationListenerCallbackError } from "./orchestration/Errors.ts";
 import * as ProjectionSnapshotQuery from "./orchestration/Services/ProjectionSnapshotQuery.ts";
 import { SqlitePersistenceMemory } from "./persistence/Layers/Sqlite.ts";
@@ -316,9 +320,19 @@ const buildAppUnderTest = (options?: {
   config?: Partial<ServerConfig.ServerConfig["Service"]>;
   layers?: {
     keybindings?: Partial<Keybindings.Keybindings["Service"]>;
+    customSlashCommands?: Partial<CustomSlashCommands.CustomSlashCommands["Service"]>;
     providerRegistry?: Partial<ProviderRegistry.ProviderRegistry["Service"]>;
     serverSettings?: Partial<ServerSettings.ServerSettingsService["Service"]>;
     externalLauncher?: Partial<ExternalLauncher.ExternalLauncher["Service"]>;
+    replySuggestionGeneration?: Partial<
+      ReplySuggestionGeneration.ReplySuggestionGeneration["Service"]
+    >;
+    promptAutocompleteGeneration?: Partial<
+      PromptAutocompleteGeneration.PromptAutocompleteGeneration["Service"]
+    >;
+    promptImprovementGeneration?: Partial<
+      PromptImprovementGeneration.PromptImprovementGeneration["Service"]
+    >;
     vcsDriver?: Partial<VcsDriver.VcsDriver["Service"]>;
     vcsDriverRegistry?: Partial<VcsDriverRegistry.VcsDriverRegistry["Service"]>;
     gitVcsDriver?: Partial<GitVcsDriver.GitVcsDriver["Service"]>;
@@ -520,7 +534,7 @@ const buildAppUnderTest = (options?: {
         })
       : VcsStatusBroadcaster.layer.pipe(Layer.provide(gitWorkflowLayer));
 
-    const servedRoutesLayer = HttpRouter.serve(makeRoutesLayer, {
+    const servedRoutesBaseLayer = HttpRouter.serve(makeRoutesLayer, {
       disableListenLog: true,
       disableLogger: true,
     }).pipe(
@@ -532,6 +546,17 @@ const buildAppUnderTest = (options?: {
           }),
           streamChanges: Stream.empty,
           ...options?.layers?.keybindings,
+        }),
+      ),
+      Layer.provide(
+        Layer.mock(CustomSlashCommands.CustomSlashCommands)({
+          syncDirectoryOnStartup: Effect.void,
+          loadConfigState: Effect.succeed({
+            commands: [],
+            issues: [],
+          }),
+          changes: Stream.empty,
+          ...options?.layers?.customSlashCommands,
         }),
       ),
       Layer.provide(
@@ -562,6 +587,29 @@ const buildAppUnderTest = (options?: {
         Layer.mock(ExternalLauncher.ExternalLauncher)({
           resolveAvailableEditors: () => Effect.succeed([]),
           ...options?.layers?.externalLauncher,
+        }),
+      ),
+      Layer.provide(
+        Layer.mock(ReplySuggestionGeneration.ReplySuggestionGeneration)({
+          generateReplySuggestions: () => Effect.succeed({ suggestions: [] }),
+          ...options?.layers?.replySuggestionGeneration,
+        }),
+      ),
+      Layer.provide(
+        Layer.mock(PromptAutocompleteGeneration.PromptAutocompleteGeneration)({
+          generatePromptAutocomplete: () => Effect.succeed({ suggestions: [] }),
+          ...options?.layers?.promptAutocompleteGeneration,
+        }),
+      ),
+      Layer.provide(
+        Layer.mock(PromptImprovementGeneration.PromptImprovementGeneration)({
+          generatePromptImprovement: (input) =>
+            Effect.succeed({
+              improvedPrompt: input.prompt,
+              changed: false,
+              reason: "Prompt already looks good.",
+            }),
+          ...options?.layers?.promptImprovementGeneration,
         }),
       ),
       Layer.provide(
@@ -626,6 +674,9 @@ const buildAppUnderTest = (options?: {
             }),
         }),
       ),
+    );
+
+    const servedRoutesLayer = servedRoutesBaseLayer.pipe(
       Layer.provide(gitManagerLayer),
       Layer.provide(gitVcsDriverLayer),
       Layer.provide(gitWorkflowLayer),
@@ -3717,6 +3768,8 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
 
       assert.equal(response.environment.environmentId, testEnvironmentDescriptor.environmentId);
       assert.equal(response.auth.policy, "desktop-managed-local");
+      assert.equal(response.customSlashCommandsDirectoryPath.endsWith("/slash-commands"), true);
+      assert.deepEqual(response.customSlashCommands, []);
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
@@ -4259,6 +4312,11 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         assert.deepEqual(first.config.keybindings, []);
         assert.deepEqual(first.config.issues, []);
         assert.deepEqual(first.config.providers, providers);
+        assert.deepEqual(first.config.customSlashCommands, []);
+        assert.equal(
+          first.config.customSlashCommandsDirectoryPath.endsWith("/slash-commands"),
+          true,
+        );
         assert.equal(first.config.observability.logsDirectoryPath.endsWith("/logs"), true);
         assert.equal(first.config.observability.localTracingEnabled, true);
         assert.equal(first.config.observability.otlpTracesUrl, "http://localhost:4318/v1/traces");
@@ -4277,7 +4335,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
 
   it.effect("routes websocket rpc subscribeServerConfig emits provider status updates", () =>
     Effect.gen(function* () {
-      const nextProviders = [
+      const providers = [
         {
           instanceId: ProviderInstanceId.make("codex"),
           driver: ProviderDriverKind.make("codex"),
@@ -4304,7 +4362,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
           },
           providerRegistry: {
             getProviders: Effect.succeed([]),
-            streamChanges: Stream.succeed(nextProviders),
+            streamChanges: Stream.succeed(providers),
           },
         },
       });
@@ -4318,13 +4376,63 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
 
       const [first, second] = Array.from(events);
       assert.equal(first?.type, "snapshot");
-      if (first?.type === "snapshot") {
-        assert.deepEqual(first.config.providers, []);
-      }
       assert.deepEqual(second, {
         version: 1,
         type: "providerStatuses",
-        payload: { providers: nextProviders },
+        payload: { providers },
+      });
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("routes websocket rpc subscribeServerConfig emits custom slash command updates", () =>
+    Effect.gen(function* () {
+      const changeEvent = {
+        commands: [
+          {
+            command: "deploy",
+            description: "Deploy the project",
+            prompt: "Run the deployment workflow",
+            sourcePath: "/tmp/slash-commands/deploy.md",
+          },
+        ],
+        issues: [],
+      } as const;
+
+      yield* buildAppUnderTest({
+        layers: {
+          keybindings: {
+            loadConfigState: Effect.succeed({
+              keybindings: [],
+              issues: [],
+            }),
+            streamChanges: Stream.empty,
+          },
+          customSlashCommands: {
+            loadConfigState: Effect.succeed({
+              commands: [],
+              issues: [],
+            }),
+            changes: Stream.succeed(changeEvent),
+          },
+        },
+      });
+
+      const wsUrl = yield* getWsServerUrl("/ws");
+      const events = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[WS_METHODS.subscribeServerConfig]({}).pipe(Stream.take(2), Stream.runCollect),
+        ),
+      );
+
+      const [first, second] = Array.from(events);
+      assert.equal(first?.type, "snapshot");
+      assert.deepEqual(second, {
+        version: 1,
+        type: "customSlashCommandsUpdated",
+        payload: {
+          customSlashCommands: [...changeEvent.commands],
+          issues: [],
+        },
       });
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
@@ -5534,7 +5642,20 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         },
       });
 
-      const wsUrl = yield* getWsServerUrl("/ws");
+      const sessionCookie = yield* getAuthenticatedSessionCookieHeader();
+      const snapshotResponse = yield* HttpClient.get("/api/orchestration/snapshot", {
+        headers: {
+          cookie: sessionCookie,
+        },
+      });
+      const snapshotResult = (yield* snapshotResponse.json) as typeof snapshot;
+      assert.equal(snapshotResponse.status, 200);
+      assert.equal(snapshotResult.snapshotSequence, 1);
+
+      const wsUrl = appendSessionCookieToWsUrl(
+        yield* getWsServerUrl("/ws", { authenticated: false }),
+        sessionCookie,
+      );
       const dispatchResult = yield* Effect.scoped(
         withWsRpcClient(wsUrl, (client) =>
           client[ORCHESTRATION_WS_METHODS.dispatchCommand]({
