@@ -9,6 +9,7 @@
  */
 
 import * as Migrator from "effect/unstable/sql/Migrator";
+import * as SqlClient from "effect/unstable/sql/SqlClient";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
@@ -116,6 +117,67 @@ export const makeMigrationLoader = (throughId?: number) =>
  */
 const run = Migrator.make({});
 
+// Some alpha builds wrote compatibility migrations above the current linear
+// sequence. Effect advances from the highest recorded ID, so remove only the
+// known obsolete records before running the canonical timeline.
+const obsoleteLegacyMigrationNamesById = new Map<number, ReadonlySet<string>>([
+  [17, new Set(["ProjectionTurnUnifiedDiff"])],
+  [18, new Set(["ProjectionThreadProposedPlanImplementationBackfill"])],
+  [19, new Set(["BackfillLegacyModelSelections"])],
+  [20, new Set(["ProjectionThreadProposedPlanImplementationBackfill"])],
+  [21, new Set(["BackfillLegacyModelSelections"])],
+  [100, new Set(["ProjectionThreadsArchivedAtCompatibilityBackfill"])],
+  [101, new Set(["ProjectionThreadsArchivedAtIndexCompatibilityBackfill"])],
+  [102, new Set(["ProjectionThreadsArchivedAtCompatibilityBackfill"])],
+  [103, new Set(["ProjectionThreadsArchivedAtIndexCompatibilityBackfill"])],
+  [104, new Set(["ProjectionThreadsArchivedAtCompatibilityBackfill"])],
+  [105, new Set(["ProjectionThreadsArchivedAtIndexCompatibilityBackfill"])],
+  [106, new Set(["AuthAccessManagementCompatibilityBackfill"])],
+  [107, new Set(["AuthSessionClientMetadataCompatibilityBackfill"])],
+  [108, new Set(["AuthSessionLastConnectedAtCompatibilityBackfill"])],
+  [109, new Set(["ProjectionThreadShellSummaryCompatibilityBackfill"])],
+]);
+
+const normalizeLegacyMigrationTimeline = Effect.fn("normalizeLegacyMigrationTimeline")(
+  function* () {
+    const sql = yield* SqlClient.SqlClient;
+    const migrationTables = yield* sql<{ readonly name: string }>`
+      SELECT name
+      FROM sqlite_master
+      WHERE type = 'table'
+        AND name = 'effect_sql_migrations'
+    `;
+    if (migrationTables.length === 0) return;
+
+    const migrationRows = yield* sql<{
+      readonly migrationId: number;
+      readonly name: string;
+    }>`
+      SELECT migration_id AS "migrationId", name
+      FROM effect_sql_migrations
+      WHERE migration_id BETWEEN 17 AND 21
+        OR migration_id BETWEEN 100 AND 109
+      ORDER BY migration_id
+    `;
+    const obsoleteMigrationIds = migrationRows
+      .filter(
+        (row) => obsoleteLegacyMigrationNamesById.get(row.migrationId)?.has(row.name) ?? false,
+      )
+      .map((row) => row.migrationId);
+    if (obsoleteMigrationIds.length === 0) return;
+
+    yield* Effect.logWarning("normalizing obsolete legacy migration records").pipe(
+      Effect.annotateLogs({ migrationIds: obsoleteMigrationIds.join(",") }),
+    );
+    for (const migrationId of obsoleteMigrationIds) {
+      yield* sql`
+        DELETE FROM effect_sql_migrations
+        WHERE migration_id = ${migrationId}
+      `;
+    }
+  },
+);
+
 export interface RunMigrationsOptions {
   readonly toMigrationInclusive?: number | undefined;
 }
@@ -133,6 +195,7 @@ export interface RunMigrationsOptions {
 export const runMigrations = Effect.fn("runMigrations")(function* ({
   toMigrationInclusive,
 }: RunMigrationsOptions = {}) {
+  yield* normalizeLegacyMigrationTimeline();
   const executedMigrations = yield* run({ loader: makeMigrationLoader(toMigrationInclusive) });
   const migrations = executedMigrations.map(([id, name]) => `${id}_${name}`);
   yield* migrations.length === 0

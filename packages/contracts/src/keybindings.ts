@@ -66,6 +66,7 @@ const STATIC_KEYBINDING_COMMANDS = [
   "filePicker.toggle",
   "projectSearch.toggle",
   "composer.stash",
+  "projectSidebar.toggle",
   "chat.new",
   "chat.newLocal",
   "editor.openFavorite",

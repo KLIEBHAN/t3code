@@ -45,6 +45,7 @@ import {
   elementContextDedupKey,
   newElementContextId,
 } from "./lib/elementContext";
+import { getSafeLocalStorage } from "./lib/browserStorage";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import { useShallow } from "zustand/react/shallow";
@@ -67,7 +68,7 @@ export type DraftId = typeof DraftId.Type;
 const COMPOSER_PERSIST_DEBOUNCE_MS = 300;
 
 const composerDebouncedStorage = createDebouncedStorage(
-  typeof localStorage !== "undefined" ? localStorage : createMemoryStorage(),
+  getSafeLocalStorage() ?? createMemoryStorage(),
   COMPOSER_PERSIST_DEBOUNCE_MS,
 );
 
@@ -305,6 +306,10 @@ export type DraftThreadState = DraftSessionState;
  */
 interface ProjectDraftSession extends DraftSessionState {
   draftId: DraftId;
+}
+
+export interface ProjectDraftThread extends DraftThreadState {
+  threadId: ThreadId;
 }
 
 /**

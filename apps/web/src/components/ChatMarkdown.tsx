@@ -1,4 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
+import type { Components as HastComponents } from "hast-util-to-jsx-runtime";
 import {
   CheckIcon,
   ChevronRightIcon,
@@ -38,6 +39,12 @@ import rehypeRaw from "rehype-raw";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
+import {
+  createSanitizedHtmlFragment,
+  extractSanitizedHtmlLinkHrefs,
+  renderSanitizedHtmlFragment,
+  shouldRenderHtmlFragment,
+} from "./chatHtmlRendering";
 import { renderSkillInlineMarkdownChildren } from "./chat/SkillInlineText";
 import { CHAT_FILE_TAG_CHIP_CLASS_NAME, FileTagChipContent } from "./chat/FileTagChip";
 import { PierreEntryIcon } from "./chat/PierreEntryIcon";
@@ -1276,12 +1283,20 @@ function ChatMarkdown({
     serverConfig?.availableEditors ?? [],
   );
   const diffThemeName = resolveDiffThemeName(resolvedTheme);
+  const renderAsHtmlFragment = !isStreaming && shouldRenderHtmlFragment(text);
+  const sanitizedHtmlFragment = useMemo(
+    () => (renderAsHtmlFragment ? createSanitizedHtmlFragment(text) : null),
+    [renderAsHtmlFragment, text],
+  );
   const markdownFileLinkMetaByHref = useMemo(() => {
     const metaByHref = new Map<
       string,
       NonNullable<ReturnType<typeof resolveMarkdownFileLinkMeta>>
     >();
-    for (const href of extractMarkdownLinkHrefs(text)) {
+    const linkHrefs = sanitizedHtmlFragment
+      ? extractSanitizedHtmlLinkHrefs(sanitizedHtmlFragment)
+      : extractMarkdownLinkHrefs(text);
+    for (const href of linkHrefs) {
       const normalizedHref = normalizeMarkdownLinkHrefKey(href);
       if (metaByHref.has(normalizedHref)) continue;
       const meta = resolveMarkdownFileLinkMeta(normalizedHref, cwd);
@@ -1290,7 +1305,7 @@ function ChatMarkdown({
       }
     }
     return metaByHref;
-  }, [cwd, text]);
+  }, [cwd, sanitizedHtmlFragment, text]);
   const inlineCodeFileLinkMetaByText = useMemo(() => {
     const metaByText = new Map<string, MarkdownFileLinkMeta>();
     for (const span of extractInlineCodeSpans(text)) {
@@ -1452,8 +1467,19 @@ function ChatMarkdown({
         );
       },
       a({ node, href, children, ...props }) {
+        if (!href) {
+          return (
+            <span {...props} className={cn("chat-markdown-disabled-link", props.className)}>
+              {children}
+            </span>
+          );
+        }
+
         const normalizedHref = href ? normalizeMarkdownLinkHrefKey(href) : "";
-        const fileLinkMeta = normalizedHref ? markdownFileLinkMetaByHref.get(normalizedHref) : null;
+        const fileLinkMeta = normalizedHref
+          ? (markdownFileLinkMetaByHref.get(normalizedHref) ??
+            resolveMarkdownFileLinkMeta(normalizedHref, cwd))
+          : null;
         if (!fileLinkMeta) {
           const faviconHost = resolveExternalWebLinkHost(href);
           const isSameDocumentLink = href?.startsWith("#") ?? false;
@@ -1598,6 +1624,17 @@ function ChatMarkdown({
   ]);
   /* eslint-enable react/no-unstable-nested-components */
 
+  const renderedHtmlFragment = useMemo(
+    () =>
+      sanitizedHtmlFragment
+        ? renderSanitizedHtmlFragment(
+            sanitizedHtmlFragment,
+            markdownComponents as Partial<HastComponents>,
+          )
+        : null,
+    [markdownComponents, sanitizedHtmlFragment],
+  );
+
   return (
     <div
       className={cn(
@@ -1606,16 +1643,18 @@ function ChatMarkdown({
       )}
       onCopy={handleCopy}
     >
-      <ReactMarkdown
-        remarkPlugins={
-          lineBreaks ? CHAT_MARKDOWN_REMARK_PLUGINS_WITH_BREAKS : CHAT_MARKDOWN_REMARK_PLUGINS
-        }
-        rehypePlugins={CHAT_MARKDOWN_REHYPE_PLUGINS}
-        components={markdownComponents}
-        urlTransform={markdownUrlTransform}
-      >
-        {text}
-      </ReactMarkdown>
+      {renderedHtmlFragment ?? (
+        <ReactMarkdown
+          remarkPlugins={
+            lineBreaks ? CHAT_MARKDOWN_REMARK_PLUGINS_WITH_BREAKS : CHAT_MARKDOWN_REMARK_PLUGINS
+          }
+          rehypePlugins={CHAT_MARKDOWN_REHYPE_PLUGINS}
+          components={markdownComponents}
+          urlTransform={markdownUrlTransform}
+        >
+          {text}
+        </ReactMarkdown>
+      )}
     </div>
   );
 }

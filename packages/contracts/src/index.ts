@@ -29,3 +29,6 @@ export * from "./preview.ts";
 export * from "./previewAutomation.ts";
 export * from "./resourceTelemetry.ts";
 export * from "./rpc.ts";
+export * from "./suggestions.ts";
+export * from "./promptImprovement.ts";
+export * from "./promptAutocomplete.ts";

@@ -293,6 +293,15 @@ export function applyServerConfigProjection(
         latestEvent: event,
         source: "live",
       }));
+    case "customSlashCommandsUpdated":
+      return Option.map(current, (projection) => ({
+        config: {
+          ...projection.config,
+          customSlashCommands: event.payload.customSlashCommands,
+          issues: event.payload.issues,
+        },
+        latestEvent: event,
+      }));
   }
 }
 
