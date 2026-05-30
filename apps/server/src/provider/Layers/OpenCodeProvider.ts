@@ -7,7 +7,9 @@ import {
 import * as Cause from "effect/Cause";
 import * as Data from "effect/Data";
 import * as DateTime from "effect/DateTime";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 
 import { createModelCapabilities } from "@t3tools/shared/model";
 import { compareSemverVersions } from "@t3tools/shared/semver";
@@ -22,6 +24,7 @@ import {
 import {
   MINIMUM_OPENCODE_VERSION,
   OpenCodeRuntime,
+  OpenCodeRuntimeError,
   openCodeRuntimeErrorDetail,
   type OpenCodeInventory,
 } from "../opencodeRuntime.ts";
@@ -33,6 +36,7 @@ const OPENCODE_PRESENTATION = {
   showInteractionModeToggle: false,
 } as const;
 const OPENCODE_VERSION_PROBE_TIMEOUT = "4 seconds";
+const OPENCODE_INVENTORY_TIMEOUT_MS = 8_000;
 
 class OpenCodeProbeError extends Data.TaggedError("OpenCodeProbeError")<{
   readonly cause?: unknown;
@@ -504,6 +508,23 @@ export const checkOpenCodeProviderStatus = Effect.fn("checkOpenCodeProviderStatu
     inventoryEffect.pipe(
       Effect.mapError(
         (cause) => new OpenCodeProbeError({ cause, detail: openCodeRuntimeErrorDetail(cause) }),
+      ),
+    ).pipe(
+      Effect.timeoutOption(Duration.millis(OPENCODE_INVENTORY_TIMEOUT_MS)),
+      Effect.flatMap(
+        Option.match({
+          onNone: () =>
+            Effect.fail(
+              new OpenCodeProbeError({
+                cause: new OpenCodeRuntimeError({
+                  operation: "loadOpenCodeInventory",
+                  detail: `Timed out waiting for OpenCode provider inventory after ${OPENCODE_INVENTORY_TIMEOUT_MS}ms.`,
+                }),
+                detail: `Timed out waiting for OpenCode provider inventory after ${OPENCODE_INVENTORY_TIMEOUT_MS}ms.`,
+              }),
+            ),
+          onSome: Effect.succeed,
+        }),
       ),
     ),
   );

@@ -6604,15 +6604,19 @@ export default function ChatView(props: ChatViewProps) {
     }
   };
 
-  const onSend = async (
-    e?: { preventDefault: () => void },
-    submissionIntent: ComposerSubmissionIntent = "foreground",
+  const sendComposerMessage = async (input?: {
+    event?: { preventDefault: () => void };
+    promptOverride?: string;
+    skipStandaloneSlashParsing?: boolean;
+    submissionIntent?: ComposerSubmissionIntent;
     directAnnotation?: {
       annotation: PreviewAnnotationPayload;
       image: ComposerImageAttachment | null;
-    },
-  ) => {
-    e?.preventDefault();
+    };
+  }) => {
+    input?.event?.preventDefault();
+    const submissionIntent = input?.submissionIntent ?? "foreground";
+    const directAnnotation = input?.directAnnotation;
     // Typed out in full rather than picked from the menu. Attachments or contexts
     // mean the user is sending a prompt, so those go through as usual.
     if (
@@ -6738,14 +6742,44 @@ export default function ChatView(props: ChatViewProps) {
             },
           ]
         : sendContextPreviewAnnotations;
-    const promptForSend = promptRef.current;
+    const promptForSend = input?.promptOverride ?? promptRef.current;
+    const parsedStandaloneSlashCommand =
+      !input?.skipStandaloneSlashParsing &&
+      composerImages.length === 0 &&
+      composerTerminalContexts.length === 0 &&
+      composerElementContexts.length === 0 &&
+      composerPreviewAnnotations.length === 0 &&
+      composerReviewComments.length === 0
+        ? parseStandaloneComposerSlashCommand(
+            promptForSend.trim(),
+            serverConfig?.customSlashCommands ?? [],
+          )
+        : null;
+    // Builtin /plan and /default only toggle the mode where the provider
+    // exposes it; providers without the toggle receive their native commands
+    // unchanged. Custom commands stay available either way.
+    const standaloneSlashCommand =
+      parsedStandaloneSlashCommand?.source === "custom" || sendInteractionModeEnabled
+        ? parsedStandaloneSlashCommand
+        : null;
+    if (standaloneSlashCommand?.source === "builtin") {
+      if (standaloneSlashCommand.id === "plan" || standaloneSlashCommand.id === "default") {
+        handleInteractionModeChange(standaloneSlashCommand.id === "plan" ? "plan" : "default");
+        promptRef.current = "";
+        clearComposerDraftContent(composerDraftTarget);
+        composerRef.current?.resetCursorState();
+      }
+      return;
+    }
+    const effectivePromptForSend =
+      standaloneSlashCommand?.source === "custom" ? standaloneSlashCommand.prompt : promptForSend;
     const {
       trimmedPrompt: trimmed,
       sendableTerminalContexts: sendableComposerTerminalContexts,
       expiredTerminalContextCount,
       hasSendableContent,
     } = deriveComposerSendState({
-      prompt: promptForSend,
+      prompt: effectivePromptForSend,
       imageCount: composerImages.length + composerFiles.length,
       terminalContexts: composerTerminalContexts,
       elementContextCount:
@@ -6843,24 +6877,6 @@ export default function ChatView(props: ChatViewProps) {
       });
       return;
     }
-    // Providers without the legacy toggle receive their native commands unchanged.
-    const standaloneSlashCommand =
-      sendInteractionModeEnabled &&
-      composerImages.length === 0 &&
-      composerFiles.length === 0 &&
-      sendableComposerTerminalContexts.length === 0 &&
-      composerElementContexts.length === 0 &&
-      composerPreviewAnnotations.length === 0 &&
-      composerReviewComments.length === 0
-        ? parseStandaloneComposerSlashCommand(trimmed)
-        : null;
-    if (standaloneSlashCommand) {
-      handleInteractionModeChange(standaloneSlashCommand);
-      promptRef.current = "";
-      clearComposerDraftContent(composerDraftTarget);
-      composerRef.current?.resetCursorState();
-      return;
-    }
     if (!hasSendableContent) {
       if (expiredTerminalContextCount > 0) {
         const toastCopy = buildExpiredTerminalContextToastCopy(
@@ -6911,7 +6927,7 @@ export default function ChatView(props: ChatViewProps) {
     const composerPreviewAnnotationsSnapshot = [...composerPreviewAnnotations];
     const composerReviewCommentsSnapshot: ReviewCommentContext[] = [...composerReviewComments];
     const messageTextWithContexts = appendElementContextsToPrompt(
-      appendTerminalContextsToPrompt(promptForSend, composerTerminalContextsSnapshot),
+      appendTerminalContextsToPrompt(effectivePromptForSend, composerTerminalContextsSnapshot),
       composerElementContextsSnapshot,
     );
     const messageTextWithPreviewAnnotations = composerPreviewAnnotationsSnapshot.reduce(
@@ -7376,6 +7392,28 @@ export default function ChatView(props: ChatViewProps) {
       );
       resetLocalDispatch();
     }
+  };
+
+  const onSend = (
+    e?: { preventDefault: () => void },
+    submissionIntent: ComposerSubmissionIntent = "foreground",
+    directAnnotation?: {
+      annotation: PreviewAnnotationPayload;
+      image: ComposerImageAttachment | null;
+    },
+  ) => {
+    void sendComposerMessage({
+      ...(e ? { event: e } : {}),
+      submissionIntent,
+      ...(directAnnotation ? { directAnnotation } : {}),
+    });
+  };
+
+  const onSendPromptOverride = (text: string) => {
+    void sendComposerMessage({
+      promptOverride: text,
+      skipStandaloneSlashParsing: true,
+    });
   };
 
   const onRespondToApproval = useCallback(
@@ -8716,6 +8754,7 @@ export default function ChatView(props: ChatViewProps) {
                             timelineOverflows={timelineOverflows}
                             onComposerOverlayHeightChange={publishComposerOverlayHeight}
                             onRestingChange={onComposerRestingChange}
+                            customSlashCommands={serverConfig?.customSlashCommands ?? []}
                             promptRef={promptRef}
                             composerImagesRef={composerImagesRef}
                             composerFilesRef={composerFilesRef}
@@ -8726,6 +8765,7 @@ export default function ChatView(props: ChatViewProps) {
                             onPageScrollRelease={onComposerPageScrollRelease}
                             onCompactContext={onCompactContext}
                             onSend={onSend}
+                            onSendPromptOverride={onSendPromptOverride}
                             onInterrupt={onInterrupt}
                             onImplementPlanInNewThread={onImplementPlanInNewThread}
                             onRespondToApproval={onRespondToApproval}

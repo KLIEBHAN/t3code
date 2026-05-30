@@ -144,6 +144,17 @@ type SerializedComposerTerminalContextNode = Spread<
   SerializedLexicalNode
 >;
 
+type SerializedComposerGhostSuggestionNode = Spread<
+  {
+    selectedIndex: number;
+    suggestionCount: number;
+    text: string;
+    type: "composer-ghost-suggestion";
+    version: 1;
+  },
+  SerializedLexicalNode
+>;
+
 const ComposerTerminalContextActionsContext = createContext<{
   onRemoveTerminalContext: (contextId: string) => void;
 }>({
@@ -443,6 +454,121 @@ function $createComposerTerminalContextNode(
   context: TerminalContextDraft,
 ): ComposerTerminalContextNode {
   return $applyNodeReplacement(new ComposerTerminalContextNode(context));
+}
+
+export type ComposerCommandKey =
+  | "ArrowDown"
+  | "ArrowUp"
+  | "Enter"
+  | "Tab"
+  | "PromptAutocompleteNext"
+  | "PromptAutocompletePrevious";
+
+function ComposerGhostSuggestionDecorator(props: {
+  selectedIndex: number;
+  suggestionCount: number;
+  text: string;
+}) {
+  const previewText = props.text.replace(/\n/g, " ↵ ");
+  const indicator =
+    props.suggestionCount > 1 ? ` ‹${props.selectedIndex + 1}/${props.suggestionCount}›` : "";
+  return (
+    <span
+      aria-hidden="true"
+      className="pointer-events-none select-none whitespace-nowrap text-muted-foreground/35"
+      contentEditable={false}
+      data-composer-ghost-suggestion="true"
+      spellCheck={false}
+    >
+      {previewText}
+      {indicator ? <span className="text-muted-foreground/55">{indicator}</span> : null}
+    </span>
+  );
+}
+
+class ComposerGhostSuggestionNode extends DecoratorNode<React.ReactElement> {
+  __selectedIndex: number;
+  __suggestionCount: number;
+  __text: string;
+
+  static override getType(): string {
+    return "composer-ghost-suggestion";
+  }
+
+  static override clone(node: ComposerGhostSuggestionNode): ComposerGhostSuggestionNode {
+    return new ComposerGhostSuggestionNode(
+      node.__text,
+      node.__selectedIndex,
+      node.__suggestionCount,
+      node.__key,
+    );
+  }
+
+  static override importJSON(
+    serializedNode: SerializedComposerGhostSuggestionNode,
+  ): ComposerGhostSuggestionNode {
+    return $createComposerGhostSuggestionNode(
+      serializedNode.text,
+      serializedNode.selectedIndex,
+      serializedNode.suggestionCount,
+    ).updateFromJSON(serializedNode);
+  }
+
+  constructor(text: string, selectedIndex: number, suggestionCount: number, key?: NodeKey) {
+    super(key);
+    this.__text = text;
+    this.__selectedIndex = selectedIndex;
+    this.__suggestionCount = suggestionCount;
+  }
+
+  override exportJSON(): SerializedComposerGhostSuggestionNode {
+    return {
+      ...super.exportJSON(),
+      selectedIndex: this.__selectedIndex,
+      suggestionCount: this.__suggestionCount,
+      text: this.__text,
+      type: "composer-ghost-suggestion",
+      version: 1,
+    };
+  }
+
+  override createDOM(): HTMLElement {
+    const dom = document.createElement("span");
+    dom.className = "inline";
+    return dom;
+  }
+
+  override updateDOM(): false {
+    return false;
+  }
+
+  override getTextContent(): string {
+    return "";
+  }
+
+  override isInline(): true {
+    return true;
+  }
+
+  override decorate(): React.ReactElement {
+    return (
+      <ComposerGhostSuggestionDecorator
+        selectedIndex={this.__selectedIndex}
+        suggestionCount={this.__suggestionCount}
+        text={this.__text}
+      />
+    );
+  }
+}
+
+function $createComposerGhostSuggestionNode(
+  text: string,
+  selectedIndex: number,
+  suggestionCount: number,
+): ComposerGhostSuggestionNode {
+  return $applyNodeReplacement(
+    new ComposerGhostSuggestionNode(text, selectedIndex, suggestionCount),
+  );
 }
 
 type ComposerInlineTokenNode =
@@ -881,6 +1007,40 @@ function $setComposerEditorPrompt(
   }
 }
 
+function $removeComposerGhostSuggestionNodes(node: LexicalNode = $getRoot()): void {
+  if (node instanceof ComposerGhostSuggestionNode) {
+    node.remove();
+    return;
+  }
+  if (!$isElementNode(node)) {
+    return;
+  }
+  for (const child of node.getChildren()) {
+    $removeComposerGhostSuggestionNodes(child);
+  }
+}
+
+function $syncComposerGhostSuggestion(input: {
+  selectedIndex: number;
+  suggestionCount: number;
+  text: string | null;
+}): void {
+  $removeComposerGhostSuggestionNodes();
+  if (!input.text) {
+    return;
+  }
+
+  const root = $getRoot();
+  const lastChild = root.getLastChild();
+  const target = lastChild && $isElementNode(lastChild) ? lastChild : $createParagraphNode();
+  if (target !== lastChild) {
+    root.append(target);
+  }
+  target.append(
+    $createComposerGhostSuggestionNode(input.text, input.selectedIndex, input.suggestionCount),
+  );
+}
+
 function collectTerminalContextIds(node: LexicalNode): string[] {
   if (node instanceof ComposerTerminalContextNode) {
     return [node.__context.id];
@@ -919,6 +1079,9 @@ interface ComposerPromptEditorProps {
   disabled: boolean;
   placeholder: string;
   containerClassName?: string;
+  inlineSuggestion?: string | null;
+  inlineSuggestionSelectedIndex?: number;
+  inlineSuggestionCount?: number;
   className?: string;
   placeholderClassName?: string;
   onRemoveTerminalContext: (contextId: string) => void;
@@ -930,10 +1093,7 @@ interface ComposerPromptEditorProps {
     terminalContextIds: string[],
   ) => void;
   onVisibleSelectionChange?: () => void;
-  onCommandKeyDown?: (
-    key: "ArrowDown" | "ArrowUp" | "Enter" | "Tab",
-    event: KeyboardEvent,
-  ) => boolean;
+  onCommandKeyDown?: (key: ComposerCommandKey, event: KeyboardEvent) => boolean;
   onPageScrollKeyDown?: (key: "PageUp" | "PageDown") => void;
   onPageScrollKeyUp?: (key: string) => void;
   onPageScrollRelease?: () => void;
@@ -1003,18 +1163,12 @@ function caretLineRect(range: Range, edge: "start" | "end"): DOMRect | null {
 }
 
 function ComposerCommandKeyPlugin(props: {
-  onCommandKeyDown?: (
-    key: "ArrowDown" | "ArrowUp" | "Enter" | "Tab",
-    event: KeyboardEvent,
-  ) => boolean;
+  onCommandKeyDown?: (key: ComposerCommandKey, event: KeyboardEvent) => boolean;
 }) {
   const [editor] = useLexicalComposerContext();
 
   useEffect(() => {
-    const handleCommand = (
-      key: "ArrowDown" | "ArrowUp" | "Enter" | "Tab",
-      event: KeyboardEvent | null,
-    ): boolean => {
+    const handleCommand = (key: ComposerCommandKey, event: KeyboardEvent | null): boolean => {
       if (!props.onCommandKeyDown || !event) {
         return false;
       }
@@ -1052,12 +1206,38 @@ function ComposerCommandKeyPlugin(props: {
       (event) => handleCommand("Tab", event),
       COMMAND_PRIORITY_HIGH,
     );
+    let currentRoot: HTMLElement | null = null;
+    const handleRawKeyDown = (event: KeyboardEvent) => {
+      if (event.isComposing || event.shiftKey) return;
+      if (event.ctrlKey && !event.metaKey && !event.altKey && event.key === ".") {
+        handleCommand("PromptAutocompleteNext", event);
+        return;
+      }
+      if (event.ctrlKey && !event.metaKey && !event.altKey && event.key === ",") {
+        handleCommand("PromptAutocompletePrevious", event);
+        return;
+      }
+      if (!event.ctrlKey && !event.metaKey && event.altKey && event.key === "]") {
+        handleCommand("PromptAutocompleteNext", event);
+        return;
+      }
+      if (!event.ctrlKey && !event.metaKey && event.altKey && event.key === "[") {
+        handleCommand("PromptAutocompletePrevious", event);
+      }
+    };
+    const unregisterRootListener = editor.registerRootListener((rootElement, prevRootElement) => {
+      prevRootElement?.removeEventListener("keydown", handleRawKeyDown);
+      rootElement?.addEventListener("keydown", handleRawKeyDown);
+      currentRoot = rootElement;
+    });
 
     return () => {
       unregisterArrowDown();
       unregisterArrowUp();
       unregisterEnter();
       unregisterTab();
+      unregisterRootListener();
+      currentRoot?.removeEventListener("keydown", handleRawKeyDown);
     };
   }, [editor, props]);
 
@@ -1636,6 +1816,9 @@ function ComposerPromptEditorInner({
   disabled,
   placeholder,
   containerClassName,
+  inlineSuggestion,
+  inlineSuggestionSelectedIndex = 0,
+  inlineSuggestionCount = 0,
   className,
   placeholderClassName,
   onRemoveTerminalContext,
@@ -1718,6 +1901,19 @@ function ComposerPromptEditorInner({
       }
     });
   }, [editor, openCitationComment?.nodeKey]);
+
+  useLayoutEffect(() => {
+    editor.update(
+      () => {
+        $syncComposerGhostSuggestion({
+          selectedIndex: inlineSuggestionSelectedIndex,
+          suggestionCount: inlineSuggestionCount,
+          text: disabled ? null : (inlineSuggestion ?? null),
+        });
+      },
+      { tag: HISTORY_MERGE_TAG },
+    );
+  }, [disabled, editor, inlineSuggestion, inlineSuggestionCount, inlineSuggestionSelectedIndex]);
 
   useLayoutEffect(() => {
     const normalizedCursor = clampCollapsedComposerCursor(value, cursor);
@@ -2066,6 +2262,9 @@ export function ComposerPromptEditor({
   disabled,
   placeholder,
   containerClassName,
+  inlineSuggestion = null,
+  inlineSuggestionSelectedIndex = 0,
+  inlineSuggestionCount = 0,
   className,
   placeholderClassName,
   onRemoveTerminalContext,
@@ -2091,6 +2290,7 @@ export function ComposerPromptEditor({
         ComposerSkillNode,
         ComposerCitationNode,
         ComposerTerminalContextNode,
+        ComposerGhostSuggestionNode,
       ],
       editorState: () => {
         $setComposerEditorPrompt(
@@ -2116,6 +2316,9 @@ export function ComposerPromptEditor({
         disabled={disabled}
         placeholder={placeholder}
         {...(containerClassName ? { containerClassName } : {})}
+        inlineSuggestion={inlineSuggestion}
+        inlineSuggestionSelectedIndex={inlineSuggestionSelectedIndex}
+        inlineSuggestionCount={inlineSuggestionCount}
         onRemoveTerminalContext={onRemoveTerminalContext}
         onChange={onChange}
         {...(onVisibleSelectionChange ? { onVisibleSelectionChange } : {})}

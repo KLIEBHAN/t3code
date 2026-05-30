@@ -53,6 +53,7 @@ import {
   elementContextDedupKey,
   newElementContextId,
 } from "./lib/elementContext";
+import { getSafeLocalStorage } from "./lib/browserStorage";
 import { create } from "zustand";
 import { persist, type PersistStorage, type StorageValue } from "zustand/middleware";
 import { useShallow } from "zustand/react/shallow";
@@ -81,7 +82,7 @@ type ComposerPersistState =
   | PersistedComposerDraftStoreState;
 
 const composerDebouncedStorage = createDeferredStorage<StorageValue<ComposerPersistState>>(
-  typeof localStorage !== "undefined" ? localStorage : createMemoryStorage(),
+  getSafeLocalStorage() ?? createMemoryStorage(),
   (value) =>
     JSON.stringify({
       state:
@@ -451,6 +452,10 @@ export type DraftThreadState = DraftSessionState;
  */
 interface ProjectDraftSession extends DraftSessionState {
   draftId: DraftId;
+}
+
+export interface ProjectDraftThread extends DraftThreadState {
+  threadId: ThreadId;
 }
 
 /**

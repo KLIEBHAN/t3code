@@ -102,6 +102,10 @@ import * as ProjectSetupScriptRunner from "./project/ProjectSetupScriptRunner.ts
 import { ObservabilityLive } from "./observability/Layers/Observability.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import * as RemoteOpenTargets from "./environment/RemoteOpenTargets.ts";
+import { CustomSlashCommandsLive } from "./customSlashCommands.ts";
+import { ReplySuggestionGenerationLive } from "./suggestions/Layers/ReplySuggestionGenerationLive.ts";
+import { PromptImprovementGenerationLive } from "./promptImprovement/Layers/PromptImprovementGenerationLive.ts";
+import { PromptAutocompleteGenerationLive } from "./promptAutocomplete/Layers/PromptAutocompleteGenerationLive.ts";
 import { authHttpApiLayer, environmentAuthenticatedAuthLayer } from "./auth/http.ts";
 import * as ServerSecretStore from "./auth/ServerSecretStore.ts";
 import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
@@ -307,6 +311,11 @@ const ProviderLayerLive = ProviderServiceLive.pipe(
 
 const PersistenceLayerLive = Layer.empty.pipe(Layer.provideMerge(SqlitePersistenceLayerLive));
 
+const OrchestrationRuntimeLayerLive = OrchestrationLayerLive.pipe(
+  Layer.provideMerge(RepositoryIdentityResolver.layer),
+  Layer.provideMerge(PersistenceLayerLive),
+);
+
 const VcsDriverRegistryLayerLive = VcsDriverRegistry.layer.pipe(
   Layer.provide(VcsProjectConfig.layer),
 );
@@ -465,6 +474,31 @@ const AntigravityInstallationRefreshLive = Layer.effectDiscard(
   }),
 );
 
+const ComposerAssistLayerLive = Layer.mergeAll(
+  ReplySuggestionGenerationLive.pipe(
+    Layer.provideMerge(ServerSettings.layer.pipe(Layer.provide(ServerSecretStore.layer))),
+    Layer.provideMerge(OrchestrationRuntimeLayerLive),
+  ),
+  PromptAutocompleteGenerationLive.pipe(
+    Layer.provideMerge(ServerSettings.layer.pipe(Layer.provide(ServerSecretStore.layer))),
+    Layer.provideMerge(OrchestrationRuntimeLayerLive),
+  ),
+  PromptImprovementGenerationLive.pipe(
+    Layer.provideMerge(ServerSettings.layer.pipe(Layer.provide(ServerSecretStore.layer))),
+    Layer.provideMerge(OrchestrationRuntimeLayerLive),
+  ),
+);
+
+const ServerAuxiliaryRuntimeLive = Layer.mergeAll(
+  ComposerAssistLayerLive,
+  ServerSecretStore.layer,
+  CloudCliTokenManager.layer.pipe(
+    Layer.provide(ServerSecretStore.layer),
+    Layer.provide(ExternalLauncher.layer),
+  ),
+  CloudManagedEndpointRuntimeLive,
+);
+
 const RuntimeCoreDependenciesLive = ReactorLayerLive.pipe(
   Layer.provideMerge(AntigravityInstallationRefreshLive),
   Layer.provideMerge(ProviderAuthServiceLive),
@@ -479,10 +513,15 @@ const RuntimeCoreDependenciesLive = ReactorLayerLive.pipe(
   Layer.provideMerge(ProviderRuntimeLayerLive),
   Layer.provideMerge(Layer.mergeAll(TerminalLayerLive, PreviewLayerLive, DeviceLayerLive)),
   Layer.provideMerge(PersistenceLayerLive),
-  // Both read a user-owned file out of the state directory and stream changes
-  // to clients; neither depends on the other.
+  // These read user-owned files out of the state directory and stream changes
+  // to clients; none depends on the others.
   Layer.provideMerge(
-    Layer.mergeAll(Keybindings.layer, EnvironmentTheme.layer, UsageLimitSources.layer),
+    Layer.mergeAll(
+      Keybindings.layer,
+      EnvironmentTheme.layer,
+      UsageLimitSources.layer,
+      CustomSlashCommandsLive,
+    ),
   ),
   Layer.provideMerge(ProviderRegistryLive),
   // The instance registry is the new routing keystone — text generation,
@@ -515,16 +554,7 @@ const RuntimeCoreDependenciesLive = ReactorLayerLive.pipe(
   Layer.provideMerge(RepositoryIdentityResolver.layer),
   Layer.provideMerge(ServerEnvironmentLayerLive),
   Layer.provideMerge(AuthLayerLive),
-  Layer.provideMerge(ServerSecretStore.layer),
-  Layer.provideMerge(
-    Layer.mergeAll(
-      CloudCliTokenManager.layer.pipe(
-        Layer.provide(ServerSecretStore.layer),
-        Layer.provide(ExternalLauncher.layer),
-      ),
-      CloudManagedEndpointRuntimeLive,
-    ),
-  ),
+  Layer.provideMerge(ServerAuxiliaryRuntimeLive),
 );
 
 const RuntimeDependenciesLive = RuntimeCoreDependenciesLive.pipe(

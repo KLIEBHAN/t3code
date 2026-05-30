@@ -2,6 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 import { ProviderDriverKind } from "@t3tools/contracts";
 
 import type { ComposerCommandItem } from "./ComposerCommandMenu";
+import { getSlashCommandDefinitions } from "../../slashCommands";
 import {
   searchSlashCommandItems,
   slashCommandItemsForPromptPosition,
@@ -15,7 +16,9 @@ describe("searchSlashCommandItems", () => {
       {
         id: "slash:default",
         type: "slash-command",
-        command: "default",
+        command: getSlashCommandDefinitions().find(
+          (command) => command.source === "builtin" && command.id === "default",
+        )!,
         label: "/default",
         description: "Switch this thread back to normal build mode",
       },
@@ -153,7 +156,13 @@ describe("searchSlashCommandItems", () => {
       {
         id: "slash:model",
         type: "slash-command",
-        command: "model",
+        command: {
+          source: "builtin",
+          id: "model",
+          label: "/model",
+          description: "Switch model",
+          mode: "insert",
+        },
         label: "/model",
         description: "Switch model",
       },
@@ -182,7 +191,9 @@ describe("searchSlashCommandItems", () => {
       {
         id: "slash:model",
         type: "slash-command",
-        command: "model",
+        command: getSlashCommandDefinitions().find(
+          (command) => command.source === "builtin" && command.id === "model",
+        )!,
         label: "/model",
         description: "Switch model",
       },
