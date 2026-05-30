@@ -1,4 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
+import type { Components as HastComponents } from "hast-util-to-jsx-runtime";
 import {
   CheckIcon,
   ChevronRightIcon,
@@ -44,6 +45,12 @@ import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
 import { remarkGithubAlerts } from "../markdown-github-alerts";
+import {
+  createSanitizedHtmlFragment,
+  extractSanitizedHtmlLinkHrefs,
+  renderSanitizedHtmlFragment,
+  shouldRenderHtmlFragment,
+} from "./chatHtmlRendering";
 import { renderSkillInlineMarkdownChildren } from "./chat/SkillInlineText";
 import { CHAT_FILE_TAG_CHIP_CLASS_NAME, FileTagChipContent } from "./chat/FileTagChip";
 import { PierreEntryIcon } from "./chat/PierreEntryIcon";
@@ -1382,12 +1389,22 @@ function ChatMarkdown({
     serverConfig?.availableEditors ?? [],
   );
   const diffThemeName = resolveDiffThemeName(resolvedTheme);
+  // Raw-HTML rendering is opt-in per surface: user messages keep XML-like tags
+  // literal, so the whole-message HTML path stays off whenever parsing is off.
+  const renderAsHtmlFragment = parseRawHtml && !isStreaming && shouldRenderHtmlFragment(text);
+  const sanitizedHtmlFragment = useMemo(
+    () => (renderAsHtmlFragment ? createSanitizedHtmlFragment(text) : null),
+    [renderAsHtmlFragment, text],
+  );
   const markdownFileLinkMetaByHref = useMemo(() => {
     const metaByHref = new Map<
       string,
       NonNullable<ReturnType<typeof resolveMarkdownFileLinkMeta>>
     >();
-    for (const href of extractMarkdownLinkHrefs(text)) {
+    const linkHrefs = sanitizedHtmlFragment
+      ? extractSanitizedHtmlLinkHrefs(sanitizedHtmlFragment)
+      : extractMarkdownLinkHrefs(text);
+    for (const href of linkHrefs) {
       const normalizedHref = normalizeMarkdownLinkHrefKey(href);
       if (metaByHref.has(normalizedHref)) continue;
       const meta = resolveMarkdownFileLinkMeta(normalizedHref, cwd);
@@ -1396,7 +1413,7 @@ function ChatMarkdown({
       }
     }
     return metaByHref;
-  }, [cwd, text]);
+  }, [cwd, sanitizedHtmlFragment, text]);
   const inlineCodeFileLinkMetaByText = useMemo(() => {
     const metaByText = new Map<string, MarkdownFileLinkMeta>();
     for (const span of extractInlineCodeSpans(text)) {
@@ -1626,8 +1643,19 @@ function ChatMarkdown({
         );
       },
       a({ node, href, children, title: _title, ...props }) {
+        if (!href) {
+          return (
+            <span {...props} className={cn("chat-markdown-disabled-link", props.className)}>
+              {children}
+            </span>
+          );
+        }
+
         const normalizedHref = href ? normalizeMarkdownLinkHrefKey(href) : "";
-        const fileLinkMeta = normalizedHref ? markdownFileLinkMetaByHref.get(normalizedHref) : null;
+        const fileLinkMeta = normalizedHref
+          ? (markdownFileLinkMetaByHref.get(normalizedHref) ??
+            resolveMarkdownFileLinkMeta(normalizedHref, cwd))
+          : null;
         if (!fileLinkMeta) {
           const faviconHost = resolveExternalWebLinkHost(href);
           const isSameDocumentLink = href?.startsWith("#") ?? false;
@@ -1783,9 +1811,21 @@ function ChatMarkdown({
   ]);
   /* eslint-enable react/no-unstable-nested-components */
 
+  const renderedHtmlFragment = useMemo(
+    () =>
+      sanitizedHtmlFragment
+        ? renderSanitizedHtmlFragment(
+            sanitizedHtmlFragment,
+            markdownComponents as Partial<HastComponents>,
+          )
+        : null,
+    [markdownComponents, sanitizedHtmlFragment],
+  );
+
   // react-markdown converts unparsed HTML nodes to text when skipHtml is false.
   // Keep that behavior explicit because literal mode depends on escaping the
   // complete source token instead of dropping it from the rendered message.
+
   return (
     <div
       className={cn(
@@ -1794,17 +1834,19 @@ function ChatMarkdown({
       )}
       onCopy={handleCopy}
     >
-      <ReactMarkdown
-        remarkPlugins={
-          lineBreaks ? CHAT_MARKDOWN_REMARK_PLUGINS_WITH_BREAKS : CHAT_MARKDOWN_REMARK_PLUGINS
-        }
-        rehypePlugins={parseRawHtml ? CHAT_MARKDOWN_REHYPE_PLUGINS : undefined}
-        skipHtml={false}
-        components={markdownComponents}
-        urlTransform={markdownUrlTransform}
-      >
-        {text}
-      </ReactMarkdown>
+      {renderedHtmlFragment ?? (
+        <ReactMarkdown
+          remarkPlugins={
+            lineBreaks ? CHAT_MARKDOWN_REMARK_PLUGINS_WITH_BREAKS : CHAT_MARKDOWN_REMARK_PLUGINS
+          }
+          rehypePlugins={parseRawHtml ? CHAT_MARKDOWN_REHYPE_PLUGINS : undefined}
+          skipHtml={false}
+          components={markdownComponents}
+          urlTransform={markdownUrlTransform}
+        >
+          {text}
+        </ReactMarkdown>
+      )}
     </div>
   );
 }

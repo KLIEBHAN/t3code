@@ -9,9 +9,11 @@ import {
 } from "react";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 
+import { isCommandPaletteOpen } from "../commandPaletteBus";
 import { isElectron } from "../env";
 import { getLocalStorageItem, removeLocalStorageItem } from "../hooks/useLocalStorage";
 import { resolveShortcutCommand, shortcutLabelForCommand } from "../keybindings";
+import { isTerminalFocused } from "../lib/terminalFocus";
 import { cn, isMacPlatform } from "../lib/utils";
 import { primaryServerKeybindingsAtom } from "../state/server";
 import { useEnvironmentIdentificationMode, useLegacySidebarEnabled } from "../hooks/useSettings";
@@ -64,6 +66,40 @@ function readInitialThreadSidebarWidth(): number {
   }
 }
 
+function ProjectSidebarKeyboardShortcut() {
+  const keybindings = useAtomValue(primaryServerKeybindingsAtom);
+  const { toggleSidebar } = useSidebar();
+
+  useEffect(() => {
+    const onWindowKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.repeat || isCommandPaletteOpen()) return;
+      if (
+        event.target instanceof HTMLElement &&
+        event.target.closest("[data-keybinding-capture]")
+      ) {
+        return;
+      }
+
+      const command = resolveShortcutCommand(event, keybindings, {
+        context: {
+          terminalFocus: isTerminalFocused(),
+          terminalOpen: false,
+        },
+      });
+      if (command !== "projectSidebar.toggle") return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      toggleSidebar();
+    };
+
+    window.addEventListener("keydown", onWindowKeyDown, true);
+    return () => window.removeEventListener("keydown", onWindowKeyDown, true);
+  }, [keybindings, toggleSidebar]);
+
+  return null;
+}
+
 function SidebarControl() {
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const { toggleSidebar } = useSidebar();
@@ -72,7 +108,9 @@ function SidebarControl() {
   const stageBackdropVariant = useSidebarStageBackdropVariant(
     environmentIdentificationMode === "artwork",
   );
-  const shortcutLabel = shortcutLabelForCommand(keybindings, "sidebar.toggle");
+  const shortcutLabel =
+    shortcutLabelForCommand(keybindings, "projectSidebar.toggle") ??
+    shortcutLabelForCommand(keybindings, "sidebar.toggle");
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -211,6 +249,7 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
   return (
     <SidebarProvider className="h-dvh! min-h-0!" defaultOpen style={sidebarProviderStyle}>
       <ProjectProjectionRetention />
+      <ProjectSidebarKeyboardShortcut />
       <Sidebar
         side="left"
         collapsible="offcanvas"

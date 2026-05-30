@@ -65,6 +65,7 @@ import { RpcSerialization, RpcServer } from "effect/unstable/rpc";
 import * as CheckpointDiffQuery from "./checkpointing/CheckpointDiffQuery.ts";
 import * as ServerConfig from "./config.ts";
 import * as Keybindings from "./keybindings.ts";
+import * as CustomSlashCommands from "./customSlashCommands.ts";
 import * as ExternalLauncher from "./process/externalLauncher.ts";
 import {
   projectActivityEvent,
@@ -73,6 +74,9 @@ import {
 import { normalizeDispatchCommand } from "./orchestration/Normalizer.ts";
 import * as OrchestrationEngine from "./orchestration/Services/OrchestrationEngine.ts";
 import * as ProjectionSnapshotQuery from "./orchestration/Services/ProjectionSnapshotQuery.ts";
+import * as ReplySuggestionGeneration from "./suggestions/Services/ReplySuggestionGeneration.ts";
+import * as PromptImprovementGeneration from "./promptImprovement/Services/PromptImprovementGeneration.ts";
+import * as PromptAutocompleteGeneration from "./promptAutocomplete/Services/PromptAutocompleteGeneration.ts";
 import {
   observeRpcEffect as instrumentRpcEffect,
   observeRpcStream as instrumentRpcStream,
@@ -361,8 +365,14 @@ const makeWsRpcLayer = (
       const orchestrationEngine = yield* OrchestrationEngine.OrchestrationEngineService;
       const checkpointDiffQuery = yield* CheckpointDiffQuery.CheckpointDiffQuery;
       const keybindings = yield* Keybindings.Keybindings;
+      const customSlashCommands = yield* CustomSlashCommands.CustomSlashCommands;
       const externalLauncher = yield* ExternalLauncher.ExternalLauncher;
       const remoteOpenTargets = yield* RemoteOpenTargets.RemoteOpenTargets;
+      const replySuggestionGeneration = yield* ReplySuggestionGeneration.ReplySuggestionGeneration;
+      const promptAutocompleteGeneration =
+        yield* PromptAutocompleteGeneration.PromptAutocompleteGeneration;
+      const promptImprovementGeneration =
+        yield* PromptImprovementGeneration.PromptImprovementGeneration;
       const gitWorkflow = yield* GitWorkflowService.GitWorkflowService;
       const review = yield* ReviewService.ReviewService;
       const vcsProvisioning = yield* VcsProvisioningService.VcsProvisioningService;
@@ -994,6 +1004,7 @@ const makeWsRpcLayer = (
 
       const loadServerConfig = Effect.gen(function* () {
         const keybindingsConfig = yield* keybindings.loadConfigState;
+        const customSlashCommandsState = yield* customSlashCommands.loadConfigState;
         const providers = yield* providerRegistry.getProviders;
         const settings = ServerSettings.redactServerSettingsForClient(
           yield* serverSettings.getSettings,
@@ -1006,8 +1017,10 @@ const makeWsRpcLayer = (
           auth,
           cwd: config.cwd,
           keybindingsConfigPath: config.keybindingsConfigPath,
+          customSlashCommandsDirectoryPath: config.customSlashCommandsDirectoryPath,
           keybindings: keybindingsConfig.keybindings,
-          issues: keybindingsConfig.issues,
+          customSlashCommands: customSlashCommandsState.commands,
+          issues: [...keybindingsConfig.issues, ...customSlashCommandsState.issues],
           providers,
           availableEditors: yield* resolveAvailableEditorsForConfig(
             externalLauncher.resolveAvailableEditors(),
@@ -1924,6 +1937,24 @@ const makeWsRpcLayer = (
             }),
             { "rpc.aggregate": "workspace" },
           ),
+        [WS_METHODS.suggestionsGenerateReplySuggestions]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.suggestionsGenerateReplySuggestions,
+            replySuggestionGeneration.generateReplySuggestions(input),
+            { "rpc.aggregate": "suggestions" },
+          ),
+        [WS_METHODS.promptAutocompleteGenerate]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.promptAutocompleteGenerate,
+            promptAutocompleteGeneration.generatePromptAutocomplete(input),
+            { "rpc.aggregate": "promptAutocomplete" },
+          ),
+        [WS_METHODS.promptImprovementGenerate]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.promptImprovementGenerate,
+            promptImprovementGeneration.generatePromptImprovement(input),
+            { "rpc.aggregate": "promptImprovement" },
+          ),
         [WS_METHODS.subscribeVcsStatus]: (input) =>
           observeRpcStream(
             WS_METHODS.subscribeVcsStatus,
@@ -2190,6 +2221,16 @@ const makeWsRpcLayer = (
                   },
                 })),
               );
+              const customSlashCommandsUpdates = customSlashCommands.changes.pipe(
+                Stream.map((event) => ({
+                  version: 1 as const,
+                  type: "customSlashCommandsUpdated" as const,
+                  payload: {
+                    customSlashCommands: event.commands,
+                    issues: event.issues,
+                  },
+                })),
+              );
               const providerStatuses = providerRegistry.streamChanges.pipe(
                 Stream.map((providers) => ({
                   version: 1 as const,
@@ -2212,7 +2253,7 @@ const makeWsRpcLayer = (
                 .pipe(Effect.ignoreCause({ log: true }), Effect.forkScoped);
 
               const liveUpdates = Stream.merge(
-                keybindingsUpdates,
+                Stream.merge(keybindingsUpdates, customSlashCommandsUpdates),
                 Stream.merge(providerStatuses, settingsUpdates),
               );
 

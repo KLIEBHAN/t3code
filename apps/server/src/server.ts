@@ -84,6 +84,10 @@ import * as ProjectSetupScriptRunner from "./project/ProjectSetupScriptRunner.ts
 import { ObservabilityLive } from "./observability/Layers/Observability.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import * as RemoteOpenTargets from "./environment/RemoteOpenTargets.ts";
+import { CustomSlashCommandsLive } from "./customSlashCommands.ts";
+import { ReplySuggestionGenerationLive } from "./suggestions/Layers/ReplySuggestionGenerationLive.ts";
+import { PromptImprovementGenerationLive } from "./promptImprovement/Layers/PromptImprovementGenerationLive.ts";
+import { PromptAutocompleteGenerationLive } from "./promptAutocomplete/Layers/PromptAutocompleteGenerationLive.ts";
 import { authHttpApiLayer, environmentAuthenticatedAuthLayer } from "./auth/http.ts";
 import * as ServerSecretStore from "./auth/ServerSecretStore.ts";
 import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
@@ -266,6 +270,11 @@ const ProviderLayerLive = ProviderServiceLive.pipe(
 
 const PersistenceLayerLive = Layer.empty.pipe(Layer.provideMerge(SqlitePersistenceLayerLive));
 
+const OrchestrationRuntimeLayerLive = OrchestrationLayerLive.pipe(
+  Layer.provideMerge(RepositoryIdentityResolver.layer),
+  Layer.provideMerge(PersistenceLayerLive),
+);
+
 const VcsDriverRegistryLayerLive = VcsDriverRegistry.layer.pipe(
   Layer.provide(VcsProjectConfig.layer),
 );
@@ -368,6 +377,31 @@ const ProviderRuntimeLayerLive = ProviderSessionReaperLive.pipe(
   Layer.provideMerge(OrchestrationLayerLive),
 );
 
+const ComposerAssistLayerLive = Layer.mergeAll(
+  ReplySuggestionGenerationLive.pipe(
+    Layer.provideMerge(ServerSettings.layer.pipe(Layer.provide(ServerSecretStore.layer))),
+    Layer.provideMerge(OrchestrationRuntimeLayerLive),
+  ),
+  PromptAutocompleteGenerationLive.pipe(
+    Layer.provideMerge(ServerSettings.layer.pipe(Layer.provide(ServerSecretStore.layer))),
+    Layer.provideMerge(OrchestrationRuntimeLayerLive),
+  ),
+  PromptImprovementGenerationLive.pipe(
+    Layer.provideMerge(ServerSettings.layer.pipe(Layer.provide(ServerSecretStore.layer))),
+    Layer.provideMerge(OrchestrationRuntimeLayerLive),
+  ),
+);
+
+const ServerAuxiliaryRuntimeLive = Layer.mergeAll(
+  ComposerAssistLayerLive,
+  ServerSecretStore.layer,
+  CloudCliTokenManager.layer.pipe(
+    Layer.provide(ServerSecretStore.layer),
+    Layer.provide(ExternalLauncher.layer),
+  ),
+  CloudManagedEndpointRuntimeLive,
+);
+
 const RuntimeCoreDependenciesLive = ReactorLayerLive.pipe(
   // Core Services
   Layer.provideMerge(ServerSettingsLayerLive),
@@ -379,6 +413,7 @@ const RuntimeCoreDependenciesLive = ReactorLayerLive.pipe(
   Layer.provideMerge(Layer.mergeAll(TerminalLayerLive, PreviewLayerLive)),
   Layer.provideMerge(PersistenceLayerLive),
   Layer.provideMerge(Keybindings.layer),
+  Layer.provideMerge(CustomSlashCommandsLive),
   Layer.provideMerge(ProviderRegistryLive),
   // The instance registry is the new routing keystone — text generation,
   // adapter lookup, and runtime ingestion all resolve `ProviderInstanceId`
@@ -403,16 +438,7 @@ const RuntimeCoreDependenciesLive = ReactorLayerLive.pipe(
   Layer.provideMerge(RepositoryIdentityResolver.layer),
   Layer.provideMerge(ServerEnvironment.layer),
   Layer.provideMerge(AuthLayerLive),
-  Layer.provideMerge(ServerSecretStore.layer),
-  Layer.provideMerge(
-    Layer.mergeAll(
-      CloudCliTokenManager.layer.pipe(
-        Layer.provide(ServerSecretStore.layer),
-        Layer.provide(ExternalLauncher.layer),
-      ),
-      CloudManagedEndpointRuntimeLive,
-    ),
-  ),
+  Layer.provideMerge(ServerAuxiliaryRuntimeLive),
 );
 
 const RuntimeDependenciesLive = RuntimeCoreDependenciesLive.pipe(

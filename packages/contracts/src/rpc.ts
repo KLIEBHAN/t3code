@@ -179,8 +179,11 @@ import {
   ResourceTelemetryRetryResult,
   ResourceTelemetrySnapshot,
 } from "./resourceTelemetry.ts";
+import { PromptImprovementInput, PromptImprovementResult } from "./promptImprovement.ts";
+import { PromptAutocompleteInput, PromptAutocompleteResult } from "./promptAutocomplete.ts";
 import { UsageReadError, UsageSummary, UsageSummaryInput } from "./usage.ts";
 import { ServerSettings, ServerSettingsError, ServerSettingsPatch } from "./settings.ts";
+import { ReplySuggestionsInput, ReplySuggestionsResult } from "./suggestions.ts";
 import {
   SourceControlCloneRepositoryInput,
   SourceControlCloneRepositoryResult,
@@ -210,6 +213,11 @@ export const WS_METHODS = {
   // Filesystem methods
   filesystemBrowse: "filesystem.browse",
   assetsCreateUrl: "assets.createUrl",
+
+  // Suggestions
+  suggestionsGenerateReplySuggestions: "suggestions.generateReplySuggestions",
+  promptAutocompleteGenerate: "promptAutocomplete.generate",
+  promptImprovementGenerate: "promptImprovement.generate",
 
   // VCS methods
   vcsPull: "vcs.pull",
@@ -665,6 +673,27 @@ export const WsAssetsCreateUrlRpc = Rpc.make(WS_METHODS.assetsCreateUrl, {
   error: Schema.Union([AssetAccessError, EnvironmentAuthorizationError]),
 });
 
+export const WsSuggestionsGenerateReplySuggestionsRpc = Rpc.make(
+  WS_METHODS.suggestionsGenerateReplySuggestions,
+  {
+    payload: ReplySuggestionsInput,
+    success: ReplySuggestionsResult,
+    error: EnvironmentAuthorizationError,
+  },
+);
+
+export const WsPromptImprovementGenerateRpc = Rpc.make(WS_METHODS.promptImprovementGenerate, {
+  payload: PromptImprovementInput,
+  success: PromptImprovementResult,
+  error: EnvironmentAuthorizationError,
+});
+
+export const WsPromptAutocompleteGenerateRpc = Rpc.make(WS_METHODS.promptAutocompleteGenerate, {
+  payload: PromptAutocompleteInput,
+  success: PromptAutocompleteResult,
+  error: EnvironmentAuthorizationError,
+});
+
 export const WsSubscribeVcsStatusRpc = Rpc.make(WS_METHODS.subscribeVcsStatus, {
   payload: VcsStatusInput,
   success: VcsStatusStreamEvent,
@@ -1034,6 +1063,9 @@ export const WsRpcGroup = RpcGroup.make(
   WsShellOpenInEditorRpc,
   WsFilesystemBrowseRpc,
   WsAssetsCreateUrlRpc,
+  WsSuggestionsGenerateReplySuggestionsRpc,
+  WsPromptAutocompleteGenerateRpc,
+  WsPromptImprovementGenerateRpc,
   WsSubscribeVcsStatusRpc,
   WsVcsPullRpc,
   WsVcsRefreshStatusRpc,

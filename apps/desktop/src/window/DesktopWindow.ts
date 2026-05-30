@@ -369,6 +369,7 @@ export const make = Effect.gen(function* () {
         nodeIntegration: false,
         sandbox: true,
         webviewTag: true,
+        spellcheck: false,
       },
     });
 

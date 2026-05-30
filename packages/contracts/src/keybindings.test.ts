@@ -84,6 +84,12 @@ it.effect("parses keybinding rules", () =>
     });
     assert.strictEqual(parsedThemeEditor.command, "themeEditor.toggle");
 
+    const parsedProjectSidebar = yield* decode(KeybindingRule, {
+      key: "meta+b",
+      command: "projectSidebar.toggle",
+    });
+    assert.strictEqual(parsedProjectSidebar.command, "projectSidebar.toggle");
+
     const parsedLocal = yield* decode(KeybindingRule, {
       key: "mod+shift+n",
       command: "chat.newLocal",

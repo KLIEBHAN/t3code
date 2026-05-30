@@ -5,6 +5,7 @@ import {
 import {
   type ProjectEntry,
   type ProviderDriverKind,
+  type ProviderInstanceId,
   type ServerProviderSkill,
   type ServerProviderSlashCommand,
 } from "@t3tools/contracts";
@@ -17,11 +18,20 @@ import {
   UserRoundIcon,
   type LucideIcon,
 } from "lucide-react";
-import { memo, useLayoutEffect, useRef } from "react";
+import { memo, useLayoutEffect, useMemo, useRef } from "react";
 
-import { type ComposerSlashCommand, type ComposerTriggerKind } from "../../composer-logic";
+import { type ComposerTriggerKind } from "../../composer-logic";
+import { type SlashCommandDefinition } from "../../slashCommands";
 import { cn } from "~/lib/utils";
-import { Command, CommandGroup, CommandItem, CommandList } from "../ui/command";
+import { Badge } from "../ui/badge";
+import {
+  Command,
+  CommandGroup,
+  CommandGroupLabel,
+  CommandItem,
+  CommandList,
+  CommandSeparator,
+} from "../ui/command";
 import { PierreEntryIcon } from "./PierreEntryIcon";
 
 export type ComposerCommandItem =
@@ -36,7 +46,7 @@ export type ComposerCommandItem =
   | {
       id: string;
       type: "slash-command";
-      command: ComposerSlashCommand;
+      command: SlashCommandDefinition;
       label: string;
       description: string;
     }
@@ -50,6 +60,15 @@ export type ComposerCommandItem =
     }
   | {
       id: string;
+      type: "model";
+      instanceId: ProviderInstanceId;
+      provider: ProviderDriverKind;
+      model: string;
+      label: string;
+      description: string;
+    }
+  | {
+      id: string;
       type: "skill";
       provider: ProviderDriverKind;
       skill: ServerProviderSkill;
@@ -57,17 +76,53 @@ export type ComposerCommandItem =
       description: string;
     };
 
+type ComposerCommandGroup = {
+  id: string;
+  label: string | null;
+  items: ComposerCommandItem[];
+};
+
+function groupCommandItems(
+  items: ComposerCommandItem[],
+  triggerKind: ComposerTriggerKind | null,
+  groupSlashCommandSections: boolean,
+): ComposerCommandGroup[] {
+  if (triggerKind === "skill") {
+    return items.length > 0 ? [{ id: "skills", label: "Skills", items }] : [];
+  }
+  if (triggerKind !== "slash-command" || !groupSlashCommandSections) {
+    return [{ id: "default", label: null, items }];
+  }
+
+  const builtInItems = items.filter((item) => item.type === "slash-command");
+  const providerItems = items.filter((item) => item.type === "provider-slash-command");
+  const groups: ComposerCommandGroup[] = [];
+  if (builtInItems.length > 0) {
+    groups.push({ id: "built-in", label: "Built-in", items: builtInItems });
+  }
+  if (providerItems.length > 0) {
+    groups.push({ id: "provider", label: "Provider", items: providerItems });
+  }
+  return groups;
+}
+
 export const ComposerCommandMenu = memo(function ComposerCommandMenu(props: {
   items: ComposerCommandItem[];
   resolvedTheme: "light" | "dark";
   isLoading: boolean;
   triggerKind: ComposerTriggerKind | null;
+  groupSlashCommandSections?: boolean;
   emptyStateText?: string;
   activeItemId: string | null;
   onHighlightedItemChange: (itemId: string | null) => void;
   onSelect: (item: ComposerCommandItem) => void;
 }) {
   const listRef = useRef<HTMLDivElement>(null);
+  const groups = useMemo(
+    () =>
+      groupCommandItems(props.items, props.triggerKind, props.groupSlashCommandSections ?? false),
+    [props.groupSlashCommandSections, props.items, props.triggerKind],
+  );
 
   useLayoutEffect(() => {
     if (!props.activeItemId || !listRef.current) return;
@@ -94,18 +149,28 @@ export const ComposerCommandMenu = memo(function ComposerCommandMenu(props: {
       >
         {props.items.length > 0 ? (
           <CommandList className="max-h-72 scroll-pb-6">
-            <CommandGroup>
-              {props.items.map((item) => (
-                <ComposerCommandMenuItem
-                  key={item.id}
-                  item={item}
-                  resolvedTheme={props.resolvedTheme}
-                  isActive={props.activeItemId === item.id}
-                  onHighlight={props.onHighlightedItemChange}
-                  onSelect={props.onSelect}
-                />
-              ))}
-            </CommandGroup>
+            {groups.map((group, groupIndex) => (
+              <div key={group.id}>
+                {groupIndex > 0 ? <CommandSeparator className="my-0.5" /> : null}
+                <CommandGroup>
+                  {group.label ? (
+                    <CommandGroupLabel className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-secondary-label">
+                      {group.label}
+                    </CommandGroupLabel>
+                  ) : null}
+                  {group.items.map((item) => (
+                    <ComposerCommandMenuItem
+                      key={item.id}
+                      item={item}
+                      resolvedTheme={props.resolvedTheme}
+                      isActive={props.activeItemId === item.id}
+                      onHighlight={props.onHighlightedItemChange}
+                      onSelect={props.onSelect}
+                    />
+                  ))}
+                </CommandGroup>
+              </div>
+            ))}
           </CommandList>
         ) : (
           <div className="px-5 pt-3.5 pb-7">
@@ -137,6 +202,9 @@ const ComposerCommandMenuItem = memo(function ComposerCommandMenuItem(props: {
 }) {
   const skillSourceKind =
     props.item.type === "skill" ? resolveProviderSkillSourceKind(props.item.skill) : null;
+  const skillSourceLabel = skillSourceKind
+    ? SKILL_SOURCE_LABEL_BY_KIND[skillSourceKind]
+    : null;
 
   return (
     <CommandItem
@@ -165,12 +233,20 @@ const ComposerCommandMenuItem = memo(function ComposerCommandMenuItem(props: {
       ) : skillSourceKind ? (
         <SkillSourceIcon kind={skillSourceKind} />
       ) : null}
+      {props.item.type === "model" ? (
+        <Badge variant="outline" className="px-1.5 py-0 text-[10px]">
+          model
+        </Badge>
+      ) : null}
       <span className="flex min-w-0 flex-1 items-baseline gap-3">
         <span className="shrink-0 font-sans text-xs font-medium">{props.item.label}</span>
         <span className="min-w-0 flex-1 truncate text-right text-secondary-label text-xs">
           {props.item.description}
         </span>
       </span>
+      {skillSourceLabel ? (
+        <span className="shrink-0 pl-2 text-secondary-label text-xs">{skillSourceLabel}</span>
+      ) : null}
     </CommandItem>
   );
 });

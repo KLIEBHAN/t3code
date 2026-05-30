@@ -843,6 +843,36 @@ export const ThreadTurnStartCommand = Schema.Struct({
   createdAt: IsoDateTime,
 });
 
+export const ThreadReviewStartCommand = Schema.Struct({
+  type: Schema.Literal("thread.review.start"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  messageId: MessageId,
+  modelSelection: Schema.optional(ModelSelection),
+  assistantDeliveryMode: Schema.optional(AssistantDeliveryMode),
+  runtimeMode: RuntimeMode.pipe(Schema.withDecodingDefault(Effect.succeed(DEFAULT_RUNTIME_MODE))),
+  interactionMode: ProviderInteractionMode.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_PROVIDER_INTERACTION_MODE)),
+  ),
+  instructions: Schema.optional(TrimmedNonEmptyString),
+  createdAt: IsoDateTime,
+});
+
+export const ThreadCompactStartCommand = Schema.Struct({
+  type: Schema.Literal("thread.compact.start"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  messageId: MessageId,
+  modelSelection: Schema.optional(ModelSelection),
+  assistantDeliveryMode: Schema.optional(AssistantDeliveryMode),
+  runtimeMode: RuntimeMode.pipe(Schema.withDecodingDefault(Effect.succeed(DEFAULT_RUNTIME_MODE))),
+  interactionMode: ProviderInteractionMode.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_PROVIDER_INTERACTION_MODE)),
+  ),
+  instructions: Schema.optional(TrimmedNonEmptyString),
+  createdAt: IsoDateTime,
+});
+
 const ClientThreadTurnStartCommand = Schema.Struct({
   type: Schema.Literal("thread.turn.start"),
   commandId: CommandId,
@@ -928,6 +958,8 @@ const DispatchableClientOrchestrationCommand = Schema.Union([
   ThreadRuntimeModeSetCommand,
   ThreadInteractionModeSetCommand,
   ThreadTurnStartCommand,
+  ThreadReviewStartCommand,
+  ThreadCompactStartCommand,
   ThreadTurnInterruptCommand,
   ThreadApprovalRespondCommand,
   ThreadUserInputRespondCommand,
@@ -956,6 +988,8 @@ export const ClientOrchestrationCommand = Schema.Union([
   ThreadRuntimeModeSetCommand,
   ThreadInteractionModeSetCommand,
   ClientThreadTurnStartCommand,
+  ThreadReviewStartCommand,
+  ThreadCompactStartCommand,
   ThreadTurnInterruptCommand,
   ThreadApprovalRespondCommand,
   ThreadUserInputRespondCommand,
