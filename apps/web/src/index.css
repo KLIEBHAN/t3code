@@ -432,6 +432,10 @@ label:has(> select#reasoning-effort) select {
 .chat-markdown ul,
 .chat-markdown ol,
 .chat-markdown blockquote,
+.chat-markdown section,
+.chat-markdown article,
+.chat-markdown aside,
+.chat-markdown figure,
 .chat-markdown pre,
 .chat-markdown .chat-markdown-table-container {
   margin: 0.65rem 0;
@@ -536,6 +540,11 @@ label:has(> select#reasoning-effort) select {
   white-space: nowrap;
 }
 
+.chat-markdown .chat-markdown-disabled-link {
+  color: inherit;
+  text-decoration: none;
+}
+
 .chat-markdown blockquote {
   border-left: 2px solid var(--border);
   padding-left: 0.8rem;
@@ -569,6 +578,54 @@ label:has(> select#reasoning-effort) select {
   text-decoration: none;
   font-size: 0.6875rem;
   font-weight: 600;
+}
+
+.chat-markdown hr {
+  margin: 0.9rem 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+}
+
+.chat-markdown img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+.chat-markdown figure {
+  max-width: 100%;
+}
+
+.chat-markdown figcaption {
+  margin-top: 0.35rem;
+  color: var(--muted-foreground);
+  font-size: 0.85em;
+}
+
+.chat-markdown details {
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background: color-mix(in srgb, var(--muted) 38%, transparent);
+  padding: 0.5rem 0.65rem;
+}
+
+.chat-markdown summary {
+  cursor: pointer;
+  color: var(--foreground);
+  font-weight: 600;
+}
+
+.chat-markdown summary:focus-visible {
+  border-radius: 0.25rem;
+  outline: 2px solid color-mix(in srgb, var(--ring) 70%, transparent);
+  outline-offset: 2px;
+}
+
+.chat-markdown input[type="checkbox"] {
+  position: relative;
+  top: 0.1rem;
+  margin: 0 0.35rem 0 0;
+  accent-color: var(--primary);
 }
 
 .chat-markdown :not(pre) > code {

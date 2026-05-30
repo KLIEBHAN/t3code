@@ -71,6 +71,7 @@ import {
   collapseExpandedComposerCursor,
   parseStandaloneComposerSlashCommand,
 } from "../composer-logic";
+import { createChatPromptHistory } from "../chatPromptHistory";
 import {
   derivePendingApprovals,
   derivePendingUserInputs,
@@ -1152,6 +1153,7 @@ function ChatViewContent(props: ChatViewProps) {
   const [composerOverlayElement, setComposerOverlayElement] = useState<HTMLDivElement | null>(null);
   const [composerOverlayHeight, setComposerOverlayHeight] = useState(0);
   const isAtEndRef = useRef(true);
+  const promptHistory = useMemo(() => createChatPromptHistory(), []);
   const attachmentPreviewHandoffByMessageIdRef = useRef<Record<string, string[]>>({});
   const attachmentPreviewPromotionInFlightByMessageIdRef = useRef<Record<string, true>>({});
   const sendInFlightRef = useRef(false);
@@ -3875,8 +3877,12 @@ function ChatViewContent(props: ChatViewProps) {
     ],
   );
 
-  const onSend = async (e?: { preventDefault: () => void }) => {
-    e?.preventDefault();
+  const sendComposerMessage = async (input?: {
+    event?: { preventDefault: () => void };
+    promptOverride?: string;
+    skipStandaloneSlashParsing?: boolean;
+  }) => {
+    input?.event?.preventDefault();
     if (
       !activeThread ||
       isSendBusy ||
@@ -3903,14 +3909,37 @@ function ChatViewContent(props: ChatViewProps) {
       selectedPromptEffort: ctxSelectedPromptEffort,
       selectedModelSelection: ctxSelectedModelSelection,
     } = sendCtx;
-    const promptForSend = promptRef.current;
+    const promptForSend = input?.promptOverride ?? promptRef.current;
+    const standaloneSlashCommand =
+      !input?.skipStandaloneSlashParsing &&
+      composerImages.length === 0 &&
+      composerTerminalContexts.length === 0 &&
+      composerElementContexts.length === 0 &&
+      composerPreviewAnnotations.length === 0 &&
+      composerReviewComments.length === 0
+        ? parseStandaloneComposerSlashCommand(
+            promptForSend.trim(),
+            serverConfig?.customSlashCommands ?? [],
+          )
+        : null;
+    if (standaloneSlashCommand?.source === "builtin") {
+      if (standaloneSlashCommand.id === "plan" || standaloneSlashCommand.id === "default") {
+        handleInteractionModeChange(standaloneSlashCommand.id === "plan" ? "plan" : "default");
+        promptRef.current = "";
+        clearComposerDraftContent(composerDraftTarget);
+        composerRef.current?.resetCursorState();
+      }
+      return;
+    }
+    const effectivePromptForSend =
+      standaloneSlashCommand?.source === "custom" ? standaloneSlashCommand.prompt : promptForSend;
     const {
       trimmedPrompt: trimmed,
       sendableTerminalContexts: sendableComposerTerminalContexts,
       expiredTerminalContextCount,
       hasSendableContent,
     } = deriveComposerSendState({
-      prompt: promptForSend,
+      prompt: effectivePromptForSend,
       imageCount: composerImages.length,
       terminalContexts: composerTerminalContexts,
       elementContextCount:
@@ -3930,21 +3959,6 @@ function ChatViewContent(props: ChatViewProps) {
         text: followUp.text,
         interactionMode: followUp.interactionMode,
       });
-      return;
-    }
-    const standaloneSlashCommand =
-      composerImages.length === 0 &&
-      sendableComposerTerminalContexts.length === 0 &&
-      composerElementContexts.length === 0 &&
-      composerPreviewAnnotations.length === 0 &&
-      composerReviewComments.length === 0
-        ? parseStandaloneComposerSlashCommand(trimmed)
-        : null;
-    if (standaloneSlashCommand) {
-      handleInteractionModeChange(standaloneSlashCommand);
-      promptRef.current = "";
-      clearComposerDraftContent(composerDraftTarget);
-      composerRef.current?.resetCursorState();
       return;
     }
     if (!hasSendableContent) {
@@ -3989,7 +4003,7 @@ function ChatViewContent(props: ChatViewProps) {
     const composerPreviewAnnotationsSnapshot = [...composerPreviewAnnotations];
     const composerReviewCommentsSnapshot: ReviewCommentContext[] = [...composerReviewComments];
     const messageTextWithContexts = appendElementContextsToPrompt(
-      appendTerminalContextsToPrompt(promptForSend, composerTerminalContextsSnapshot),
+      appendTerminalContextsToPrompt(effectivePromptForSend, composerTerminalContextsSnapshot),
       composerElementContextsSnapshot,
     );
     const messageTextWithPreviewAnnotations = composerPreviewAnnotationsSnapshot.reduce(
@@ -4232,10 +4246,24 @@ function ChatViewContent(props: ChatViewProps) {
         );
       }
     }
+    if (turnStartSucceeded && trimmed.length > 0) {
+      promptHistory.recordPrompt(threadIdForSend, trimmed);
+    }
     sendInFlightRef.current = false;
     if (!turnStartSucceeded) {
       resetLocalDispatch();
     }
+  };
+
+  const onSend = (e?: { preventDefault: () => void }) => {
+    void sendComposerMessage(e ? { event: e } : undefined);
+  };
+
+  const onSendPromptOverride = (text: string) => {
+    void sendComposerMessage({
+      promptOverride: text,
+      skipStandaloneSlashParsing: true,
+    });
   };
 
   const onInterrupt = async () => {
@@ -5185,11 +5213,14 @@ function ChatViewContent(props: ChatViewProps) {
                       keybindings={keybindings}
                       terminalOpen={Boolean(terminalUiState.terminalOpen)}
                       gitCwd={gitCwd}
+                      customSlashCommands={serverConfig?.customSlashCommands ?? []}
+                      promptHistory={promptHistory}
                       promptRef={promptRef}
                       composerImagesRef={composerImagesRef}
                       composerTerminalContextsRef={composerTerminalContextsRef}
                       composerElementContextsRef={composerElementContextsRef}
                       onSend={onSend}
+                      onSendPromptOverride={onSendPromptOverride}
                       onInterrupt={onInterrupt}
                       onImplementPlanInNewThread={onImplementPlanInNewThread}
                       onRespondToApproval={onRespondToApproval}

@@ -119,9 +119,17 @@
       "types": "./src/oauthScope.ts",
       "import": "./src/oauthScope.ts"
     },
+    "./replySuggestions": {
+      "types": "./src/replySuggestions.ts",
+      "import": "./src/replySuggestions.ts"
+    },
     "./searchRanking": {
       "types": "./src/searchRanking.ts",
       "import": "./src/searchRanking.ts"
+    },
+    "./slashCommands": {
+      "types": "./src/slashCommands.ts",
+      "import": "./src/slashCommands.ts"
     },
     "./qrCode": {
       "types": "./src/qrCode.ts",

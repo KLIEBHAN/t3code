@@ -11,6 +11,15 @@ import {
 } from "./composer-logic";
 import { INLINE_TERMINAL_CONTEXT_PLACEHOLDER } from "./lib/terminalContext";
 
+const CUSTOM_COMMANDS = [
+  {
+    command: "deploy",
+    description: "Deploy the current project",
+    prompt: "# Deploy\nRun the deployment workflow for this repo.",
+    sourcePath: "/tmp/slash-commands/deploy.md",
+  },
+] as const;
+
 describe("detectComposerTrigger", () => {
   it("detects @path trigger at cursor", () => {
     const text = "Please check @src/com";
@@ -36,23 +45,28 @@ describe("detectComposerTrigger", () => {
     });
   });
 
-  it("keeps /model as a slash command item", () => {
+  it("routes /model into the model trigger", () => {
     const text = "/model";
     const trigger = detectComposerTrigger(text, text.length);
 
     expect(trigger).toEqual({
-      kind: "slash-command",
-      query: "model",
+      kind: "slash-model",
+      query: "",
       rangeStart: 0,
       rangeEnd: text.length,
     });
   });
 
-  it("does not keep a subcommand trigger active after /model arguments", () => {
+  it("keeps the model trigger active while typing /model arguments", () => {
     const text = "/model spark";
     const trigger = detectComposerTrigger(text, text.length);
 
-    expect(trigger).toBeNull();
+    expect(trigger).toEqual({
+      kind: "slash-model",
+      query: "spark",
+      rangeStart: 0,
+      rangeEnd: text.length,
+    });
   });
 
   it("detects non-model slash commands while typing", () => {
@@ -67,16 +81,22 @@ describe("detectComposerTrigger", () => {
     });
   });
 
-  it("keeps slash command detection active for provider commands", () => {
-    const text = "/rev";
+  it("keeps slash command detection active for supported built-ins", () => {
+    const text = "/def";
     const trigger = detectComposerTrigger(text, text.length);
 
     expect(trigger).toEqual({
       kind: "slash-command",
-      query: "rev",
+      query: "def",
       rangeStart: 0,
       rangeEnd: text.length,
     });
+  });
+
+  it("does not keep slash command detection active for unsupported built-ins", () => {
+    const text = "/rev";
+
+    expect(detectComposerTrigger(text, text.length)).toBeNull();
   });
 
   it("detects $skill trigger at cursor", () => {
@@ -90,7 +110,6 @@ describe("detectComposerTrigger", () => {
       rangeEnd: text.length,
     });
   });
-
   it("detects @path trigger in the middle of existing text", () => {
     // User typed @ between "inspect " and "in this sentence"
     const text = "Please inspect @in this sentence";
@@ -129,6 +148,18 @@ describe("detectComposerTrigger", () => {
     expect(trigger).not.toBeNull();
     expect(trigger?.kind).toBe("path");
     expect(trigger?.query).toBe("");
+  });
+
+  it("detects custom slash commands while typing", () => {
+    const text = "/dep";
+    const trigger = detectComposerTrigger(text, text.length, CUSTOM_COMMANDS);
+
+    expect(trigger).toEqual({
+      kind: "slash-command",
+      query: "dep",
+      rangeStart: 0,
+      rangeEnd: text.length,
+    });
   });
 });
 
@@ -337,11 +368,17 @@ describe("isCollapsedCursorAdjacentToInlineToken", () => {
 
 describe("parseStandaloneComposerSlashCommand", () => {
   it("parses standalone /plan command", () => {
-    expect(parseStandaloneComposerSlashCommand(" /plan ")).toBe("plan");
+    expect(parseStandaloneComposerSlashCommand(" /plan ")?.id).toBe("plan");
   });
 
   it("parses standalone /default command", () => {
-    expect(parseStandaloneComposerSlashCommand("/default")).toBe("default");
+    expect(parseStandaloneComposerSlashCommand("/default")?.id).toBe("default");
+  });
+
+  it("parses custom standalone commands", () => {
+    expect(parseStandaloneComposerSlashCommand("/deploy", CUSTOM_COMMANDS)?.id).toBe(
+      "custom:deploy",
+    );
   });
 
   it("ignores slash commands with extra message text", () => {

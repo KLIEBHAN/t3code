@@ -45,6 +45,7 @@ import Migration0029 from "./Migrations/029_ProjectionThreadDetailOrderingIndexe
 import Migration0030 from "./Migrations/030_ProjectionThreadShellArchiveIndexes.ts";
 import Migration0031 from "./Migrations/031_AuthAuthorizationScopes.ts";
 import Migration0032 from "./Migrations/032_AuthPairingProofKeyThumbprint.ts";
+import EnsureProviderInstanceIdColumns from "./Migrations/029_EnsureProviderInstanceIdColumns.ts";
 
 /**
  * Migration loader with all migrations defined inline.
@@ -129,6 +130,9 @@ export const runMigrations = Effect.fn("runMigrations")(function* ({
       : `Running migrations 1 through ${toMigrationInclusive}...`,
   );
   const executedMigrations = yield* run({ loader: makeMigrationLoader(toMigrationInclusive) });
+  if (toMigrationInclusive === undefined) {
+    yield* EnsureProviderInstanceIdColumns;
+  }
   yield* Effect.log("Migrations ran successfully").pipe(
     Effect.annotateLogs({ migrations: executedMigrations.map(([id, name]) => `${id}_${name}`) }),
   );

@@ -17,6 +17,7 @@ import {
   type ScopedThreadRef,
   type ThreadId,
 } from "@t3tools/contracts";
+import { DEFAULT_TERMINAL_FONT_FAMILY } from "@t3tools/contracts/settings";
 import { getTerminalLabel } from "@t3tools/shared/terminalLabels";
 import { Terminal, type ITheme } from "@xterm/xterm";
 import {
@@ -390,8 +391,7 @@ export function TerminalViewport({
       lineHeight: 1,
       fontSize: 12,
       scrollback: 5_000,
-      fontFamily:
-        '"SF Mono", "SFMono-Regular", "JetBrains Mono", Consolas, "Liberation Mono", Menlo, monospace',
+      fontFamily: DEFAULT_TERMINAL_FONT_FAMILY,
       theme: terminalThemeFromApp(mount),
     });
     terminal.loadAddon(fitAddon);
