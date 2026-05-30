@@ -30,7 +30,7 @@ import {
   latestExecutedRun,
   latestRootProviderFailure,
 } from "@t3tools/shared/orchestrationV2ThreadError";
-import type { UsageLimitSourceSnapshots } from "@t3tools/contracts";
+import type { ServerCustomSlashCommand, UsageLimitSourceSnapshots } from "@t3tools/contracts";
 import {
   collectProviderUsageLimits,
   hasProviderUsageLimits,
@@ -627,6 +627,7 @@ const EMPTY_FEEDBACK_SUBMISSIONS: ReadonlyArray<CodexFeedbackSubmission> = [];
 // watermark per interval is plenty.
 const VISIT_DISPATCH_THROTTLE_MS = 10_000;
 const EMPTY_PROVIDER_SKILLS: ServerProvider["skills"] = [];
+const EMPTY_CUSTOM_SLASH_COMMANDS: ReadonlyArray<ServerCustomSlashCommand> = [];
 const EMPTY_PENDING_USER_INPUT_ANSWERS: Record<string, PendingUserInputDraftAnswer> = {};
 function useDraftHeroLayoutTransition(
   isDraftHeroState: boolean,
@@ -7549,6 +7550,7 @@ export default function ChatView(props: ChatViewProps) {
         } else {
           clearUsageLimitsFor(routeThreadKey);
         }
+        return result._tag === "Success";
       } finally {
         sendInFlightRef.current = false;
       }
@@ -7569,6 +7571,21 @@ export default function ChatView(props: ChatViewProps) {
       setThreadError,
       startThreadTurn,
     ],
+  );
+
+  // Selecting a custom slash command sends its stored prompt as the turn and
+  // retires the draft only once the turn actually started.
+  const onSendPromptOverride = useCallback(
+    (text: string) => {
+      void (async () => {
+        const started = await sendStandaloneCommand(text, "Failed to run the command.");
+        if (started !== true) return;
+        promptRef.current = "";
+        clearComposerDraftContent(composerDraftTarget);
+        composerRef.current?.resetCursorState();
+      })();
+    },
+    [clearComposerDraftContent, composerDraftTarget, sendStandaloneCommand],
   );
   // A native /goal keeps the agent working across turns. Stop pauses a Codex
   // goal; once the thread is idle the row offers the native follow-ups.
@@ -9099,13 +9116,30 @@ export default function ChatView(props: ChatViewProps) {
       }
       return;
     }
+    // A typed custom command sends its stored prompt. Drafts with attachments or
+    // contexts are prompts, never commands.
+    const hasComposerAttachmentsOrContexts =
+      composerImages.length > 0 ||
+      composerFiles.length > 0 ||
+      composerTerminalContexts.length > 0 ||
+      composerPreviewAnnotations.length > 0 ||
+      composerReviewComments.length > 0 ||
+      composerThreadContexts.length > 0;
+    const customSlashCommand = hasComposerAttachmentsOrContexts
+      ? null
+      : parseStandaloneComposerSlashCommand(
+          promptForSend,
+          serverConfig?.customSlashCommands ?? EMPTY_CUSTOM_SLASH_COMMANDS,
+        );
+    const effectivePromptForSend =
+      customSlashCommand?.source === "custom" ? customSlashCommand.prompt : promptForSend;
     const {
       trimmedPrompt: trimmed,
       sendableTerminalContexts: sendableComposerTerminalContexts,
       expiredTerminalContextCount,
       hasSendableContent,
     } = deriveComposerSendState({
-      prompt: promptForSend,
+      prompt: effectivePromptForSend,
       imageCount: composerImages.length + composerFiles.length,
       terminalContexts: composerTerminalContexts,
       elementContextCount:
@@ -9253,8 +9287,8 @@ export default function ChatView(props: ChatViewProps) {
       composerThreadContexts.length === 0
         ? parseStandaloneComposerSlashCommand(trimmed)
         : null;
-    if (standaloneSlashCommand && multipleModelSelections === null) {
-      handleInteractionModeChange(standaloneSlashCommand);
+    if (standaloneSlashCommand?.source === "builtin" && multipleModelSelections === null) {
+      handleInteractionModeChange(standaloneSlashCommand.id === "plan" ? "plan" : "default");
       promptRef.current = "";
       clearComposerDraftContent(composerDraftTarget);
       composerRef.current?.resetCursorState();
@@ -9315,7 +9349,7 @@ export default function ChatView(props: ChatViewProps) {
       .reduce(
         (text, context) =>
           removeInlineContextReference(text, terminalContextReference(context).contextId).prompt,
-        promptForSend,
+        effectivePromptForSend,
       )
       .trim();
     // Records bind attachments by the id each side knows: the local id for the optimistic
@@ -11868,6 +11902,10 @@ export default function ChatView(props: ChatViewProps) {
                               onPageScrollRelease={onComposerPageScrollRelease}
                               onCompactContext={onComposerCompactContext}
                               onSend={onComposerSend}
+                              onSendPromptOverride={onSendPromptOverride}
+                              customSlashCommands={
+                                serverConfig?.customSlashCommands ?? EMPTY_CUSTOM_SLASH_COMMANDS
+                              }
                               onResume={onComposerResume}
                               onInterrupt={onInterrupt}
                               onImplementPlanInNewThread={onImplementPlanInNewThread}

@@ -323,6 +323,9 @@ import {
   ProviderConsumeResetCreditInput,
   ProviderConsumeResetCreditResult,
 } from "./providerUsageLimits.ts";
+import { PromptImprovementInput, PromptImprovementResult } from "./promptImprovement.ts";
+import { PromptAutocompleteInput, PromptAutocompleteResult } from "./promptAutocomplete.ts";
+import { ReplySuggestionsInput, ReplySuggestionsResult } from "./suggestions.ts";
 import { UsagePricing, UsageReadError, UsageSummary, UsageSummaryInput } from "./usage.ts";
 import {
   StorageCleanupReport,
@@ -419,6 +422,11 @@ export const WS_METHODS = {
   providerInstallCancel: "provider.install.cancel",
   providerInstallSubscribe: "provider.install.subscribe",
   providerInstallRemove: "provider.install.remove",
+
+  // Suggestions
+  suggestionsGenerateReplySuggestions: "suggestions.generateReplySuggestions",
+  promptAutocompleteGenerate: "promptAutocomplete.generate",
+  promptImprovementGenerate: "promptImprovement.generate",
 
   // VCS methods
   vcsPull: "vcs.pull",
@@ -1345,6 +1353,27 @@ const WsProviderUploadFeedbackRpc = Rpc.make(WS_METHODS.providerUploadFeedback, 
   error: Schema.Union([ProviderUploadFeedbackError, EnvironmentAuthorizationError]),
 });
 
+const WsSuggestionsGenerateReplySuggestionsRpc = Rpc.make(
+  WS_METHODS.suggestionsGenerateReplySuggestions,
+  {
+    payload: ReplySuggestionsInput,
+    success: ReplySuggestionsResult,
+    error: EnvironmentAuthorizationError,
+  },
+);
+
+const WsPromptImprovementGenerateRpc = Rpc.make(WS_METHODS.promptImprovementGenerate, {
+  payload: PromptImprovementInput,
+  success: PromptImprovementResult,
+  error: EnvironmentAuthorizationError,
+});
+
+const WsPromptAutocompleteGenerateRpc = Rpc.make(WS_METHODS.promptAutocompleteGenerate, {
+  payload: PromptAutocompleteInput,
+  success: PromptAutocompleteResult,
+  error: EnvironmentAuthorizationError,
+});
+
 const WsSubscribeVcsStatusRpc = Rpc.make(WS_METHODS.subscribeVcsStatus, {
   payload: VcsStatusSubscriptionInput,
   success: VcsStatusStreamEvent,
@@ -2002,6 +2031,9 @@ export const WsRpcGroup = RpcGroup.make(
   WsMcpAppsReadResourceRpc,
   WsMcpAppsUpdateModelContextRpc,
   WsProviderUploadFeedbackRpc,
+  WsSuggestionsGenerateReplySuggestionsRpc,
+  WsPromptAutocompleteGenerateRpc,
+  WsPromptImprovementGenerateRpc,
   WsSubscribeVcsStatusRpc,
   WsSubscribeWorktreeSetupRpc,
   WsWorktreeSetupCancelRpc,

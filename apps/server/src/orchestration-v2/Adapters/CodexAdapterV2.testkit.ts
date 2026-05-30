@@ -161,6 +161,7 @@ export function makeReplayServerConfig(
       stateDir,
       dbPath: path.join(stateDir, "state.sqlite"),
       keybindingsConfigPath: path.join(stateDir, "keybindings.json"),
+      customSlashCommandsDirectoryPath: path.join(stateDir, "slash-commands"),
       settingsPath: path.join(stateDir, "settings.json"),
       providerStatusCacheDir,
       worktreesDir,

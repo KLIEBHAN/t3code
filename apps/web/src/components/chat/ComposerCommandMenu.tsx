@@ -6,6 +6,7 @@ import {
 import {
   type ProjectEntry,
   type ProviderDriverKind,
+  type ProviderInstanceId,
   type PullRequestContextMetadata,
   type ScopedThreadRef,
   type ServerProviderSkill,
@@ -20,12 +21,13 @@ import {
   UserRoundIcon,
   type LucideIcon,
 } from "lucide-react";
-import { memo, useLayoutEffect, useRef } from "react";
+import { memo, useLayoutEffect, useMemo, useRef } from "react";
 
-import { type ComposerSlashCommand, type ComposerTriggerKind } from "../../composer-logic";
+import { type ComposerTriggerKind } from "../../composer-logic";
+import { type SlashCommandDefinition } from "../../slashCommands";
 import { cn } from "~/lib/utils";
 import { Badge } from "../ui/badge";
-import { Command, CommandGroup, CommandItem, CommandList } from "../ui/command";
+import { Command, CommandGroup, CommandGroupLabel, CommandItem, CommandList } from "../ui/command";
 import { PierreEntryIcon } from "./PierreEntryIcon";
 import { ComposerBanner } from "./ComposerBanner";
 import { resolvePullRequestState } from "../pullRequest/pullRequestPresentation";
@@ -42,7 +44,7 @@ export type ComposerCommandItem =
   | {
       id: string;
       type: "slash-command";
-      command: ComposerSlashCommand;
+      command: SlashCommandDefinition;
       label: string;
       description: string;
     }
@@ -51,6 +53,15 @@ export type ComposerCommandItem =
       type: "provider-slash-command";
       provider: ProviderDriverKind;
       command: ServerProviderSlashCommand;
+      label: string;
+      description: string;
+    }
+  | {
+      id: string;
+      type: "model";
+      instanceId: ProviderInstanceId;
+      provider: ProviderDriverKind;
+      model: string;
       label: string;
       description: string;
     }
@@ -77,18 +88,56 @@ export type ComposerCommandItem =
       description: string;
     };
 
+type ComposerCommandGroup = {
+  id: string;
+  label: string | null;
+  items: ComposerCommandItem[];
+};
+
+function groupCommandItems(
+  items: ComposerCommandItem[],
+  triggerKind: ComposerTriggerKind | null,
+  groupSlashCommandSections: boolean,
+): ComposerCommandGroup[] {
+  if (triggerKind === "skill") {
+    return items.length > 0 ? [{ id: "skills", label: "Skills", items }] : [];
+  }
+  if (triggerKind !== "slash-command" || !groupSlashCommandSections) {
+    return [{ id: "default", label: null, items }];
+  }
+
+  const builtInItems = items.filter((item) => item.type === "slash-command");
+  const providerItems = items.filter(
+    (item) => item.type === "provider-slash-command" || item.type === "skill",
+  );
+  const groups: ComposerCommandGroup[] = [];
+  if (builtInItems.length > 0) {
+    groups.push({ id: "built-in", label: "Built-in", items: builtInItems });
+  }
+  if (providerItems.length > 0) {
+    groups.push({ id: "provider", label: "Provider", items: providerItems });
+  }
+  return groups;
+}
+
 export const ComposerCommandMenu = memo(function ComposerCommandMenu(props: {
   listId: string;
   items: ComposerCommandItem[];
   resolvedTheme: "light" | "dark";
   isLoading: boolean;
   triggerKind: ComposerTriggerKind | null;
+  groupSlashCommandSections?: boolean;
   emptyStateText?: string;
   activeItemId: string | null;
   onHighlightedItemChange: (itemId: string | null) => void;
   onSelect: (item: ComposerCommandItem) => void;
 }) {
   const listRef = useRef<HTMLDivElement>(null);
+  const groups = useMemo(
+    () =>
+      groupCommandItems(props.items, props.triggerKind, props.groupSlashCommandSections ?? false),
+    [props.groupSlashCommandSections, props.items, props.triggerKind],
+  );
 
   useLayoutEffect(() => {
     if (!props.activeItemId || !listRef.current) return;
@@ -119,20 +168,26 @@ export const ComposerCommandMenu = memo(function ComposerCommandMenu(props: {
             aria-label={props.triggerKind ? LISTBOX_LABEL_BY_TRIGGER[props.triggerKind] : undefined}
             className="max-h-72 min-h-0 scroll-pb-6"
           >
-            <CommandGroup>
-              {props.items.map((item) => (
-                <ComposerCommandMenuItem
-                  key={item.id}
-                  optionId={composerSuggestionOptionId(props.listId, item.id)}
-                  item={item}
-                  triggerKind={props.triggerKind}
-                  resolvedTheme={props.resolvedTheme}
-                  isActive={props.activeItemId === item.id}
-                  onHighlight={props.onHighlightedItemChange}
-                  onSelect={props.onSelect}
-                />
-              ))}
-            </CommandGroup>
+            {groups.map((group, groupIndex) => (
+              <div key={group.id}>
+                {groupIndex > 0 ? <div aria-hidden className="bg-border my-0.5 h-px" /> : null}
+                <CommandGroup>
+                  {group.label ? <CommandGroupLabel>{group.label}</CommandGroupLabel> : null}
+                  {group.items.map((item) => (
+                    <ComposerCommandMenuItem
+                      key={item.id}
+                      optionId={composerSuggestionOptionId(props.listId, item.id)}
+                      item={item}
+                      triggerKind={props.triggerKind}
+                      resolvedTheme={props.resolvedTheme}
+                      isActive={props.activeItemId === item.id}
+                      onHighlight={props.onHighlightedItemChange}
+                      onSelect={props.onSelect}
+                    />
+                  ))}
+                </CommandGroup>
+              </div>
+            ))}
           </CommandList>
         ) : (
           <div className="px-5 pt-3.5 pb-7">
@@ -207,6 +262,9 @@ const ComposerCommandMenuItem = memo(function ComposerCommandMenuItem(props: {
           className={cn("size-4 shrink-0", pullRequestPresentation.toneClassName)}
         />
       ) : null}
+      {props.item.type === "model" ? (
+<Badge variant="outline">model</Badge>
+      ) : null}
       <span className="flex min-w-0 flex-1 items-center gap-2">
         <span className="min-w-0 max-w-[45%] shrink-0 truncate font-sans text-xs font-medium">
           {isSlashSkill ? (
@@ -241,6 +299,7 @@ const LISTBOX_LABEL_BY_TRIGGER: Record<ComposerTriggerKind, string> = {
   path: "Files and folders",
   "pull-request": "Pull requests",
   "slash-command": "Commands",
+  "slash-model": "Models",
   skill: "Skills",
 };
 

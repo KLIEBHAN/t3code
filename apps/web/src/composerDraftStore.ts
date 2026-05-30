@@ -474,6 +474,10 @@ interface ProjectDraftSession extends DraftSessionState {
   draftId: DraftId;
 }
 
+export interface ProjectDraftThread extends DraftThreadState {
+  threadId: ThreadId;
+}
+
 /**
  * App-facing composer identity:
  * - `DraftId` for pre-thread draft sessions

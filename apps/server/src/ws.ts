@@ -115,6 +115,7 @@ import * as CheckpointDiffQuery from "./checkpointing/CheckpointDiffQuery.ts";
 import * as ServerConfig from "./config.ts";
 import * as EnvironmentTheme from "./environmentTheme.ts";
 import * as Keybindings from "./keybindings.ts";
+import * as CustomSlashCommands from "./customSlashCommands.ts";
 import * as ExternalLauncher from "./process/externalLauncher.ts";
 import * as ThreadManagementService from "./orchestration-v2/ThreadManagementService.ts";
 import * as McpAppRequests from "./mcpApps/McpAppRequests.ts";
@@ -150,6 +151,9 @@ import {
   threadReplayEncodedBytes,
   THREAD_RESUME_MAX_REPLAY_EVENTS,
 } from "./orchestration-v2/ThreadStream.ts";
+import * as ReplySuggestionGeneration from "./suggestions/Services/ReplySuggestionGeneration.ts";
+import * as PromptImprovementGeneration from "./promptImprovement/Services/PromptImprovementGeneration.ts";
+import * as PromptAutocompleteGeneration from "./promptAutocomplete/Services/PromptAutocompleteGeneration.ts";
 import {
   buildBoundedThreadProjection,
   THREAD_HISTORY_PAGE_POLICY,
@@ -1275,9 +1279,15 @@ const layerWsRpc = (
       const checkpointDiffQuery = yield* CheckpointDiffQuery.CheckpointDiffQuery;
       const keybindings = yield* Keybindings.Keybindings;
       const environmentTheme = yield* EnvironmentTheme.EnvironmentThemeService;
+      const customSlashCommands = yield* CustomSlashCommands.CustomSlashCommands;
       const externalLauncher = yield* ExternalLauncher.ExternalLauncher;
       const remoteOpenTargets = yield* RemoteOpenTargets.RemoteOpenTargets;
       const directEndpoints = yield* DirectEndpoints.DirectEndpoints;
+      const replySuggestionGeneration = yield* ReplySuggestionGeneration.ReplySuggestionGeneration;
+      const promptAutocompleteGeneration =
+        yield* PromptAutocompleteGeneration.PromptAutocompleteGeneration;
+      const promptImprovementGeneration =
+        yield* PromptImprovementGeneration.PromptImprovementGeneration;
       const gitWorkflow = yield* GitWorkflowService.GitWorkflowService;
       const review = yield* ReviewService.ReviewService;
       const vcsProvisioning = yield* VcsProvisioningService.VcsProvisioningService;
@@ -1698,6 +1708,7 @@ const layerWsRpc = (
       const loadServerConfig = (options: { readonly usageLimitsCommand: boolean }) =>
         Effect.gen(function* () {
           const keybindingsConfig = yield* keybindings.loadConfigState;
+          const customSlashCommandsState = yield* customSlashCommands.loadConfigState;
           const currentProviders = yield* providerRegistry.getProviders;
           const providers = options.usageLimitsCommand
             ? withUsageLimitsCommands(currentProviders, yield* usageLimitSources.current)
@@ -1718,8 +1729,10 @@ const layerWsRpc = (
             auth,
             cwd: config.cwd,
             keybindingsConfigPath: config.keybindingsConfigPath,
+            customSlashCommandsDirectoryPath: config.customSlashCommandsDirectoryPath,
             keybindings: keybindingsConfig.keybindings,
-            issues: keybindingsConfig.issues,
+            customSlashCommands: customSlashCommandsState.commands,
+            issues: [...keybindingsConfig.issues, ...customSlashCommandsState.issues],
             providers,
             ...editorConfig,
             // Same discovery-with-timeout treatment as editors: a slow probe
@@ -2816,6 +2829,12 @@ const layerWsRpc = (
           }),
         [WS_METHODS.assetsPersistChatAttachments]: (input) =>
           persistChatAttachments(input).pipe(Effect.map((attachments) => ({ attachments }))),
+        [WS_METHODS.suggestionsGenerateReplySuggestions]: (input) =>
+          replySuggestionGeneration.generateReplySuggestions(input),
+        [WS_METHODS.promptAutocompleteGenerate]: (input) =>
+          promptAutocompleteGeneration.generatePromptAutocomplete(input),
+        [WS_METHODS.promptImprovementGenerate]: (input) =>
+          promptImprovementGeneration.generatePromptImprovement(input),
         [WS_METHODS.subscribeVcsStatus]: (input) =>
           vcsStatusBroadcaster.streamStatus(input, {
             automaticRemoteRefreshInterval: automaticGitFetchInterval,
@@ -2997,6 +3016,16 @@ const layerWsRpc = (
                   },
                 })),
               );
+              const customSlashCommandsUpdates = customSlashCommands.changes.pipe(
+                Stream.map((event) => ({
+                  version: 1 as const,
+                  type: "customSlashCommandsUpdated" as const,
+                  payload: {
+                    customSlashCommands: event.commands,
+                    issues: event.issues,
+                  },
+                })),
+              );
               const providerStatuses = Stream.zipLatestWith(
                 // The registry stream carries changes only. Seed it with the current
                 // providers so a source refresh that lands before any provider change
@@ -3068,7 +3097,7 @@ const layerWsRpc = (
               );
 
               const liveUpdates = Stream.merge(
-                keybindingsUpdates,
+                Stream.merge(keybindingsUpdates, customSlashCommandsUpdates),
                 Stream.merge(
                   providerStatuses,
                   Stream.merge(

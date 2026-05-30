@@ -345,11 +345,19 @@ export const makeMuseTextGeneration = Effect.fn("makeMuseTextGeneration")(functi
   // Muse runs in an empty read-only directory and cannot be pointed at a checkout to read.
   const generateReviewGuide: ProviderTextGeneration["generateReviewGuide"] = () =>
     Effect.fail(investigationUnsupported("generateReviewGuide", "Muse Code"));
+  const generateStructured: ProviderTextGeneration["generateStructured"] = (input) =>
+    runMuseJson({
+      operation: "generateStructured",
+      prompt: input.prompt,
+      outputSchema: input.outputSchema,
+      modelSelection: input.modelSelection,
+    });
   return {
     generateCommitMessage,
     generatePrContent,
     generateBranchName,
     generateThreadTitle,
     generateReviewGuide,
+    generateStructured,
   } satisfies ProviderTextGeneration;
 });

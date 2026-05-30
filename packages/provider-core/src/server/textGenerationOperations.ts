@@ -189,11 +189,17 @@ export function fromRunner(name: string, run: Runner): ProviderTextGeneration {
     });
   });
 
+  const generateStructured: ProviderTextGeneration["generateStructured"] = (input) =>
+    run({ operation: "generateStructured", ...input }).pipe(
+      Effect.withSpan(`${name}.generateStructured`),
+    );
+
   return {
     generateCommitMessage,
     generatePrContent,
     generateBranchName,
     generateThreadTitle,
     generateReviewGuide,
+    generateStructured,
   } satisfies ProviderTextGeneration;
 }

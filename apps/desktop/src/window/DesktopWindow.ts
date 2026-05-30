@@ -433,6 +433,7 @@ export const make = Effect.gen(function* () {
         // which would otherwise put the whole window into OS fullscreen. With
         // both sides opted out the page fills its webview and the window stays.
         disableHtmlFullscreenWindowResize: true,
+        spellcheck: false,
       },
     });
 

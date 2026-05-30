@@ -6,6 +6,7 @@ import type {
   TextGenerationError,
 } from "@t3tools/contracts";
 import type * as Effect from "effect/Effect";
+import type * as Schema from "effect/Schema";
 
 import type { TextGenerationPolicy } from "./textGenerationPolicy.ts";
 
@@ -116,6 +117,14 @@ export type ReviewGuideGenerationResult = Omit<
 >;
 
 /** Commit, change request, branch, and title generation backed by one provider instance. */
+/** A caller-written prompt whose JSON reply decodes as `outputSchema`. */
+export interface StructuredGenerationInput<S extends Schema.Decoder<unknown>> {
+  readonly cwd: string;
+  readonly prompt: string;
+  readonly outputSchema: S;
+  readonly modelSelection: ModelSelection;
+}
+
 export interface ProviderTextGeneration {
   /**
    * Generate a commit message from staged change context.
@@ -147,4 +156,12 @@ export interface ProviderTextGeneration {
   readonly generateReviewGuide: (
     input: ReviewGuideGenerationInput,
   ) => Effect.Effect<ReviewGuideGenerationResult, TextGenerationError>;
+
+  /**
+   * Run a caller-written prompt and decode the reply with its schema. For
+   * features whose prompts live outside provider-core, such as composer assist.
+   */
+  readonly generateStructured: <S extends Schema.Decoder<unknown>>(
+    input: StructuredGenerationInput<S>,
+  ) => Effect.Effect<S["Type"], TextGenerationError>;
 }

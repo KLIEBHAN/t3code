@@ -114,6 +114,10 @@ import * as EventLoopMonitor from "./observability/EventLoopMonitor.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import * as DirectEndpoints from "./environment/DirectEndpoints.ts";
 import * as RemoteOpenTargets from "./environment/RemoteOpenTargets.ts";
+import { CustomSlashCommandsLive } from "./customSlashCommands.ts";
+import { ReplySuggestionGenerationLive } from "./suggestions/Layers/ReplySuggestionGenerationLive.ts";
+import { PromptImprovementGenerationLive } from "./promptImprovement/Layers/PromptImprovementGenerationLive.ts";
+import { PromptAutocompleteGenerationLive } from "./promptAutocomplete/Layers/PromptAutocompleteGenerationLive.ts";
 import * as AuthHttp from "./auth/http.ts";
 import * as ReplayMarkers from "./auth/replayMarkers.ts";
 import * as ServerSecretStore from "./auth/ServerSecretStore.ts";
@@ -553,6 +557,12 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   HeldHooksWaker.layer,
   layerThreadSettlementWorker,
   StorageCleanup.layer.pipe(Layer.provide(ProjectionStoreV2.layer)),
+  // Composer assist builds its prompts from one thread's projection.
+  Layer.mergeAll(
+    ReplySuggestionGenerationLive,
+    PromptAutocompleteGenerationLive,
+    PromptImprovementGenerationLive,
+  ).pipe(Layer.provide(ProjectionStoreV2.layer)),
   layerThreadPullRequestWorker,
   Layer.effectDiscard(
     Effect.gen(function* () {
@@ -596,10 +606,15 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   Layer.provideMerge(layerVcs),
   Layer.provideMerge(Layer.mergeAll(layerTerminal, layerPreview, layerDevice)),
   Layer.provideMerge(layerPersistence),
-  // Both read a user-owned file out of the state directory and stream changes
-  // to clients; neither depends on the other.
+  // These read user-owned files out of the state directory and stream changes
+  // to clients; none depends on the others.
   Layer.provideMerge(
-    Layer.mergeAll(Keybindings.layer, EnvironmentTheme.layer, UsageLimitSources.layer),
+    Layer.mergeAll(
+      Keybindings.layer,
+      EnvironmentTheme.layer,
+      UsageLimitSources.layer,
+      CustomSlashCommandsLive,
+    ),
   ),
   Layer.provideMerge(ProviderRegistry.layer),
   // The instance registry is the new routing keystone — text generation,
