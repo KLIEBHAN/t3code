@@ -12,7 +12,13 @@ describe("ComposerCommandMenu", () => {
           {
             id: "slash:model",
             type: "slash-command",
-            command: "model",
+            command: {
+              source: "builtin",
+              id: "model",
+              label: "/model",
+              description: "Switch response model for this thread",
+              mode: "insert",
+            },
             label: "/model",
             description: "Switch response model for this thread",
           },

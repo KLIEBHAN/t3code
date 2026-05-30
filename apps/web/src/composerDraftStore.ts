@@ -97,7 +97,7 @@ type ComposerPersistState =
   | PersistedComposerDraftStoreState;
 
 const composerDebouncedStorage = createDeferredStorage<StorageValue<ComposerPersistState>>(
-  typeof localStorage !== "undefined" ? localStorage : createMemoryStorage(),
+  getSafeLocalStorage() ?? createMemoryStorage(),
   (value) =>
     JSON.stringify({
       state:
@@ -460,6 +460,10 @@ export type DraftThreadState = DraftSessionState;
  */
 interface ProjectDraftSession extends DraftSessionState {
   draftId: DraftId;
+}
+
+export interface ProjectDraftThread extends DraftThreadState {
+  threadId: ThreadId;
 }
 
 /**

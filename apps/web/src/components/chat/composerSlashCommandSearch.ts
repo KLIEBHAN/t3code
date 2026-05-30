@@ -42,7 +42,9 @@ function scoreSlashCommandItem(item: SlashSearchItem, query: string): number | n
   }
 
   const primaryValue =
-    item.type === "slash-command" ? item.command.toLowerCase() : item.command.name.toLowerCase();
+    item.type === "slash-command"
+      ? item.command.label.slice(1).toLowerCase()
+      : item.command.name.toLowerCase();
   const description = item.description.toLowerCase();
 
   const scores = [
@@ -101,7 +103,7 @@ export function searchSlashCommandItems(
         score,
         tieBreaker:
           item.type === "slash-command"
-            ? `0\u0000${item.command}`
+            ? `0\u0000${item.command.label.slice(1)}`
             : item.type === "provider-slash-command"
               ? `1\u0000${item.command.name}\u0000${item.provider}`
               : `2\u0000${item.skill.name}\u0000${item.provider}`,

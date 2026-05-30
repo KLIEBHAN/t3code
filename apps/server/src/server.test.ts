@@ -120,10 +120,17 @@ import * as GitManager from "./git/GitManager.ts";
 import * as EnvironmentTheme from "./environmentTheme.ts";
 import * as UsageLimitSources from "./usage/UsageLimitSources.ts";
 import * as Keybindings from "./keybindings.ts";
+import * as CustomSlashCommands from "./customSlashCommands.ts";
 import * as ExternalLauncher from "./process/externalLauncher.ts";
 import * as RemoteOpenTargets from "./environment/RemoteOpenTargets.ts";
 import * as OrchestrationEngine from "./orchestration/Services/OrchestrationEngine.ts";
-import { OrchestrationThreadSettleBlockedError } from "./orchestration/Errors.ts";
+import * as ReplySuggestionGeneration from "./suggestions/Services/ReplySuggestionGeneration.ts";
+import * as PromptImprovementGeneration from "./promptImprovement/Services/PromptImprovementGeneration.ts";
+import * as PromptAutocompleteGeneration from "./promptAutocomplete/Services/PromptAutocompleteGeneration.ts";
+import {
+  OrchestrationListenerCallbackError,
+  OrchestrationThreadSettleBlockedError,
+} from "./orchestration/Errors.ts";
 import * as ProjectionSnapshotQuery from "./orchestration/Services/ProjectionSnapshotQuery.ts";
 import { ThreadDeletionReactor } from "./orchestration/Services/ThreadDeletionReactor.ts";
 import * as PullRequestSyncReactor from "./orchestration/PullRequestSyncReactor.ts";
@@ -522,6 +529,7 @@ const buildAppUnderTest = (options?: {
   layers?: {
     keybindings?: Partial<Keybindings.Keybindings["Service"]>;
     environmentTheme?: Partial<EnvironmentTheme.EnvironmentThemeService["Service"]>;
+    customSlashCommands?: Partial<CustomSlashCommands.CustomSlashCommands["Service"]>;
     providerRegistry?: Partial<ProviderRegistry.ProviderRegistry["Service"]>;
     modelManifest?: Partial<ModelManifest.ModelManifest["Service"]>;
     usageLimitSources?: Partial<UsageLimitSources.UsageLimitSources["Service"]>;
@@ -531,6 +539,15 @@ const buildAppUnderTest = (options?: {
     antigravityInstallation?: Partial<AntigravityInstallation["Service"]>;
     serverSettings?: Partial<ServerSettings.ServerSettingsService["Service"]>;
     externalLauncher?: Partial<ExternalLauncher.ExternalLauncher["Service"]>;
+    replySuggestionGeneration?: Partial<
+      ReplySuggestionGeneration.ReplySuggestionGeneration["Service"]
+    >;
+    promptAutocompleteGeneration?: Partial<
+      PromptAutocompleteGeneration.PromptAutocompleteGeneration["Service"]
+    >;
+    promptImprovementGeneration?: Partial<
+      PromptImprovementGeneration.PromptImprovementGeneration["Service"]
+    >;
     vcsDriver?: Partial<VcsDriver.VcsDriver["Service"]>;
     vcsDriverRegistry?: Partial<VcsDriverRegistry.VcsDriverRegistry["Service"]>;
     gitVcsDriver?: Partial<GitVcsDriver.GitVcsDriver["Service"]>;
@@ -799,6 +816,17 @@ const buildAppUnderTest = (options?: {
         ),
       ),
       Layer.provide(
+        Layer.mock(CustomSlashCommands.CustomSlashCommands)({
+          syncDirectoryOnStartup: Effect.void,
+          loadConfigState: Effect.succeed({
+            commands: [],
+            issues: [],
+          }),
+          changes: Stream.empty,
+          ...options?.layers?.customSlashCommands,
+        }),
+      ),
+      Layer.provide(
         Layer.mergeAll(
           Layer.mock(ModelManifest.ModelManifest)({
             forceRefresh: Effect.succeed(ModelManifest.BUNDLED_MODEL_MANIFEST),
@@ -869,6 +897,29 @@ const buildAppUnderTest = (options?: {
         ),
       ),
       Layer.provide(
+        Layer.mock(ReplySuggestionGeneration.ReplySuggestionGeneration)({
+          generateReplySuggestions: () => Effect.succeed({ suggestions: [] }),
+          ...options?.layers?.replySuggestionGeneration,
+        }),
+      ),
+      Layer.provide(
+        Layer.mock(PromptAutocompleteGeneration.PromptAutocompleteGeneration)({
+          generatePromptAutocomplete: () => Effect.succeed({ suggestions: [] }),
+          ...options?.layers?.promptAutocompleteGeneration,
+        }),
+      ),
+      Layer.provide(
+        Layer.mock(PromptImprovementGeneration.PromptImprovementGeneration)({
+          generatePromptImprovement: (input) =>
+            Effect.succeed({
+              improvedPrompt: input.prompt,
+              changed: false,
+              reason: "Prompt already looks good.",
+            }),
+          ...options?.layers?.promptImprovementGeneration,
+        }),
+      ),
+      Layer.provide(
         Layer.mock(ProcessDiagnostics.ProcessDiagnostics)({
           read: Effect.succeed({
             serverPid: process.pid,
@@ -931,6 +982,9 @@ const buildAppUnderTest = (options?: {
             }),
         }),
       ),
+    );
+
+    const servedRoutesLayer = servedRoutesBaseLayer.pipe(
       Layer.provide(gitManagerLayer),
       Layer.provide(gitVcsDriverLayer),
       Layer.provide(gitWorkflowLayer),
@@ -5325,6 +5379,8 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       assert.isUndefined(response.shellRevealInFileManager);
       assert.isUndefined(response.shellRevealInFileManagerKind);
       assert.equal(response.threadResumeCompletionMarker, true);
+      assert.equal(response.customSlashCommandsDirectoryPath.endsWith("/slash-commands"), true);
+      assert.deepEqual(response.customSlashCommands, []);
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
@@ -6758,6 +6814,11 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         assert.deepEqual(first.config.keybindings, []);
         assert.deepEqual(first.config.issues, []);
         assert.deepEqual(first.config.providers, providers);
+        assert.deepEqual(first.config.customSlashCommands, []);
+        assert.equal(
+          first.config.customSlashCommandsDirectoryPath.endsWith("/slash-commands"),
+          true,
+        );
         assert.equal(path.basename(first.config.observability.logsDirectoryPath), "logs");
         assert.equal(first.config.observability.localTracingEnabled, true);
         assert.equal(first.config.observability.otlpTracesUrl, "http://localhost:4318/v1/traces");
@@ -7297,6 +7358,59 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
           },
         });
       }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("routes websocket rpc subscribeServerConfig emits custom slash command updates", () =>
+    Effect.gen(function* () {
+      const changeEvent = {
+        commands: [
+          {
+            command: "deploy",
+            description: "Deploy the project",
+            prompt: "Run the deployment workflow",
+            sourcePath: "/tmp/slash-commands/deploy.md",
+          },
+        ],
+        issues: [],
+      } as const;
+
+      yield* buildAppUnderTest({
+        layers: {
+          keybindings: {
+            loadConfigState: Effect.succeed({
+              keybindings: [],
+              issues: [],
+            }),
+            streamChanges: Stream.empty,
+          },
+          customSlashCommands: {
+            loadConfigState: Effect.succeed({
+              commands: [],
+              issues: [],
+            }),
+            changes: Stream.succeed(changeEvent),
+          },
+        },
+      });
+
+      const wsUrl = yield* getWsServerUrl("/ws");
+      const events = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[WS_METHODS.subscribeServerConfig]({}).pipe(Stream.take(2), Stream.runCollect),
+        ),
+      );
+
+      const [first, second] = Array.from(events);
+      assert.equal(first?.type, "snapshot");
+      assert.deepEqual(second, {
+        version: 1,
+        type: "customSlashCommandsUpdated",
+        payload: {
+          customSlashCommands: [...changeEvent.commands],
+          issues: [],
+        },
+      });
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
   it.effect(
@@ -8960,7 +9074,20 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         },
       });
 
-      const wsUrl = yield* getWsServerUrl("/ws");
+      const sessionCookie = yield* getAuthenticatedSessionCookieHeader();
+      const snapshotResponse = yield* HttpClient.get("/api/orchestration/snapshot", {
+        headers: {
+          cookie: sessionCookie,
+        },
+      });
+      const snapshotResult = (yield* snapshotResponse.json) as typeof snapshot;
+      assert.equal(snapshotResponse.status, 200);
+      assert.equal(snapshotResult.snapshotSequence, 1);
+
+      const wsUrl = appendSessionCookieToWsUrl(
+        yield* getWsServerUrl("/ws", { authenticated: false }),
+        sessionCookie,
+      );
       const dispatchResult = yield* Effect.scoped(
         withWsRpcClient(wsUrl, (client) =>
           client[ORCHESTRATION_WS_METHODS.dispatchCommand]({

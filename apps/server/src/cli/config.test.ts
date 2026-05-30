@@ -507,6 +507,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
         resolved.providerLogsDir,
         resolved.terminalLogsDir,
         resolved.attachmentsDir,
+        resolved.customSlashCommandsDirectoryPath,
         resolved.worktreesDir,
         path.dirname(resolved.serverTracePath),
       ]) {

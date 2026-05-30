@@ -138,6 +138,44 @@ function findPullRequestLink(
   return thread.pullRequests.find((link) => threadPullRequestKeysEqual(link, key));
 }
 
+const REVIEW_COMMAND_PROMPT =
+  "Review the current changes in this project. Focus on correctness, regressions, missing tests, and notable risks. Use the relevant diff and files as needed.";
+const COMPACT_COMMAND_PROMPT =
+  "Create a compact handoff summary for this thread so work can continue with less context. Preserve the goal, current state, important constraints, files touched, open questions, and the next concrete steps. Keep it concise and actionable.";
+
+type SystemGeneratedTurnCommand = Extract<
+  OrchestrationCommand,
+  {
+    type: "thread.review.start" | "thread.compact.start";
+  }
+>;
+
+function buildTurnStartProviderFields(
+  command:
+    | Extract<OrchestrationCommand, { type: "thread.turn.start" }>
+    | SystemGeneratedTurnCommand,
+) {
+  return {
+    ...(command.modelSelection !== undefined ? { modelSelection: command.modelSelection } : {}),
+    ...("titleSeed" in command && command.titleSeed !== undefined
+      ? { titleSeed: command.titleSeed }
+      : {}),
+    ...("providerOptions" in command && command.providerOptions !== undefined
+      ? { providerOptions: command.providerOptions }
+      : {}),
+  };
+}
+
+function buildSystemGeneratedPrompt(
+  basePrompt: string,
+  instructions: string | undefined,
+  instructionsLabel: string,
+): string {
+  return instructions && instructions.length > 0
+    ? `${basePrompt}\n\n${instructionsLabel}:\n${instructions}`
+    : basePrompt;
+}
+
 function withEventBase(
   input: Pick<OrchestrationCommand, "commandId"> & {
     readonly aggregateKind: OrchestrationEvent["aggregateKind"];
@@ -173,6 +211,98 @@ type PlannedOrchestrationEvent = Omit<OrchestrationEvent, "sequence">;
 type DecideOrchestrationCommandResult =
   | PlannedOrchestrationEvent
   | ReadonlyArray<PlannedOrchestrationEvent>;
+
+const buildTurnStartEvents = Effect.fn("buildTurnStartEvents")(function* (input: {
+  readonly command:
+    | Extract<OrchestrationCommand, { type: "thread.turn.start" }>
+    | SystemGeneratedTurnCommand;
+  readonly readModel: OrchestrationReadModel;
+  readonly messageId: MessageId;
+  readonly messageText: string;
+  readonly attachments: Extract<
+    OrchestrationCommand,
+    { type: "thread.turn.start" }
+  >["message"]["attachments"];
+}) {
+  const thread = input.readModel.threads.find((entry) => entry.id === input.command.threadId);
+  const userMessageEvent: Omit<OrchestrationEvent, "sequence"> = {
+    ...(yield* withEventBase({
+      aggregateKind: "thread",
+      aggregateId: input.command.threadId,
+      occurredAt: input.command.createdAt,
+      commandId: input.command.commandId,
+    })),
+    type: "thread.message-sent",
+    payload: {
+      threadId: input.command.threadId,
+      messageId: input.messageId,
+      role: "user",
+      text: input.messageText,
+      attachments: input.attachments,
+      turnId: null,
+      streaming: false,
+      createdAt: input.command.createdAt,
+      updatedAt: input.command.createdAt,
+    },
+  };
+  const turnStartRequestedEvent: Omit<OrchestrationEvent, "sequence"> = {
+    ...(yield* withEventBase({
+      aggregateKind: "thread",
+      aggregateId: input.command.threadId,
+      occurredAt: input.command.createdAt,
+      commandId: input.command.commandId,
+    })),
+    causationEventId: userMessageEvent.eventId,
+    type: "thread.turn-start-requested",
+    payload: {
+      threadId: input.command.threadId,
+      messageId: input.messageId,
+      ...buildTurnStartProviderFields(input.command),
+      runtimeMode: thread?.runtimeMode ?? input.command.runtimeMode,
+      interactionMode: thread?.interactionMode ?? input.command.interactionMode,
+      ...("sourceProposedPlan" in input.command && input.command.sourceProposedPlan !== undefined
+        ? { sourceProposedPlan: input.command.sourceProposedPlan }
+        : {}),
+      createdAt: input.command.createdAt,
+    },
+  };
+  // Real activity clears explicit settle/keep-active and snooze overrides so
+  // the thread can follow its normal lifecycle again after the new turn.
+  const lifecycleResetEvents: Array<Omit<OrchestrationEvent, "sequence">> = [];
+  if (thread?.settledOverride !== null && thread?.settledOverride !== undefined) {
+    lifecycleResetEvents.push({
+      ...(yield* withEventBase({
+        aggregateKind: "thread",
+        aggregateId: input.command.threadId,
+        occurredAt: input.command.createdAt,
+        commandId: input.command.commandId,
+      })),
+      type: "thread.unsettled",
+      payload: {
+        threadId: input.command.threadId,
+        reason: "activity",
+        updatedAt: input.command.createdAt,
+      },
+    });
+  }
+  if (thread?.snoozedUntil != null) {
+    lifecycleResetEvents.push({
+      ...(yield* withEventBase({
+        aggregateKind: "thread",
+        aggregateId: input.command.threadId,
+        occurredAt: input.command.createdAt,
+        commandId: input.command.commandId,
+      })),
+      type: "thread.unsnoozed",
+      payload: {
+        threadId: input.command.threadId,
+        reason: "activity",
+        updatedAt: input.command.createdAt,
+      },
+    });
+  }
+  return [...lifecycleResetEvents, userMessageEvent, turnStartRequestedEvent] as const;
+});
 
 const decideCommandSequence = Effect.fn("decideCommandSequence")(function* ({
   commands,
@@ -1563,6 +1693,42 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           updatedAt: command.createdAt,
         },
       };
+    case "thread.review.start": {
+      yield* requireThread({
+        readModel,
+        command,
+        threadId: command.threadId,
+      });
+      return yield* buildTurnStartEvents({
+        command,
+        readModel,
+        messageId: command.messageId,
+        messageText: buildSystemGeneratedPrompt(
+          REVIEW_COMMAND_PROMPT,
+          command.instructions,
+          "Additional review instructions",
+        ),
+        attachments: [],
+      });
+    }
+
+    case "thread.compact.start": {
+      yield* requireThread({
+        readModel,
+        command,
+        threadId: command.threadId,
+      });
+      return yield* buildTurnStartEvents({
+        command,
+        readModel,
+        messageId: command.messageId,
+        messageText: buildSystemGeneratedPrompt(
+          COMPACT_COMMAND_PROMPT,
+          command.instructions,
+          "Additional compaction instructions",
+        ),
+        attachments: [],
+      });
     }
 
     case "thread.turn.interrupt": {
