@@ -1,3 +1,4 @@
+// @effect-diagnostics nodeBuiltinImport:off -- userData must be resolved synchronously before the Effect runtime starts.
 for (const stream of [process.stdout, process.stderr]) {
   stream.on("error", (err: NodeJS.ErrnoException) => {
     if (err.code !== "EPIPE") throw err;
@@ -7,7 +8,9 @@ for (const stream of [process.stdout, process.stderr]) {
 import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient";
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
+import * as NodePath from "node:path";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -59,10 +62,29 @@ import * as DesktopTelemetryPublisher from "./telemetry/DesktopTelemetryPublishe
 import * as DesktopUpdates from "./updates/DesktopUpdates.ts";
 import * as BrowserSession from "./preview/BrowserSession.ts";
 import * as PreviewManager from "./preview/Manager.ts";
+import * as DesktopUserData from "./app/DesktopUserData.ts";
 import * as DesktopWindow from "./window/DesktopWindow.ts";
 import * as DesktopWslBackend from "./wsl/DesktopWslBackend.ts";
 import * as DesktopWslEnvironment from "./wsl/DesktopWslEnvironment.ts";
 import * as DesktopWslServerTree from "./wsl/DesktopWslServerTree.ts";
+
+// Must run synchronously during module evaluation: Chromium helpers launched
+// later (e.g. the sandboxed network service) bake this path into their sandbox
+// profile and would otherwise be denied access to the disk cache.
+Electron.app.setPath(
+  "userData",
+  DesktopUserData.resolveUserDataPath({
+    // Synchronous bootstrap runs before the Effect runtime; read the platform
+    // through the shared reference (defaults to the real host platform).
+    platform: Effect.runSync(HostProcessPlatform),
+    homeDirectory: NodeOS.homedir(),
+    appDataDirectoryOverride: process.env.APPDATA,
+    xdgConfigHome: process.env.XDG_CONFIG_HOME,
+    devServerUrl: process.env.VITE_DEV_SERVER_URL,
+    join: NodePath.join,
+    exists: NodeFS.existsSync,
+  }),
+);
 
 const desktopEnvironmentLayer = Layer.unwrap(
   Effect.gen(function* () {
