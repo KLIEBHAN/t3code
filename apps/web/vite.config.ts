@@ -98,7 +98,6 @@ export default defineConfig(() => {
     ],
     optimizeDeps: {
       include: [
-        "@clerk/clerk-js",
         "@clerk/react/internal",
         "@pierre/diffs",
         "@pierre/diffs/editor",
@@ -151,9 +150,10 @@ export default defineConfig(() => {
           }
         : {}),
       hmr: {
-        // Explicit config so Vite's HMR WebSocket connects reliably
-        // inside Electron's BrowserWindow. Vite 8 uses console.debug for
-        // connection logs — enable "Verbose" in DevTools to see them.
+        // Explicit config so Vite's HMR WebSocket connects reliably inside
+        // Electron's custom-scheme BrowserWindow. Without clientPort, Vite
+        // derives port 80 from t3code-dev://app and logs a failed direct
+        // WebSocket attempt before falling back to the dev server port.
         protocol: "ws",
         host,
         clientPort: port,
