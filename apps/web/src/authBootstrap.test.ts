@@ -228,6 +228,34 @@ describe("resolveInitialServerAuthGateState", () => {
     );
   });
 
+  it("uses the custom desktop scheme for desktop-managed auth requests during local dev", async () => {
+    await installAuthApi({ session: () => unauthenticatedSession(DESKTOP_AUTH) });
+    vi.stubEnv("VITE_DEV_SERVER_URL", "http://127.0.0.1:5733");
+
+    const testWindow = installTestBrowser("t3code-dev://app/");
+    testWindow.desktopBridge = {
+      getLocalEnvironmentBootstraps: () => [
+        {
+          id: "primary",
+          label: "Local environment",
+          httpBaseUrl: "http://127.0.0.1:3773",
+          wsBaseUrl: "ws://127.0.0.1:3773",
+        },
+      ],
+    } as unknown as DesktopBridge;
+
+    const { resolveInitialServerAuthGateState, resolvePrimaryEnvironmentHttpUrl } =
+      await import("./environments/primary");
+
+    await expect(resolveInitialServerAuthGateState()).resolves.toEqual({
+      status: "requires-auth",
+      auth: DESKTOP_AUTH,
+    });
+    expect(resolvePrimaryEnvironmentHttpUrl("/api/auth/session")).toBe(
+      "t3code-dev://app/api/auth/session",
+    );
+  });
+
   it("returns a requires-auth state instead of throwing when no bootstrap credential exists", async () => {
     await installAuthApi({ session: () => unauthenticatedSession(LOOPBACK_AUTH) });
     const { resolveInitialServerAuthGateState } = await import("./environments/primary");
