@@ -174,7 +174,6 @@ export default defineConfig(() => {
     ],
     optimizeDeps: {
       include: [
-        "@clerk/clerk-js",
         "@clerk/react/internal",
         "@pierre/diffs",
         "@pierre/diffs/editor",
@@ -261,6 +260,7 @@ export default defineConfig(() => {
             },
           }
         : {}),
+
     },
     // @tailwindcss/vite only emits a CSS sourcemap when devSourcemap is on; without it
     // rolldown flags the transform as SOURCEMAP_BROKEN on every sourcemapped build.
