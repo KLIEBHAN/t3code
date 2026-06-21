@@ -192,6 +192,31 @@ describe("environmentBootstrap", () => {
     );
   });
 
+  it("uses the custom desktop scheme for desktop-managed descriptor requests during local dev", async () => {
+    vi.stubEnv("VITE_DEV_SERVER_URL", "http://127.0.0.1:5733");
+    vi.stubGlobal("window", {
+      location: new URL("t3code-dev://app/"),
+      history: {
+        replaceState: vi.fn(),
+      },
+      desktopBridge: {
+        getLocalEnvironmentBootstrap: () => ({
+          label: "Local environment",
+          httpBaseUrl: "http://127.0.0.1:3773",
+          wsBaseUrl: "ws://127.0.0.1:3773",
+          bootstrapToken: "desktop-bootstrap-token",
+        }),
+      },
+    });
+    await installDescriptorApi();
+
+    await expect(resolveInitialPrimaryEnvironmentDescriptor()).resolves.toEqual(BASE_ENVIRONMENT);
+    expect(resolvePrimaryEnvironmentHttpUrl("/.well-known/t3/environment")).toBe(
+      "t3code-dev://app/.well-known/t3/environment",
+    );
+    expect(readPrimaryEnvironmentTarget().target.wsBaseUrl).toBe("ws://127.0.0.1:3773/");
+  });
+
   it("retains the URL parser cause without exposing the configured URL in its message", () => {
     vi.stubEnv("VITE_HTTP_URL", "http://[");
 
