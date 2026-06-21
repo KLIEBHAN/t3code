@@ -113,6 +113,20 @@ function parseTargetUrl(input: {
   }
 }
 
+function getUrlOrigin(url: URL): string {
+  if (url.origin !== "null") {
+    return url.origin;
+  }
+  if (url.protocol && url.host) {
+    return `${url.protocol}//${url.host}`;
+  }
+  return url.href;
+}
+
+function getWindowLocationBaseUrl(): string {
+  return window.location.href || window.location.origin;
+}
+
 function normalizeBaseUrl(
   rawValue: string,
   source: PrimaryEnvironmentTargetSource,
@@ -120,7 +134,7 @@ function normalizeBaseUrl(
 ): string {
   return parseTargetUrl({
     rawValue,
-    baseUrl: window.location.origin,
+    baseUrl: getWindowLocationBaseUrl(),
     source,
     urlKind,
   }).toString();
@@ -133,7 +147,7 @@ function swapBaseUrlProtocol(
 ): string {
   const url = parseTargetUrl({
     rawValue,
-    baseUrl: window.location.origin,
+    baseUrl: getWindowLocationBaseUrl(),
     source: "configured",
     urlKind,
   });
@@ -152,6 +166,14 @@ export function isLoopbackHostname(hostname: string): boolean {
   return LOOPBACK_HOSTNAMES.has(normalizeHostname(hostname));
 }
 
+function isDesktopDevRendererOrigin(currentUrl: URL): boolean {
+  return (
+    currentUrl.protocol === "t3code-dev:" &&
+    currentUrl.hostname === "app" &&
+    window.desktopBridge !== undefined
+  );
+}
+
 function resolveHttpRequestBaseUrl(primaryTarget: PrimaryEnvironmentTarget): string {
   const httpBaseUrl = primaryTarget.target.httpBaseUrl;
   const configuredDevServerUrl = import.meta.env.VITE_DEV_SERVER_URL?.trim();
@@ -160,7 +182,7 @@ function resolveHttpRequestBaseUrl(primaryTarget: PrimaryEnvironmentTarget): str
   }
 
   const currentUrl = parseTargetUrl({
-    rawValue: window.location.href,
+    rawValue: getWindowLocationBaseUrl(),
     source: "window-origin",
     urlKind: "window-location-url",
   });
@@ -171,25 +193,29 @@ function resolveHttpRequestBaseUrl(primaryTarget: PrimaryEnvironmentTarget): str
   });
   const devServerUrl = parseTargetUrl({
     rawValue: configuredDevServerUrl,
-    baseUrl: currentUrl.origin,
+    baseUrl: getUrlOrigin(currentUrl),
     source: "configured",
     urlKind: "development-server-url",
   });
 
+  const isLoopbackDevTarget =
+    isLoopbackHostname(targetUrl.hostname) && isLoopbackHostname(devServerUrl.hostname);
+
+  const currentOrigin = getUrlOrigin(currentUrl);
+
+  if (isDesktopDevRendererOrigin(currentUrl) && isLoopbackDevTarget) {
+    return currentOrigin;
+  }
+
   const isCurrentOriginDevServer =
     (currentUrl.protocol === "http:" || currentUrl.protocol === "https:") &&
-    currentUrl.origin === devServerUrl.origin;
+    currentOrigin === devServerUrl.origin;
 
-  if (
-    !isCurrentOriginDevServer ||
-    currentUrl.origin === targetUrl.origin ||
-    !isLoopbackHostname(currentUrl.hostname) ||
-    !isLoopbackHostname(targetUrl.hostname)
-  ) {
+  if (!isCurrentOriginDevServer || currentOrigin === targetUrl.origin || !isLoopbackDevTarget) {
     return httpBaseUrl;
   }
 
-  return currentUrl.origin;
+  return currentOrigin;
 }
 
 function resolveConfiguredPrimaryTarget(): PrimaryEnvironmentTarget | null {
