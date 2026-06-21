@@ -1,11 +1,13 @@
 #!/usr/bin/env node
+// @effect-diagnostics nodeBuiltinImport:off
 
+import * as NodeChildProcess from "node:child_process";
 import * as NodeOS from "node:os";
 
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NetService from "@t3tools/shared/Net";
-import { HostProcessEnvironment } from "@t3tools/shared/hostProcess";
+import { HostProcessEnvironment, HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
 import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
@@ -28,6 +30,7 @@ const MAX_HASH_OFFSET = 3000;
 const MAX_PORT = 65535;
 const DESKTOP_DEV_LOOPBACK_HOST = "127.0.0.1";
 const DEV_PORT_PROBE_HOSTS = ["127.0.0.1", "0.0.0.0", "::1", "::"] as const;
+const DESKTOP_DEV_CLEANUP_GRACE_MS = 1_500;
 
 export const DEFAULT_T3_HOME = Effect.map(Effect.service(Path.Path), (path) =>
   path.join(NodeOS.homedir(), ".t3"),
@@ -466,6 +469,145 @@ export function resolveModePortOffsets<R = NetService.NetService>({
   });
 }
 
+interface ProcessSummary {
+  readonly pid: number;
+  readonly ppid: number;
+  readonly command: string;
+}
+
+function readProcessTable(): ReadonlyArray<ProcessSummary> {
+  const result = NodeChildProcess.spawnSync("ps", ["-axo", "pid=,ppid=,command="], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "ignore"],
+  });
+  if (result.status !== 0 || typeof result.stdout !== "string") {
+    return [];
+  }
+
+  return result.stdout
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .flatMap((line) => {
+      const [pidText, ppidText, ...commandParts] = line.split(/\s+/);
+      const pid = Number.parseInt(pidText ?? "", 10);
+      const ppid = Number.parseInt(ppidText ?? "", 10);
+      if (!Number.isInteger(pid) || pid <= 0 || !Number.isInteger(ppid) || ppid < 0) {
+        return [];
+      }
+      return [{ pid, ppid, command: commandParts.join(" ") }];
+    });
+}
+
+function readProcessWorkingDirectory(pid: number, platform: NodeJS.Platform): string | undefined {
+  if (platform === "win32") {
+    return undefined;
+  }
+
+  const result = NodeChildProcess.spawnSync("lsof", ["-a", "-p", String(pid), "-d", "cwd", "-Fn"], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "ignore"],
+  });
+  if (result.status !== 0 || typeof result.stdout !== "string") {
+    return undefined;
+  }
+
+  return result.stdout
+    .split("\n")
+    .find((line) => line.startsWith("n"))
+    ?.slice(1);
+}
+
+function isProcessRunning(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
+
+function signalProcess(pid: number, signal: NodeJS.Signals): void {
+  try {
+    process.kill(pid, signal);
+  } catch {
+    // Process already exited.
+  }
+}
+
+function blockingSleep(ms: number): void {
+  NodeChildProcess.spawnSync("sleep", [String(ms / 1000)], { stdio: "ignore" });
+}
+
+function collectProtectedProcessIds(processes: ReadonlyArray<ProcessSummary>): ReadonlySet<number> {
+  const protectedPids = new Set<number>([process.pid]);
+  const byPid = new Map(processes.map((processSummary) => [processSummary.pid, processSummary]));
+  let current = byPid.get(process.pid)?.ppid ?? process.ppid;
+  while (current > 0 && !protectedPids.has(current)) {
+    protectedPids.add(current);
+    current = byPid.get(current)?.ppid ?? 0;
+  }
+  return protectedPids;
+}
+
+function isStaleDesktopDevProcess(
+  processSummary: ProcessSummary,
+  repoRoot: string,
+  platform: NodeJS.Platform,
+  protectedPids: ReadonlySet<number>,
+): boolean {
+  if (protectedPids.has(processSummary.pid)) {
+    return false;
+  }
+
+  const desktopDir = `${repoRoot}/apps/desktop`;
+  const command = processSummary.command;
+  if (command.includes(repoRoot)) {
+    return (
+      command.includes("scripts/dev-runner.ts dev:desktop") ||
+      command.includes("vite/node/cli.js dev") ||
+      command.includes("pack-bin.js --watch") ||
+      command.includes("Electron.app/Contents/MacOS/Electron") ||
+      command.includes("apps/server/dist/bin.mjs --bootstrap-fd 3")
+    );
+  }
+
+  if (command.includes("node scripts/dev-electron.mjs")) {
+    return readProcessWorkingDirectory(processSummary.pid, platform) === desktopDir;
+  }
+
+  return false;
+}
+
+function cleanupStaleDesktopDevProcesses(platform: NodeJS.Platform): number {
+  if (platform === "win32") {
+    return 0;
+  }
+
+  const repoRoot = process.cwd();
+  const processes = readProcessTable();
+  const protectedPids = collectProtectedProcessIds(processes);
+  const stalePids = processes
+    .filter((processSummary) =>
+      isStaleDesktopDevProcess(processSummary, repoRoot, platform, protectedPids),
+    )
+    .map((processSummary) => processSummary.pid);
+  const uniquePids = [...new Set(stalePids)];
+  for (const pid of uniquePids) {
+    signalProcess(pid, "SIGTERM");
+  }
+  if (uniquePids.length > 0) {
+    blockingSleep(DESKTOP_DEV_CLEANUP_GRACE_MS);
+  }
+  for (const pid of uniquePids) {
+    if (isProcessRunning(pid)) {
+      signalProcess(pid, "SIGKILL");
+    }
+  }
+
+  return uniquePids.length;
+}
+
 interface DevRunnerCliInput {
   readonly mode: DevMode;
   readonly t3Home: string | undefined;
@@ -481,6 +623,16 @@ interface DevRunnerCliInput {
 
 export function runDevRunnerWithInput(input: DevRunnerCliInput) {
   return Effect.gen(function* () {
+    if (input.mode === "dev:desktop" && !input.dryRun) {
+      const hostPlatform = yield* HostProcessPlatform;
+      const cleanedProcessCount = cleanupStaleDesktopDevProcesses(hostPlatform);
+      if (cleanedProcessCount > 0) {
+        yield* Effect.logInfo(
+          `[dev-runner] cleaned ${cleanedProcessCount} stale desktop dev process(es) before startup`,
+        );
+      }
+    }
+
     const { portOffset, devInstance } = yield* OffsetConfig.pipe(
       Effect.mapError(
         (cause) =>

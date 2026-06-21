@@ -44,7 +44,7 @@ describe("ElectronProtocol", () => {
 
           const response = yield* Effect.promise(() =>
             handler!(
-              new Request("t3code-dev://app/api/health?verbose=1", {
+              new Request("t3code-dev://app/settings?verbose=1", {
                 headers: {
                   accept: "application/json",
                   origin: "t3code-dev://app",
@@ -78,13 +78,92 @@ describe("ElectronProtocol", () => {
         handleMock.mock.calls.map((call) => call[0]),
         ["t3code-dev"],
       );
-      assert.equal(netFetchMock.mock.calls[0]?.[0], "http://127.0.0.1:3773/api/health?verbose=1");
+      assert.equal(netFetchMock.mock.calls[0]?.[0], "http://127.0.0.1:3773/settings?verbose=1");
       const forwardedHeaders = new Headers(netFetchMock.mock.calls[0]?.[1]?.headers);
       assert.equal(forwardedHeaders.get("accept"), "application/json");
       assert.isNull(forwardedHeaders.get("origin"));
       assert.isNull(forwardedHeaders.get("referer"));
       assert.isNull(forwardedHeaders.get("sec-fetch-site"));
       assert.deepEqual(unhandleMock.mock.calls, [["t3code-dev"]]);
+    }).pipe(Effect.provide(ElectronProtocol.layer)),
+  );
+
+  it.effect("routes backend HTTP endpoints to the desktop backend origin", () =>
+    Effect.gen(function* () {
+      let handler: ((request: Request) => Promise<Response>) | undefined;
+      handleMock.mockImplementation((_scheme, nextHandler) => {
+        handler = nextHandler;
+      });
+      netFetchMock.mockResolvedValue(new Response("ok"));
+
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          const protocol = yield* ElectronProtocol.ElectronProtocol;
+          yield* protocol.registerDesktopProtocol({
+            scheme: "t3code-dev",
+            targetOrigin: new URL("http://127.0.0.1:5733/"),
+            backendOrigin: new URL("http://127.0.0.1:13773/"),
+            clerkFrontendApiHostname: undefined,
+          });
+          assert.isDefined(handler);
+
+          for (const url of [
+            "t3code-dev://app/.well-known/t3/environment",
+            "t3code-dev://app/api/auth/session",
+            "t3code-dev://app/attachments/image.png",
+          ]) {
+            yield* Effect.promise(() => handler!(new Request(url)));
+          }
+        }),
+      );
+
+      assert.deepEqual(
+        netFetchMock.mock.calls.map((call) => call[0]),
+        [
+          "http://127.0.0.1:13773/.well-known/t3/environment",
+          "http://127.0.0.1:13773/api/auth/session",
+          "http://127.0.0.1:13773/attachments/image.png",
+        ],
+      );
+    }).pipe(Effect.provide(ElectronProtocol.layer)),
+  );
+
+  it.effect("drops custom-scheme Origin headers before proxying renderer requests", () =>
+    Effect.gen(function* () {
+      let handler: ((request: Request) => Promise<Response>) | undefined;
+      handleMock.mockImplementation((_scheme, nextHandler) => {
+        handler = nextHandler;
+      });
+      netFetchMock.mockResolvedValue(new Response("ok"));
+
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          const protocol = yield* ElectronProtocol.ElectronProtocol;
+          yield* protocol.registerDesktopProtocol({
+            scheme: "t3code-dev",
+            targetOrigin: new URL("http://127.0.0.1:5733/"),
+            backendOrigin: new URL("http://127.0.0.1:13773/"),
+            clerkFrontendApiHostname: undefined,
+          });
+          assert.isDefined(handler);
+
+          yield* Effect.promise(() =>
+            handler!(
+              new Request("t3code-dev://app/@vite/client", {
+                headers: {
+                  accept: "*/*",
+                  origin: "t3code-dev://app",
+                },
+              }),
+            ),
+          );
+        }),
+      );
+
+      const proxiedInit = netFetchMock.mock.calls[0]?.[1] as RequestInit | undefined;
+      assert.isDefined(proxiedInit);
+      assert.equal(new Headers(proxiedInit.headers).get("origin"), null);
+      assert.equal(new Headers(proxiedInit.headers).get("accept"), "*/*");
     }).pipe(Effect.provide(ElectronProtocol.layer)),
   );
 
