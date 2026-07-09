@@ -68,6 +68,7 @@ const RepoRoot = Effect.service(Path.Path).pipe(
   Effect.flatMap((path) => path.fromFileUrl(new URL("..", import.meta.url))),
 );
 const encodeJsonString = Schema.encodeEffect(Schema.UnknownFromJsonString);
+const decodeJsonString = Schema.decodeUnknownEffect(Schema.UnknownFromJsonString);
 const decodeWorkspaceConfig = Schema.decodeEffect(fromYaml(WorkspaceConfig));
 const decodeNodePtyManifest = Schema.decodeUnknownEffect(
   Schema.fromJsonString(Schema.Struct({ version: Schema.String })),
@@ -943,6 +944,145 @@ function getPatchedDependencyPackageName(patchKey: string): string {
   return versionSeparator > 0 ? patchKey.slice(0, versionSeparator) : patchKey;
 }
 
+interface StageRemovedDependency {
+  readonly parent: string;
+  readonly child: string;
+}
+
+// pnpm `overrides` entries with a "-" value remove a dependency from the
+// installed tree, but pnpm never rewrites the manifest of the package that
+// declared it. electron-builder's traversal collector reads those manifests
+// verbatim and aborts with "production dependency not found" when a declared
+// `dependencies` entry is not installed (e.g. the crypto-wallet integrations
+// this repo strips from `@clerk/clerk-js`). Extract the `parent>child` removals
+// so the staged manifests can be reconciled with what was actually installed.
+export function parseRemovedDependencyOverrides(
+  overrides: Record<string, string>,
+): ReadonlyArray<StageRemovedDependency> {
+  const removed: Array<StageRemovedDependency> = [];
+  for (const [key, value] of Object.entries(overrides)) {
+    if (value !== "-") continue;
+    const segments = key.split(">");
+    if (segments.length < 2) continue;
+    const child = segments[segments.length - 1];
+    const parent = segments[segments.length - 2];
+    if (parent && child) {
+      removed.push({ parent, child });
+    }
+  }
+  return removed;
+}
+
+// Removes the given child specifiers from a parsed manifest's dependency maps.
+// Returns whether anything changed so callers can skip rewrites.
+export function stripDependenciesFromManifest(
+  manifest: Record<string, unknown>,
+  children: ReadonlySet<string>,
+): boolean {
+  let changed = false;
+  for (const field of ["dependencies", "optionalDependencies"] as const) {
+    const deps = manifest[field];
+    if (deps !== null && typeof deps === "object") {
+      const record = deps as Record<string, unknown>;
+      for (const child of children) {
+        if (Object.hasOwn(record, child)) {
+          delete record[child];
+          changed = true;
+        }
+      }
+    }
+  }
+  return changed;
+}
+
+// Reconciles staged package manifests with pnpm's `overrides: "-"` removals so
+// electron-builder's traversal collector does not abort on intentionally-absent
+// dependencies. pnpm encodes a package's virtual-store directory as
+// `<name-with-slashes-as-plus>@<version>...`, so each removal's declaring parent
+// is matched by that prefix across every peer-dependency variant.
+const pruneStageRemovedDependencyManifests = Effect.fn("pruneStageRemovedDependencyManifests")(
+  function* (stageAppDir: string, overrides: Record<string, string>) {
+    const removed = parseRemovedDependencyOverrides(overrides);
+    if (removed.length === 0) {
+      return;
+    }
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const pnpmStoreDir = path.join(stageAppDir, "node_modules", ".pnpm");
+    if (!(yield* fs.exists(pnpmStoreDir).pipe(Effect.orElseSucceed(() => false)))) {
+      return;
+    }
+
+    const childrenByParent = new Map<string, Set<string>>();
+    for (const { parent, child } of removed) {
+      const children = childrenByParent.get(parent) ?? new Set<string>();
+      children.add(child);
+      childrenByParent.set(parent, children);
+    }
+
+    const storeEntries = yield* fs
+      .readDirectory(pnpmStoreDir)
+      .pipe(Effect.orElseSucceed(() => [] as ReadonlyArray<string>));
+    for (const [parent, children] of childrenByParent) {
+      const encodedParentPrefix = `${parent.replaceAll("/", "+")}@`;
+      for (const storeEntry of storeEntries) {
+        if (!storeEntry.startsWith(encodedParentPrefix)) continue;
+        const manifestPath = path.join(
+          pnpmStoreDir,
+          storeEntry,
+          "node_modules",
+          parent,
+          "package.json",
+        );
+        const contents = yield* fs.readFileString(manifestPath).pipe(
+          Effect.map(Option.some),
+          Effect.orElseSucceed(() => Option.none<string>()),
+        );
+        if (Option.isNone(contents)) continue;
+        const manifest = yield* decodeJsonString(contents.value).pipe(
+          Effect.orElseSucceed(() => null),
+        );
+        if (manifest === null || typeof manifest !== "object") continue;
+        const record = manifest as Record<string, unknown>;
+        if (stripDependenciesFromManifest(record, children)) {
+          yield* fs.writeFileString(manifestPath, `${yield* encodeJsonString(record)}\n`);
+        }
+      }
+    }
+  },
+);
+
+// A synthetic `packageManager` hint written into the staged package.json solely
+// to select electron-builder's filesystem-traversal node_modules collector.
+// electron-builder maps a `bun` hint to a collector that walks the installed
+// package.json graph (`BunNodeModulesCollector extends
+// TraversalNodeModulesCollector`) instead of shelling out to `pnpm list`, whose
+// deduped output drops transitive dependencies. The version is irrelevant — only
+// the `bun` prefix drives collector selection — and no bun binary is required:
+// electron-builder rebuilds the already-installed node_modules in place and
+// tolerates a missing bun during its (best-effort) workspace-root probe.
+export const STAGE_COLLECTOR_PACKAGE_MANAGER = "bun@1.1.0";
+
+export function withStageCollectorPackageManager(
+  stagePackageJson: StagePackageJson,
+): StagePackageJson {
+  return { ...stagePackageJson, packageManager: STAGE_COLLECTOR_PACKAGE_MANAGER };
+}
+
+// Rewrites the staged package.json after the pnpm install so electron-builder
+// uses its traversal collector. Kept separate from the install-time manifest so
+// the production install still runs under pnpm.
+const writeStageCollectorPackageManagerHint = Effect.fn("writeStageCollectorPackageManagerHint")(
+  function* (stageAppDir: string, stagePackageJson: StagePackageJson) {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const manifestString = yield* encodeJsonString(
+      withStageCollectorPackageManager(stagePackageJson),
+    );
+    yield* fs.writeFileString(path.join(stageAppDir, "package.json"), `${manifestString}\n`);
+  },
+);
+
 const AzureTrustedSigningOptionsConfig = Config.all({
   publisherName: Config.string("AZURE_TRUSTED_SIGNING_PUBLISHER_NAME"),
   endpoint: Config.string("AZURE_TRUSTED_SIGNING_ENDPOINT"),
@@ -1811,6 +1951,27 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
     }),
     { label: "vp install --prod", verbose: options.verbose },
   );
+
+  // Steer electron-builder's node_modules collector to its filesystem-traversal
+  // strategy. Its pnpm collector derives the production graph from
+  // `pnpm list --json`, which reports EMPTY dependencies for any package pnpm
+  // dedupes (a package reachable from more than one parent). Transitive
+  // dependencies only reachable through such a deduped package (e.g. `effect`,
+  // which every `@effect/*` module and the server bundle depend on, and its
+  // `fast-check`/`pure-rand`/`msgpackr` closure, plus `electron-store` -> `conf`
+  // -> `onetime`) are then silently dropped from the asar and the app crashes on
+  // launch with `ERR_MODULE_NOT_FOUND`. Swapping the collector's package-manager
+  // hint to bun selects the traversal collector, which walks the installed
+  // package.json graph directly — producing the complete, version-correct
+  // dependency set (multiple versions stay nested). Only the collector is
+  // affected: native modules were already installed by the pnpm step, so
+  // electron-builder rebuilds in place instead of invoking bun.
+  //
+  // The traversal collector reads manifests verbatim, so first reconcile them
+  // with pnpm's `overrides: "-"` removals it does not understand.
+  yield* pruneStageRemovedDependencyManifests(stageAppDir, resolvedOverrides);
+  yield* writeStageCollectorPackageManagerHint(stageAppDir, stagePackageJson);
+
   yield* stageClerkPasskeyNativeBinaries(stageAppDir, options.platform, options.arch);
 
   // WSL is Windows-only, so only the Windows artifact carries the Linux backend

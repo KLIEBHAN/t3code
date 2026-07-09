@@ -13,6 +13,8 @@ import {
   createStageWorkspaceConfig,
   createStagePatchedDependencies,
   createBuildConfig,
+  parseRemovedDependencyOverrides,
+  stripDependenciesFromManifest,
   DESKTOP_ASAR_UNPACK,
   InvalidMacPasskeyRpDomainError,
   InvalidMacPasskeyPublishableKeyError,
@@ -36,7 +38,9 @@ import {
   resolveMockUpdateServerUrl,
   resolvePackageManagerUserAgent,
   stageLinuxIconSize,
+  STAGE_COLLECTOR_PACKAGE_MANAGER,
   STAGE_INSTALL_ARGS,
+  withStageCollectorPackageManager,
 } from "./build-desktop-artifact.ts";
 import { BRAND_ASSET_PATHS } from "./lib/brand-assets.ts";
 import { HostProcessArchitecture, HostProcessPlatform } from "@t3tools/shared/hostProcess";
@@ -204,6 +208,80 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         { effect: "4.0.0-beta.73" },
       ),
       {},
+    );
+  });
+
+  it("pins the staged collector package manager to bun so electron-builder traverses node_modules", () => {
+    // electron-builder selects its filesystem-traversal collector for bun, which
+    // avoids the pnpm-list dedup bug that drops transitive dependencies.
+    assert.equal(STAGE_COLLECTOR_PACKAGE_MANAGER.split("@")[0], "bun");
+  });
+
+  it("extracts parent-scoped dependency removals from pnpm overrides", () => {
+    assert.deepStrictEqual(
+      parseRemovedDependencyOverrides({
+        "@clerk/clerk-js>@base-org/account": "-",
+        "@clerk/clerk-js>@coinbase/wallet-sdk": "-",
+        "@effect/vitest>vitest": "-",
+        // Non-removal overrides and unscoped removals are ignored.
+        effect: "4.0.0-beta.78",
+        "some-global-removal": "-",
+      }),
+      [
+        { parent: "@clerk/clerk-js", child: "@base-org/account" },
+        { parent: "@clerk/clerk-js", child: "@coinbase/wallet-sdk" },
+        { parent: "@effect/vitest", child: "vitest" },
+      ],
+    );
+  });
+
+  it("strips only the removed children from a manifest's dependency maps", () => {
+    const manifest: Record<string, unknown> = {
+      name: "@clerk/clerk-js",
+      version: "6.22.0",
+      dependencies: { "@base-org/account": "2.0.1", react: "19.2.0" },
+      optionalDependencies: { "@coinbase/wallet-sdk": "4.0.0" },
+    };
+
+    const changed = stripDependenciesFromManifest(
+      manifest,
+      new Set(["@base-org/account", "@coinbase/wallet-sdk", "not-present"]),
+    );
+
+    assert.equal(changed, true);
+    assert.deepStrictEqual(manifest, {
+      name: "@clerk/clerk-js",
+      version: "6.22.0",
+      dependencies: { react: "19.2.0" },
+      optionalDependencies: {},
+    });
+
+    // A no-op strip reports no change and leaves the manifest untouched.
+    assert.equal(stripDependenciesFromManifest(manifest, new Set(["missing"])), false);
+  });
+
+  it("overrides only the packageManager hint when preparing the staged collector manifest", () => {
+    const stagePackageJson = {
+      name: "t3code",
+      version: "0.0.28",
+      buildVersion: "0.0.28",
+      t3codeCommitHash: "abc123",
+      private: true as const,
+      packageManager: "pnpm@11.10.0",
+      description: "T3 Code desktop build",
+      author: "T3 Tools",
+      main: "apps/desktop/dist-electron/main.cjs",
+      build: { appId: "com.t3tools.t3code" },
+      dependencies: { effect: "4.0.0-beta.78" },
+      devDependencies: { electron: "41.5.0" },
+    };
+
+    const collectorManifest = withStageCollectorPackageManager(stagePackageJson);
+
+    assert.equal(collectorManifest.packageManager, STAGE_COLLECTOR_PACKAGE_MANAGER);
+    assert.deepStrictEqual(
+      { ...collectorManifest, packageManager: stagePackageJson.packageManager },
+      stagePackageJson,
     );
   });
 
