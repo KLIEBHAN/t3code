@@ -21,7 +21,6 @@ if (!Number.isInteger(port) || port <= 0) {
   throw new Error(`VITE_DEV_SERVER_URL must include an explicit port: ${devServerUrl}`);
 }
 
-const backendEntryPath = NodePath.resolve(desktopDir, "../server/dist/bin.mjs");
 const requiredFiles = [
   "dist-electron/main.cjs",
   "dist-electron/preload.cjs",
@@ -34,7 +33,6 @@ const watchedDirectories = [
 const forcedShutdownTimeoutMs = 1_500;
 const restartDebounceMs = 120;
 const childTreeGracePeriodMs = 1_200;
-const previousOwnerGraceMs = 5_000;
 const ownerLockPath = NodePath.join(desktopDir, ".electron-runtime", "dev-electron-owner.json");
 const remoteDebuggingPort = process.env.T3CODE_DESKTOP_REMOTE_DEBUGGING_PORT?.trim();
 // oxlint-disable-next-line t3code/no-global-process-runtime -- Standalone dev script has no Effect runtime.
@@ -88,14 +86,6 @@ function isProcessRunning(pid) {
     return true;
   } catch (error) {
     return error?.code === "EPERM";
-  }
-}
-
-function signalProcess(pid, signal) {
-  try {
-    process.kill(pid, signal);
-  } catch {
-    // Process already exited.
   }
 }
 
@@ -154,52 +144,39 @@ function findSiblingDevElectronPids() {
     .map(({ pid }) => pid);
 }
 
-async function waitForProcessExit(pid, timeoutMs) {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    if (!isProcessRunning(pid)) {
-      return true;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-  return !isProcessRunning(pid);
-}
-
-async function stopProcess(pid) {
-  if (!isProcessRunning(pid)) {
-    return;
-  }
-  logDevElectron("stopping previous owner", { pid });
-  signalProcess(pid, "SIGTERM");
-  if (await waitForProcessExit(pid, previousOwnerGraceMs)) {
-    return;
-  }
-  signalProcess(pid, "SIGKILL");
-  await waitForProcessExit(pid, 1_000);
-}
-
 async function claimDevElectronOwnership() {
   NodeFS.mkdirSync(NodePath.dirname(ownerLockPath), { recursive: true });
 
+  const siblingPids = findSiblingDevElectronPids();
+  if (siblingPids.length > 0) {
+    throw new Error(
+      `Another desktop dev launcher is already active for this checkout (PID ${siblingPids.join(", ")}). Stop it before starting a new one.`,
+    );
+  }
+
   const previousOwner = readJson(ownerLockPath);
   const previousOwnerPid = Number.parseInt(String(previousOwner?.pid ?? ""), 10);
-  const previousPids = new Set(findSiblingDevElectronPids());
-  if (
-    Number.isInteger(previousOwnerPid) &&
-    previousOwnerPid > 0 &&
-    previousOwnerPid !== process.pid
-  ) {
-    previousPids.add(previousOwnerPid);
+  if (isProcessRunning(previousOwnerPid)) {
+    throw new Error(
+      `The desktop dev ownership record points to a running process (PID ${previousOwnerPid}). Refusing to terminate or replace it automatically.`,
+    );
   }
 
-  for (const pid of previousPids) {
-    await stopProcess(pid);
+  NodeFS.rmSync(ownerLockPath, { force: true });
+  try {
+    NodeFS.writeFileSync(
+      ownerLockPath,
+      `${JSON.stringify({ pid: process.pid, desktopDir, startedAt: new Date().toISOString() }, null, 2)}\n`,
+      { flag: "wx" },
+    );
+  } catch (error) {
+    if (error?.code === "EEXIST") {
+      throw new Error("Another desktop dev launcher claimed this checkout concurrently.", {
+        cause: error,
+      });
+    }
+    throw error;
   }
-
-  NodeFS.writeFileSync(
-    ownerLockPath,
-    `${JSON.stringify({ pid: process.pid, desktopDir, startedAt: new Date().toISOString() }, null, 2)}\n`,
-  );
 }
 
 function releaseDevElectronOwnership() {
@@ -221,27 +198,6 @@ function killChildTreeByPid(pid, signal) {
   }
 
   NodeChildProcess.spawnSync("pkill", [`-${signal}`, "-P", String(pid)], { stdio: "ignore" });
-}
-
-function cleanupStaleDevBackends() {
-  if (hostPlatform === "win32") {
-    return;
-  }
-
-  NodeChildProcess.spawnSync("pkill", ["-f", "--", `${backendEntryPath} --bootstrap-fd 3`], {
-    stdio: "ignore",
-  });
-}
-
-function cleanupStaleDevApps() {
-  if (hostPlatform === "win32") {
-    return;
-  }
-
-  NodeChildProcess.spawnSync("pkill", ["-f", "--", `--t3code-dev-root=${desktopDir}`], {
-    stdio: "ignore",
-  });
-  cleanupStaleDevBackends();
 }
 
 function startApp() {
@@ -314,7 +270,6 @@ async function stopApp() {
     app.once("exit", finish);
     app.kill("SIGTERM");
     killChildTreeByPid(app.pid, "TERM");
-    cleanupStaleDevApps();
 
     setTimeout(() => {
       if (settled) {
@@ -323,7 +278,6 @@ async function stopApp() {
 
       app.kill("SIGKILL");
       killChildTreeByPid(app.pid, "KILL");
-      cleanupStaleDevApps();
       finish();
     }, forcedShutdownTimeoutMs).unref();
   });
@@ -409,7 +363,6 @@ async function shutdown(exitCode) {
 }
 
 startWatchers();
-cleanupStaleDevApps();
 startApp();
 
 process.once("SIGINT", () => {

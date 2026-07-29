@@ -446,28 +446,30 @@ export const checkOpenCodeProviderStatus = Effect.fn("checkOpenCodeProviderStatu
           cwd,
           environment: resolvedEnvironment,
         })
-    ).pipe(
-      Effect.mapError(
-        (cause) => new OpenCodeProbeError({ cause, detail: openCodeRuntimeErrorDetail(cause) }),
-      ),
-    ).pipe(
-      Effect.timeoutOption(Duration.millis(OPENCODE_INVENTORY_TIMEOUT_MS)),
-      Effect.flatMap(
-        Option.match({
-          onNone: () =>
-            Effect.fail(
-              new OpenCodeProbeError({
-                cause: new OpenCodeRuntimeError({
-                  operation: "loadOpenCodeInventory",
+    )
+      .pipe(
+        Effect.mapError(
+          (cause) => new OpenCodeProbeError({ cause, detail: openCodeRuntimeErrorDetail(cause) }),
+        ),
+      )
+      .pipe(
+        Effect.timeoutOption(Duration.millis(OPENCODE_INVENTORY_TIMEOUT_MS)),
+        Effect.flatMap(
+          Option.match({
+            onNone: () =>
+              Effect.fail(
+                new OpenCodeProbeError({
+                  cause: new OpenCodeRuntimeError({
+                    operation: "loadOpenCodeInventory",
+                    detail: `Timed out waiting for OpenCode provider inventory after ${OPENCODE_INVENTORY_TIMEOUT_MS}ms.`,
+                  }),
                   detail: `Timed out waiting for OpenCode provider inventory after ${OPENCODE_INVENTORY_TIMEOUT_MS}ms.`,
                 }),
-                detail: `Timed out waiting for OpenCode provider inventory after ${OPENCODE_INVENTORY_TIMEOUT_MS}ms.`,
-              }),
-            ),
-          onSome: Effect.succeed,
-        }),
+              ),
+            onSome: Effect.succeed,
+          }),
+        ),
       ),
-    ),
   );
   if (inventoryExit._tag === "Failure") {
     return fallback(Cause.squash(inventoryExit.cause), version);

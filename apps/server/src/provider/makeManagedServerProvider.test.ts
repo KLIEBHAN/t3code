@@ -290,7 +290,9 @@ describe("makeManagedServerProvider", () => {
             ),
             Effect.as(refreshedSnapshot),
           ),
-        }).pipe(Effect.provide(Layer.merge(BackgroundPolicyAlwaysRunLayer, serverSettingsLayer)));
+        }).pipe(
+          Effect.provide(Layer.mergeAll(BackgroundPolicyAlwaysRunLayer, serverSettingsLayer)),
+        );
 
         yield* Deferred.await(initialCheckDone);
         const nextServerSettings = {
@@ -333,7 +335,7 @@ describe("makeManagedServerProvider", () => {
         const latest = yield* provider.refresh;
         assert.deepStrictEqual(latest, refreshedSnapshot);
       }),
-    ),
+    ).pipe(Effect.provide(AlwaysRunTestLayer)),
   );
 
   it.effect("reruns the provider check when streamed settings change", () =>
