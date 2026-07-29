@@ -4116,7 +4116,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     isConnecting,
     isPreparingWorktree,
     isSendBusy,
-    isServerThread: routeKind === "server",
+    // Assist runs a model on the environment, which needs the operate grant.
+    isServerThread: routeKind === "server" && canOperateThread,
     phase,
     prompt,
     promptRef,
