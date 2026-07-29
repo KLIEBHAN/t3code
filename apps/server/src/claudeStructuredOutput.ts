@@ -4,8 +4,8 @@ import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 import {
-  DEFAULT_GIT_TEXT_GENERATION_MODEL,
-  DEFAULT_GIT_TEXT_GENERATION_MODEL_BY_PROVIDER,
+  DEFAULT_TEXT_GENERATION_MODEL,
+  DEFAULT_TEXT_GENERATION_MODEL_BY_PROVIDER,
   type ModelSelection,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -26,8 +26,7 @@ const CLAUDE_TIMEOUT_MS = 180_000;
 const CLAUDE_DRIVER_KIND = ProviderDriverKind.make("claudeAgent");
 const CLAUDE_INSTANCE_ID = ProviderInstanceId.make("claudeAgent");
 const DEFAULT_CLAUDE_TEXT_GENERATION_MODEL =
-  DEFAULT_GIT_TEXT_GENERATION_MODEL_BY_PROVIDER[CLAUDE_DRIVER_KIND] ??
-  DEFAULT_GIT_TEXT_GENERATION_MODEL;
+  DEFAULT_TEXT_GENERATION_MODEL_BY_PROVIDER[CLAUDE_DRIVER_KIND] ?? DEFAULT_TEXT_GENERATION_MODEL;
 
 export class ClaudeStructuredOutputError extends Schema.TaggedErrorClass<ClaudeStructuredOutputError>()(
   "ClaudeStructuredOutputError",
@@ -129,7 +128,7 @@ export function runClaudeStructuredOutput<S extends Schema.Top>(input: {
         ),
       );
 
-    const modelSelection = input.modelSelection ?? {
+    const modelSelection: ModelSelection = input.modelSelection ?? {
       instanceId: CLAUDE_INSTANCE_ID,
       model: DEFAULT_CLAUDE_TEXT_GENERATION_MODEL,
     };

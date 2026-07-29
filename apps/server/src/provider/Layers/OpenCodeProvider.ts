@@ -520,13 +520,11 @@ export const checkOpenCodeProviderStatus = Effect.fn("checkOpenCodeProviderStatu
                   operation: "loadOpenCodeInventory",
                   detail: `Timed out waiting for OpenCode provider inventory after ${OPENCODE_INVENTORY_TIMEOUT_MS}ms.`,
                 }),
-                detail: `Timed out waiting for OpenCode provider inventory after ${OPENCODE_INVENTORY_TIMEOUT_MS}ms.`,
-              }),
-            ),
-          onSome: Effect.succeed,
-        }),
+              ),
+            onSome: Effect.succeed,
+          }),
+        ),
       ),
-    ),
   );
   if (inventoryExit._tag === "Failure") {
     return fallback(Cause.squash(inventoryExit.cause), version, "inventory");
