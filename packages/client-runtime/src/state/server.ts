@@ -301,6 +301,7 @@ export function applyServerConfigProjection(
           issues: event.payload.issues,
         },
         latestEvent: event,
+        source: "live",
       }));
   }
 }

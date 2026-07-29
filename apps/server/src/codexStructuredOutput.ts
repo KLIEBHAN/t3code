@@ -8,8 +8,8 @@ import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 import {
-  DEFAULT_GIT_TEXT_GENERATION_MODEL,
-  DEFAULT_GIT_TEXT_GENERATION_MODEL_BY_PROVIDER,
+  DEFAULT_TEXT_GENERATION_MODEL,
+  DEFAULT_TEXT_GENERATION_MODEL_BY_PROVIDER,
   type ModelSelection,
   ProviderDriverKind,
 } from "@t3tools/contracts";
@@ -23,8 +23,7 @@ const CODEX_REASONING_EFFORT = "low";
 const CODEX_TIMEOUT_MS = 180_000;
 const CODEX_DRIVER_KIND = ProviderDriverKind.make("codex");
 const DEFAULT_CODEX_TEXT_GENERATION_MODEL =
-  DEFAULT_GIT_TEXT_GENERATION_MODEL_BY_PROVIDER[CODEX_DRIVER_KIND] ??
-  DEFAULT_GIT_TEXT_GENERATION_MODEL;
+  DEFAULT_TEXT_GENERATION_MODEL_BY_PROVIDER[CODEX_DRIVER_KIND] ?? DEFAULT_TEXT_GENERATION_MODEL;
 
 export class CodexStructuredOutputError extends Schema.TaggedErrorClass<CodexStructuredOutputError>()(
   "CodexStructuredOutputError",

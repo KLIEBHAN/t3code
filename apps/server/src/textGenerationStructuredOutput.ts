@@ -1,8 +1,8 @@
 import {
   ClaudeSettings,
   CodexSettings,
-  DEFAULT_GIT_TEXT_GENERATION_MODEL,
-  DEFAULT_GIT_TEXT_GENERATION_MODEL_BY_PROVIDER,
+  DEFAULT_TEXT_GENERATION_MODEL,
+  DEFAULT_TEXT_GENERATION_MODEL_BY_PROVIDER,
   type ModelSelection,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -31,8 +31,7 @@ const CURSOR_INSTANCE_ID = ProviderInstanceId.make("cursor");
 const OPENCODE_INSTANCE_ID = ProviderInstanceId.make("opencode");
 
 const DEFAULT_CODEX_TEXT_GENERATION_MODEL =
-  DEFAULT_GIT_TEXT_GENERATION_MODEL_BY_PROVIDER[CODEX_DRIVER_KIND] ??
-  DEFAULT_GIT_TEXT_GENERATION_MODEL;
+  DEFAULT_TEXT_GENERATION_MODEL_BY_PROVIDER[CODEX_DRIVER_KIND] ?? DEFAULT_TEXT_GENERATION_MODEL;
 const decodeCodexSettings = Schema.decodeEffect(CodexSettings);
 const decodeClaudeSettings = Schema.decodeEffect(ClaudeSettings);
 
