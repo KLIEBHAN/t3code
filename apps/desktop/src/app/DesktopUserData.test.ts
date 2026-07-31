@@ -51,7 +51,7 @@ describe("DesktopUserData", () => {
     it("keeps using the legacy userData path when it already exists", () => {
       const userDataPath = DesktopUserData.resolveUserDataPath({
         ...darwinInput,
-        exists: (path) => path.endsWith("T3 Code (Alpha)"),
+        stat: (path) => (path.endsWith("T3 Code (Alpha)") ? {} : undefined),
       });
 
       assert.equal(userDataPath, "/Users/alice/Library/Application Support/T3 Code (Alpha)");
@@ -60,7 +60,7 @@ describe("DesktopUserData", () => {
     it("uses the current directory name when no legacy path exists", () => {
       const userDataPath = DesktopUserData.resolveUserDataPath({
         ...darwinInput,
-        exists: () => false,
+        stat: () => undefined,
       });
 
       assert.equal(userDataPath, "/Users/alice/Library/Application Support/t3code");
@@ -70,16 +70,32 @@ describe("DesktopUserData", () => {
       const legacy = DesktopUserData.resolveUserDataPath({
         ...darwinInput,
         devServerUrl: "http://localhost:5173",
-        exists: (path) => path.endsWith("T3 Code (Dev)"),
+        stat: (path) => (path.endsWith("T3 Code (Dev)") ? {} : undefined),
       });
       const current = DesktopUserData.resolveUserDataPath({
         ...darwinInput,
         devServerUrl: "http://localhost:5173",
-        exists: () => false,
+        stat: () => undefined,
       });
 
       assert.equal(legacy, "/Users/alice/Library/Application Support/T3 Code (Dev)");
       assert.equal(current, "/Users/alice/Library/Application Support/t3code-dev");
+    });
+
+    it("preserves failures while inspecting the legacy userData path", () => {
+      const cause = Object.assign(new Error("permission denied"), { code: "EACCES" });
+
+      try {
+        DesktopUserData.resolveUserDataPath({
+          ...darwinInput,
+          stat: () => {
+            throw cause;
+          },
+        });
+        assert.fail("Expected the legacy userData path probe to fail");
+      } catch (error) {
+        assert.strictEqual(error, cause);
+      }
     });
   });
 });
