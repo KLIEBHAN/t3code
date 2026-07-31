@@ -85,14 +85,10 @@ function createDesktopClerkBridge(stateDir: string, isDevelopment: boolean) {
 /** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* () {
   const environment = yield* DesktopEnvironment.DesktopEnvironment;
-  const electronApp = yield* ElectronApp.ElectronApp;
 
-  // Electron scopes the single-instance lock to the userData directory and
-  // creates that directory when the lock is acquired. The SDK bridge takes
-  // the lock at creation, so userData must already point at the real
-  // directory — main.ts sets it synchronously during module evaluation,
-  // before Chromium helpers or this bridge can observe the default path.
-
+  // main.ts sets Electron's userData path synchronously before this layer can
+  // be built. The bridge may acquire the single-instance lock here without
+  // creating Electron's default productName-derived directory first.
   const bridge = yield* Effect.acquireRelease(
     Effect.try({
       try: () => createDesktopClerkBridge(environment.stateDir, environment.isDevelopment),
