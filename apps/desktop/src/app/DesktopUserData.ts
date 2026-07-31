@@ -40,7 +40,8 @@ export const resolveAppDataDirectory = (input: ResolveAppDataDirectoryInput): st
 export interface ResolveUserDataPathInput extends ResolveAppDataDirectoryInput {
   /** $VITE_DEV_SERVER_URL; a non-empty value selects the development identity. */
   readonly devServerUrl?: string | undefined;
-  readonly exists: (path: string) => boolean;
+  /** Returns undefined only when the path is absent; other probe failures must throw. */
+  readonly stat: (path: string) => unknown | undefined;
 }
 
 // The legacy directory names are frozen: they predate the lowercase dir naming
@@ -52,7 +53,7 @@ export const resolveUserDataPath = (input: ResolveUserDataPathInput): string => 
     appDataDirectory,
     isDevelopment ? "T3 Code (Dev)" : "T3 Code (Alpha)",
   );
-  return input.exists(legacyPath)
+  return input.stat(legacyPath) !== undefined
     ? legacyPath
     : input.join(appDataDirectory, isDevelopment ? "t3code-dev" : "t3code");
 };
