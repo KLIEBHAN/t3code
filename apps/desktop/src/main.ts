@@ -82,7 +82,7 @@ Electron.app.setPath(
     xdgConfigHome: process.env.XDG_CONFIG_HOME,
     devServerUrl: process.env.VITE_DEV_SERVER_URL,
     join: NodePath.join,
-    exists: NodeFS.existsSync,
+    stat: (path) => NodeFS.statSync(path, { throwIfNoEntry: false }),
   }),
 );
 
