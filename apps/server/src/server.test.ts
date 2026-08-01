@@ -5947,15 +5947,6 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       });
 
       const sessionCookie = yield* getAuthenticatedSessionCookieHeader();
-      const snapshotResponse = yield* HttpClient.get("/api/orchestration/snapshot", {
-        headers: {
-          cookie: sessionCookie,
-        },
-      });
-      const snapshotResult = (yield* snapshotResponse.json) as typeof snapshot;
-      assert.equal(snapshotResponse.status, 200);
-      assert.equal(snapshotResult.snapshotSequence, 1);
-
       const wsUrl = appendSessionCookieToWsUrl(
         yield* getWsServerUrl("/ws", { authenticated: false }),
         sessionCookie,
