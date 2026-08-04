@@ -45,7 +45,7 @@ const ClaudeOutputEnvelope = Schema.Struct({
   structured_output: Schema.Unknown,
 });
 const isClaudeStructuredOutputError = Schema.is(ClaudeStructuredOutputError);
-const encodeUnknownJsonString = Schema.encodeUnknownSync(Schema.UnknownFromJsonString);
+const encodeUnknownJsonString = Schema.encodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
 const decodeClaudeOutputEnvelopeJson = Schema.decodeEffect(
   Schema.fromJsonString(ClaudeOutputEnvelope),
 );
