@@ -39,7 +39,7 @@ export class CodexStructuredOutputError extends Schema.TaggedErrorClass<CodexStr
 }
 
 const isCodexStructuredOutputError = Schema.is(CodexStructuredOutputError);
-const encodeUnknownJsonString = Schema.encodeUnknownSync(Schema.UnknownFromJsonString);
+const encodeUnknownJsonString = Schema.encodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
 
 function toCodexOutputJsonSchema(schema: Schema.Top): unknown {
   const document = Schema.toJsonSchemaDocument(schema);
