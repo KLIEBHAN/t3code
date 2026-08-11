@@ -57,6 +57,9 @@ const clientSettings: ClientSettings = {
   proactivePanelsEnabled: true,
   showSkillsInSlashMenu: false,
   providerModelPreferences: {},
+  replySuggestionPromptTemplates: [],
+  selectedReplySuggestionPromptTemplateId: "default",
+
   sidebarProjectGroupingMode: "repository_path",
   sidebarProjectGroupingOverrides: {
     "environment-1:/tmp/project-a": "separate",
