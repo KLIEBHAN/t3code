@@ -1122,7 +1122,7 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
   if (result) {
     entry.result = result;
   }
-  const output = extractToolOutput(payload);
+  const output = extractToolResultOutput(payload);
   if (output) {
     entry.output = output;
   }
@@ -1877,7 +1877,9 @@ function extractWorkLogRequestKind(
   return requestKindFromRequestType(payload?.requestType) ?? undefined;
 }
 
-function extractToolOutput(payload: Record<string, unknown> | null): string | null {
+// Complements `extractToolOutput` for provider payloads that expose plain
+// stdout/stderr/output fields instead of the work-log aggregated shapes.
+function extractToolResultOutput(payload: Record<string, unknown> | null): string | null {
   const data = asRecord(payload?.data);
   const item = asRecord(data?.item);
   const itemResult = asRecord(item?.result);
@@ -1913,7 +1915,7 @@ function extractToolResult(
   payload: Record<string, unknown> | null,
   command: string | null,
 ): string | null {
-  const output = extractToolOutput(payload);
+  const output = extractToolResultOutput(payload);
   if (output) {
     return output;
   }
