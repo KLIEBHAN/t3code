@@ -202,9 +202,7 @@ const ComposerCommandMenuItem = memo(function ComposerCommandMenuItem(props: {
 }) {
   const skillSourceKind =
     props.item.type === "skill" ? resolveProviderSkillSourceKind(props.item.skill) : null;
-  const skillSourceLabel = skillSourceKind
-    ? SKILL_SOURCE_LABEL_BY_KIND[skillSourceKind]
-    : null;
+  const skillSourceLabel = skillSourceKind ? SKILL_SOURCE_LABEL_BY_KIND[skillSourceKind] : null;
 
   return (
     <CommandItem
