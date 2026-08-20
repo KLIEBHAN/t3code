@@ -122,6 +122,7 @@ import {
   findLatestProposedPlan,
   deriveWorkLogEntries,
   hasActionableProposedPlan,
+  isLatestTurnOutputSettled,
   isLatestTurnSettled,
   selectHandoffImageResources,
   type TimelineEntriesProjection,
@@ -2968,11 +2969,17 @@ export default function ChatView(props: ChatViewProps) {
     !compactionSettled;
   const isWorking =
     phase === "running" || isSendBusy || isConnecting || isRevertingCheckpoint || isCompacting;
+  const activeSession = activeThread?.session ?? null;
   const activeWorkStartedAt = deriveActiveWorkStartedAt(
     activeLatestTurn,
-    activeThread?.session ?? null,
+    activeSession,
     localDispatchStartedAt,
     latestUserMessageAt,
+    isLatestTurnOutputSettled({
+      latestTurn: activeLatestTurn,
+      session: activeSession,
+      messages: activeThread?.messages ?? [],
+    }),
   );
   useEffect(() => {
     attachmentPreviewHandoffByMessageIdRef.current = attachmentPreviewHandoffByMessageId;
