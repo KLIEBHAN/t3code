@@ -95,6 +95,7 @@ import {
   findLatestProposedPlan,
   deriveWorkLogEntries,
   hasActionableProposedPlan,
+  isLatestTurnOutputSettled,
   isLatestTurnSettled,
 } from "../session-logic";
 import { type LegendListRef } from "@legendapp/list/react";
@@ -2342,11 +2343,17 @@ function ChatViewContent(props: ChatViewProps) {
     threadError,
   });
   const isWorking = phase === "running" || isSendBusy || isConnecting || isRevertingCheckpoint;
+  const activeSession = activeThread?.session ?? null;
   const activeWorkStartedAt = deriveActiveWorkStartedAt(
     activeLatestTurn,
-    activeThread?.session ?? null,
+    activeSession,
     localDispatchStartedAt,
     latestUserMessageAt,
+    isLatestTurnOutputSettled({
+      latestTurn: activeLatestTurn,
+      session: activeSession,
+      messages: activeThread?.messages ?? [],
+    }),
   );
   useEffect(() => {
     attachmentPreviewHandoffByMessageIdRef.current = attachmentPreviewHandoffByMessageId;
