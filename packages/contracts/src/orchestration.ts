@@ -144,6 +144,8 @@ export const ProviderRequestKind = Schema.Literals([
   "permission",
 ]);
 export type ProviderRequestKind = typeof ProviderRequestKind.Type;
+export const AssistantDeliveryMode = Schema.Literals(["buffered", "streaming"]);
+export type AssistantDeliveryMode = typeof AssistantDeliveryMode.Type;
 export const ProviderApprovalDecision = Schema.Literals([
   "accept",
   "acceptForSession",

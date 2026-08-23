@@ -246,20 +246,46 @@ describe("detectComposerTrigger", () => {
     });
   });
 
-  it.each(["$", "€", "£", "¥", "₹", "₩", "₿", "𑿝"])(
+  it("keeps slash command detection active for provider commands", () => {
+    const text = "/rev";
+    const trigger = detectComposerTrigger(text, text.length);
+
+    expect(trigger).toEqual({
+      kind: "slash-command",
+      query: "rev",
+      rangeStart: 0,
+      rangeEnd: text.length,
+    });
+  });
+
+  it("keeps slash command detection active for custom commands", () => {
+    const text = "/gh";
+    const trigger = detectComposerTrigger(text, text.length);
+
+    expect(trigger).toEqual({
+      kind: "slash-command",
+      query: "gh",
+      rangeStart: 0,
+      rangeEnd: text.length,
+    });
+  });
+
+  it("keeps slash command detection active for slash-style skills", () => {
+    const text = "/skill:brow";
+
+    expect(detectComposerTrigger(text, text.length)).toEqual({
+      kind: "slash-command",
+      query: "skill:brow",
+      rangeStart: 0,
+      rangeEnd: text.length,
+    });
+  });
+
+  it.each(["$", "\u20ac", "\u00a3", "\u00a5", "\u20b9", "\u20a9", "\u20bf", "\U000111df"])(
     "detects %sskill trigger at cursor",
     (prefix) => {
       const text = `Use ${prefix}gh-fi`;
       const trigger = detectComposerTrigger(text, text.length);
-  it("does not keep slash command detection active for unsupported built-ins", () => {
-    const text = "/rev";
-
-    expect(detectComposerTrigger(text, text.length)).toBeNull();
-  });
-
-  it("detects $skill trigger at cursor", () => {
-    const text = "Use $gh-fi";
-    const trigger = detectComposerTrigger(text, text.length);
 
       expect(trigger).toEqual({
         kind: "skill",

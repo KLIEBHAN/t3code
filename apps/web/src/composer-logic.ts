@@ -10,7 +10,6 @@ import {
 } from "./composer-editor-mentions";
 import { INLINE_TERMINAL_CONTEXT_PLACEHOLDER } from "./lib/terminalContext";
 import {
-  hasSlashCommandPrefix,
   parseStandaloneSlashCommand,
   type ExecutableSlashCommandDefinition,
 } from "./slashCommands";
@@ -224,7 +223,7 @@ export function isCollapsedCursorAdjacentToInlineToken(
 export function detectComposerTrigger(
   text: string,
   cursorInput: number,
-  customCommands: readonly ServerCustomSlashCommand[] = [],
+  _customCommands: readonly ServerCustomSlashCommand[] = [],
 ): ComposerTrigger | null {
   const cursor = clampCursor(text, cursorInput);
   const lineStart = text.lastIndexOf("\n", Math.max(0, cursor - 1)) + 1;
@@ -242,15 +241,12 @@ export function detectComposerTrigger(
           rangeEnd: cursor,
         };
       }
-      if (hasSlashCommandPrefix(commandQuery, customCommands)) {
-        return {
-          kind: "slash-command",
-          query: commandQuery,
-          rangeStart: lineStart,
-          rangeEnd: cursor,
-        };
-      }
-      return null;
+      return {
+        kind: "slash-command",
+        query: commandQuery,
+        rangeStart: lineStart,
+        rangeEnd: cursor,
+      };
     }
 
     const modelMatch = /^\/model(?:\s+(.*))?$/.exec(linePrefix);
