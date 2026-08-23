@@ -191,10 +191,26 @@ describe("detectComposerTrigger", () => {
     });
   });
 
-  it("does not keep slash command detection active for unsupported built-ins", () => {
-    const text = "/rev";
+  it("keeps slash command detection active for provider commands", () => {
+    const text = "/gh";
 
-    expect(detectComposerTrigger(text, text.length)).toBeNull();
+    expect(detectComposerTrigger(text, text.length)).toEqual({
+      kind: "slash-command",
+      query: "gh",
+      rangeStart: 0,
+      rangeEnd: text.length,
+    });
+  });
+
+  it("keeps slash command detection active for slash-style skills", () => {
+    const text = "/skill:brow";
+
+    expect(detectComposerTrigger(text, text.length)).toEqual({
+      kind: "slash-command",
+      query: "skill:brow",
+      rangeStart: 0,
+      rangeEnd: text.length,
+    });
   });
 
   it("detects $skill trigger at cursor", () => {
