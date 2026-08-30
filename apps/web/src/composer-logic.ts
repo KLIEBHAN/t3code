@@ -289,7 +289,9 @@ export function detectComposerTrigger(
 export function parseStandaloneComposerSlashCommand(
   text: string,
   customCommands: readonly ServerCustomSlashCommand[] = [],
+  attachmentCount = 0,
 ): ExecutableSlashCommandDefinition | null {
+  if (attachmentCount > 0) return null;
   return parseStandaloneSlashCommand(text, customCommands);
 }
 

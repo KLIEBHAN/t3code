@@ -560,6 +560,14 @@ describe("parseStandaloneComposerSlashCommand", () => {
     );
   });
 
+  it("ignores built-in standalone commands when attachments are present", () => {
+    expect(parseStandaloneComposerSlashCommand("/plan", [], 1)).toBeNull();
+  });
+
+  it("ignores custom standalone commands when attachments are present", () => {
+    expect(parseStandaloneComposerSlashCommand("/deploy", CUSTOM_COMMANDS, 1)).toBeNull();
+  });
+
   it("ignores slash commands with extra message text", () => {
     expect(parseStandaloneComposerSlashCommand("/plan explain this")).toBeNull();
   });
