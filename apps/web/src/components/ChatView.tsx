@@ -7492,17 +7492,17 @@ export default function ChatView(props: ChatViewProps) {
             previewAnnotationContextReference(directAnnotation.annotation),
           ])
         : promptRef.current);
-    const parsedStandaloneSlashCommand =
-      !input?.skipStandaloneSlashParsing &&
-      composerImages.length === 0 &&
-      composerTerminalContexts.length === 0 &&
-      composerPreviewAnnotations.length === 0 &&
-      composerReviewComments.length === 0
-        ? parseStandaloneComposerSlashCommand(
-            promptForSend.trim(),
-            serverConfig?.customSlashCommands ?? [],
-          )
-        : null;
+    const parsedStandaloneSlashCommand = !input?.skipStandaloneSlashParsing
+      ? parseStandaloneComposerSlashCommand(
+          promptForSend.trim(),
+          serverConfig?.customSlashCommands ?? [],
+          composerImages.length +
+            composerFiles.length +
+            composerTerminalContexts.length +
+            composerPreviewAnnotations.length +
+            composerReviewComments.length,
+        )
+      : null;
     // Builtin /plan and /default only toggle the mode where the provider
     // exposes it; providers without the toggle receive their native commands
     // unchanged. Custom commands stay available either way.

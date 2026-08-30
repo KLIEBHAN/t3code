@@ -281,7 +281,7 @@ describe("detectComposerTrigger", () => {
     });
   });
 
-  it.each(["$", "\u20ac", "\u00a3", "\u00a5", "\u20b9", "\u20a9", "\u20bf", "\U000111df"])(
+  it.each(["$", "€", "£", "¥", "₹", "₩", "₿", "𑿝"])(
     "detects %sskill trigger at cursor",
     (prefix) => {
       const text = `Use ${prefix}gh-fi`;
@@ -797,6 +797,14 @@ describe("parseStandaloneComposerSlashCommand", () => {
     expect(parseStandaloneComposerSlashCommand("/deploy", CUSTOM_COMMANDS)?.id).toBe(
       "custom:deploy",
     );
+  });
+
+  it("ignores built-in standalone commands when attachments are present", () => {
+    expect(parseStandaloneComposerSlashCommand("/plan", [], 1)).toBeNull();
+  });
+
+  it("ignores custom standalone commands when attachments are present", () => {
+    expect(parseStandaloneComposerSlashCommand("/deploy", CUSTOM_COMMANDS, 1)).toBeNull();
   });
 
   it("ignores slash commands with extra message text", () => {
