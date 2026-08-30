@@ -9118,19 +9118,16 @@ export default function ChatView(props: ChatViewProps) {
     }
     // A typed custom command sends its stored prompt. Drafts with attachments or
     // contexts are prompts, never commands.
-    const hasComposerAttachmentsOrContexts =
-      composerImages.length > 0 ||
-      composerFiles.length > 0 ||
-      composerTerminalContexts.length > 0 ||
-      composerPreviewAnnotations.length > 0 ||
-      composerReviewComments.length > 0 ||
-      composerThreadContexts.length > 0;
-    const customSlashCommand = hasComposerAttachmentsOrContexts
-      ? null
-      : parseStandaloneComposerSlashCommand(
-          promptForSend,
-          serverConfig?.customSlashCommands ?? EMPTY_CUSTOM_SLASH_COMMANDS,
-        );
+    const customSlashCommand = parseStandaloneComposerSlashCommand(
+      promptForSend,
+      serverConfig?.customSlashCommands ?? EMPTY_CUSTOM_SLASH_COMMANDS,
+      composerImages.length +
+        composerFiles.length +
+        composerTerminalContexts.length +
+        composerPreviewAnnotations.length +
+        composerReviewComments.length +
+        composerThreadContexts.length,
+    );
     const effectivePromptForSend =
       customSlashCommand?.source === "custom" ? customSlashCommand.prompt : promptForSend;
     const {
