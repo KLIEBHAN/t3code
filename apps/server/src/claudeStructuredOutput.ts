@@ -16,13 +16,17 @@ import {
 } from "@t3tools/shared/model";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import {
-  getClaudeModelCapabilities,
-  normalizeClaudeCliEffort,
-  resolveClaudeApiModelId,
-  resolveClaudeEffort,
-} from "./provider/Layers/ClaudeProvider.ts";
+  BUNDLED_CLAUDE_MODEL_CATALOG,
+  getClaudeCatalogModelCapabilities,
+  isClaudeCatalogUltracodeEffort,
+  normalizeClaudeCatalogEffort,
+  resolveClaudeCatalogApiModelId,
+  resolveClaudeCatalogEffort,
+  resolveClaudeModelSlug,
+} from "./provider/ClaudeModelCatalog.ts";
 
 const CLAUDE_TIMEOUT_MS = 180_000;
+const CLAUDE_MODEL_CATALOG = BUNDLED_CLAUDE_MODEL_CATALOG;
 const CLAUDE_DRIVER_KIND = ProviderDriverKind.make("claudeAgent");
 const CLAUDE_INSTANCE_ID = ProviderInstanceId.make("claudeAgent");
 const DEFAULT_CLAUDE_TEXT_GENERATION_MODEL =
@@ -128,19 +132,34 @@ export function runClaudeStructuredOutput<S extends Schema.Top>(input: {
         ),
       );
 
-    const modelSelection: ModelSelection = input.modelSelection ?? {
+    const requestedModelSelection: ModelSelection = input.modelSelection ?? {
       instanceId: CLAUDE_INSTANCE_ID,
       model: DEFAULT_CLAUDE_TEXT_GENERATION_MODEL,
     };
-    const caps = getClaudeModelCapabilities(modelSelection.model);
+    // Model aliases only resolve through the catalog, so normalize before
+    // reading capabilities or building CLI arguments.
+    const modelSelection: ModelSelection = {
+      ...requestedModelSelection,
+      model: resolveClaudeModelSlug(CLAUDE_MODEL_CATALOG, requestedModelSelection.model),
+    };
+    const caps = getClaudeCatalogModelCapabilities(CLAUDE_MODEL_CATALOG, modelSelection.model);
     const descriptors = getProviderOptionDescriptors({
       caps,
       selections: modelSelection.options,
     });
     const findDescriptor = (id: string) => descriptors.find((descriptor) => descriptor.id === id);
     const rawEffortSelection = getModelSelectionStringOptionValue(modelSelection, "effort");
-    const resolvedEffort = resolveClaudeEffort(caps, rawEffortSelection);
-    const cliEffort = normalizeClaudeCliEffort(resolvedEffort, modelSelection.model);
+    const resolvedEffort = resolveClaudeCatalogEffort(
+      CLAUDE_MODEL_CATALOG,
+      modelSelection.model,
+      rawEffortSelection,
+    );
+    const cliEffort = normalizeClaudeCatalogEffort(
+      CLAUDE_MODEL_CATALOG,
+      resolvedEffort,
+      modelSelection.model,
+    );
+    const ultracode = isClaudeCatalogUltracodeEffort(resolvedEffort);
     const thinkingDescriptor = findDescriptor("thinking");
     const fastModeDescriptor = findDescriptor("fastMode");
     const thinking =
@@ -150,6 +169,7 @@ export function runClaudeStructuredOutput<S extends Schema.Top>(input: {
     const settings = {
       ...(typeof thinking === "boolean" ? { alwaysThinkingEnabled: thinking } : {}),
       ...(fastMode ? { fastMode: true } : {}),
+      ...(ultracode ? { ultracode: true } : {}),
     };
     const jsonSchemaStr = encodeUnknownJsonString(toClaudeOutputJsonSchema(input.outputSchema));
 
@@ -164,7 +184,7 @@ export function runClaudeStructuredOutput<S extends Schema.Top>(input: {
           "--json-schema",
           jsonSchemaStr,
           "--model",
-          resolveClaudeApiModelId(modelSelection),
+          resolveClaudeCatalogApiModelId(CLAUDE_MODEL_CATALOG, modelSelection),
           ...(cliEffort ? ["--effort", cliEffort] : []),
           ...(Object.keys(settings).length > 0
             ? ["--settings", encodeUnknownJsonString(settings)]

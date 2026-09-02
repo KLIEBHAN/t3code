@@ -59,7 +59,6 @@ const clientSettings: ClientSettings = {
   providerModelPreferences: {},
   replySuggestionPromptTemplates: [],
   selectedReplySuggestionPromptTemplateId: "default",
-
   sidebarProjectGroupingMode: "repository_path",
   sidebarProjectGroupingOverrides: {
     "environment-1:/tmp/project-a": "separate",
