@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 
 import {
   INITIAL_TURN_SCOPED_COLLAPSE_STATE,
@@ -8,10 +8,9 @@ import {
 
 export function useTurnScopedCollapseState(turnId: string | null) {
   const [state, setState] = useState(INITIAL_TURN_SCOPED_COLLAPSE_STATE);
-
-  useEffect(() => {
-    setState((current) => syncTurnScopedCollapseState(current, turnId));
-  }, [turnId]);
+  // A collapse only applies to the turn it was made on, so a turn change is
+  // resolved while rendering instead of by writing state back from an effect.
+  const current = syncTurnScopedCollapseState(state, turnId);
 
   const show = useCallback(() => {
     setState((current) => setTurnScopedCollapsed(current, turnId, false));
@@ -22,7 +21,7 @@ export function useTurnScopedCollapseState(turnId: string | null) {
   }, [turnId]);
 
   return {
-    collapsed: state.turnId === turnId && state.collapsed,
+    collapsed: current.collapsed,
     show,
     hide,
   };
