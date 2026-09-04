@@ -174,19 +174,8 @@ export function usePromptAutocomplete(input: {
       request: effectiveRequest,
     };
 
-    if (!effectiveKey || effectiveKey === dismissedKey) {
-      clearSuggestions();
-    }
-
     runLatestRequestRef.current();
-  }, [
-    clearSuggestions,
-    dismissedKey,
-    effectiveKey,
-    effectiveRequest,
-    input.environmentId,
-    input.modelSelection,
-  ]);
+  }, [dismissedKey, effectiveKey, effectiveRequest, input.environmentId, input.modelSelection]);
 
   const dismiss = useCallback(() => {
     latestRequestRef.current = {
@@ -197,9 +186,16 @@ export function usePromptAutocomplete(input: {
     clearSuggestions();
   }, [clearSuggestions, currentKey]);
 
+  // Suggestions belong to the request that produced them: a dismissed or
+  // not-yet-settled draft hides them while rendering, so no effect has to write
+  // the empty state back. Suggestions from an older draft stay visible until
+  // the replacement arrives, which keeps the inline hint from flickering.
+  const suggestions =
+    effectiveKey && effectiveKey !== dismissedKey ? state.suggestions : EMPTY_SUGGESTIONS;
+
   const cycle = useCallback(
     (direction: 1 | -1): boolean => {
-      if (state.suggestions.length <= 1) return false;
+      if (suggestions.length <= 1) return false;
       setState((current) => {
         if (current.suggestions.length <= 1) return current;
         const selectedIndex = getNextPromptAutocompleteIndex({
@@ -215,15 +211,15 @@ export function usePromptAutocomplete(input: {
       });
       return true;
     },
-    [state.suggestions.length],
+    [suggestions.length],
   );
 
-  const selectedSuggestion = state.suggestions[state.selectedIndex] ?? null;
+  const selectedSuggestion = suggestions[state.selectedIndex] ?? null;
   const hasVisibleRequest = Boolean(currentKey && currentKey !== dismissedKey);
   const isLoading = hasVisibleRequest && (isFetching || requestDebouncer.state.isPending);
 
   return {
-    canCycle: state.suggestions.length > 1,
+    canCycle: suggestions.length > 1,
     cycleNext: () => cycle(1),
     cyclePrevious: () => cycle(-1),
     dismiss,
@@ -232,7 +228,7 @@ export function usePromptAutocomplete(input: {
     selectedIndex: selectedSuggestion ? state.selectedIndex : 0,
     selectedOrdinal: selectedSuggestion ? state.selectedIndex + 1 : 0,
     suggestion: selectedSuggestion?.text ?? null,
-    suggestionCount: state.suggestions.length,
-    suggestions: state.suggestions,
+    suggestionCount: suggestions.length,
+    suggestions,
   };
 }

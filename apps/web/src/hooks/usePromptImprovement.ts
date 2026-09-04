@@ -1,6 +1,6 @@
 import type { EnvironmentId, PromptImprovementInput } from "@t3tools/contracts";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 
 import { composerAssistEnvironment } from "../state/composerAssist";
 import { useAtomCommand } from "../state/use-atom-command";
@@ -48,21 +48,20 @@ export function usePromptImprovement(input: {
   const generateImprovement = useAtomCommand(composerAssistEnvironment.generatePromptImprovement, {
     reportFailure: false,
   });
-  const [preview, setPreview] = useState<PromptImprovementPreviewState | null>(null);
+  const [storedPreview, setPreview] = useState<PromptImprovementPreviewState | null>(null);
   const [isImproving, setIsImproving] = useState(false);
   const [error, setError] = useState<unknown>(null);
 
-  useEffect(() => {
-    if (
-      shouldResetPromptImprovementPreview({
-        currentPrompt: input.currentPrompt,
-        preview,
-        request: input.request,
-      })
-    ) {
-      setPreview(null);
-    }
-  }, [input.currentPrompt, input.request, preview]);
+  // Editing the prompt or switching threads retires the preview. That is a
+  // function of the current input, so it is resolved while rendering rather
+  // than written back from an effect.
+  const preview = shouldResetPromptImprovementPreview({
+    currentPrompt: input.currentPrompt,
+    preview: storedPreview,
+    request: input.request,
+  })
+    ? null
+    : storedPreview;
 
   const improve = useCallback(async () => {
     if (!input.request || !input.environmentId || isImproving) {
@@ -102,7 +101,7 @@ export function usePromptImprovement(input: {
     } finally {
       setIsImproving(false);
     }
-  }, [generateImprovement, input.environmentId, input.request, isImproving]);
+  }, [input.environmentId, input.request, isImproving]);
 
   const dismiss = useCallback(() => {
     setPreview(null);
