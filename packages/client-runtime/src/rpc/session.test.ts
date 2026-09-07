@@ -434,6 +434,7 @@ describe("RpcSessionFactory", () => {
   it.effect.each([
     { environmentThemes: true },
     { usageLimitSources: true },
+    { customSlashCommands: true },
     { environmentThemes: true, usageLimitSources: true },
   ])("shares only a config subscription with the same opt-ins: %j", (options) =>
     Effect.scoped(
