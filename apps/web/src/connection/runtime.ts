@@ -35,6 +35,7 @@ const providedClientConnectionLayer = snapshotLoaderLayer.pipe(
     Connection.layerWithOptions({
       environmentThemes: true,
       usageLimitSources: true,
+      customSlashCommands: true,
       usageLimitsCommand: true,
     }),
   ),

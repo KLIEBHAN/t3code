@@ -2871,26 +2871,38 @@ const makeWsRpcLayer = (
             Effect.gen(function* () {
               const usageLimitsCommand = input.usageLimitsCommand === true;
               const config = yield* loadServerConfig({ usageLimitsCommand });
+              // Issues are one list across config sources, and every update
+              // replaces it wholesale. Each event therefore carries the other
+              // source's issues too, or fixing a keybinding would hide an
+              // outstanding custom-command problem until the next reconnect.
               const keybindingsUpdates = keybindings.streamChanges.pipe(
-                Stream.map((event) => ({
-                  version: 1 as const,
-                  type: "keybindingsUpdated" as const,
-                  payload: {
-                    keybindings: event.keybindings,
-                    issues: event.issues,
-                  },
-                })),
+                Stream.mapEffect((event) =>
+                  Effect.map(customSlashCommands.loadConfigState, (slashCommands) => ({
+                    version: 1 as const,
+                    type: "keybindingsUpdated" as const,
+                    payload: {
+                      keybindings: event.keybindings,
+                      issues: [...event.issues, ...slashCommands.issues],
+                    },
+                  })),
+                ),
               );
-              const customSlashCommandsUpdates = customSlashCommands.changes.pipe(
-                Stream.map((event) => ({
-                  version: 1 as const,
-                  type: "customSlashCommandsUpdated" as const,
-                  payload: {
-                    customSlashCommands: event.commands,
-                    issues: event.issues,
-                  },
-                })),
-              );
+              // Same gate as themes: an older client dies on an unknown event.
+              const customSlashCommandsUpdates =
+                input.customSlashCommands === true
+                  ? customSlashCommands.changes.pipe(
+                      Stream.mapEffect((event) =>
+                        Effect.map(keybindings.loadConfigState, (keybindingsConfig) => ({
+                          version: 1 as const,
+                          type: "customSlashCommandsUpdated" as const,
+                          payload: {
+                            customSlashCommands: event.commands,
+                            issues: [...keybindingsConfig.issues, ...event.issues],
+                          },
+                        })),
+                      ),
+                    )
+                  : Stream.empty;
               const providerStatuses = Stream.zipLatestWith(
                 // The registry stream carries changes only. Seed it with the current
                 // providers so a source refresh that lands before any provider change

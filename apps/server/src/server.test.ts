@@ -4957,7 +4957,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       assert.isUndefined(response.shellRevealInFileManager);
       assert.isUndefined(response.shellRevealInFileManagerKind);
       assert.equal(response.threadResumeCompletionMarker, true);
-      assert.equal(response.customSlashCommandsDirectoryPath.endsWith("/slash-commands"), true);
+      assert.equal(response.customSlashCommandsDirectoryPath?.endsWith("/slash-commands"), true);
       assert.deepEqual(response.customSlashCommands, []);
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
@@ -6214,7 +6214,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         assert.deepEqual(first.config.providers, providers);
         assert.deepEqual(first.config.customSlashCommands, []);
         assert.equal(
-          first.config.customSlashCommandsDirectoryPath.endsWith("/slash-commands"),
+          first.config.customSlashCommandsDirectoryPath?.endsWith("/slash-commands"),
           true,
         );
         assert.equal(path.basename(first.config.observability.logsDirectoryPath), "logs");
@@ -6685,6 +6685,47 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
+  it.effect("subscribeServerConfig keeps custom command issues on a keybindings update", () =>
+    Effect.gen(function* () {
+      const slashCommandIssue = {
+        kind: "custom-slash-commands.invalid-entry" as const,
+        message: "Missing description",
+        path: "/tmp/slash-commands/deploy.md",
+      };
+
+      yield* buildAppUnderTest({
+        layers: {
+          keybindings: {
+            loadConfigState: Effect.succeed({ keybindings: [], issues: [] }),
+            streamChanges: Stream.succeed({ keybindings: [], issues: [] }),
+          },
+          providerRegistry: { streamChanges: Stream.empty },
+          customSlashCommands: {
+            loadConfigState: Effect.succeed({ commands: [], issues: [slashCommandIssue] }),
+            changes: Stream.empty,
+          },
+        },
+      });
+
+      const wsUrl = yield* getWsServerUrl("/ws");
+      const events = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[WS_METHODS.subscribeServerConfig]({}).pipe(Stream.take(2), Stream.runCollect),
+        ),
+      );
+
+      const [first, second] = Array.from(events);
+      assert.equal(first?.type, "snapshot");
+      assert.deepEqual(second, {
+        version: 1,
+        type: "keybindingsUpdated",
+        payload: { keybindings: [], issues: [slashCommandIssue] },
+      });
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  // Custom command updates ride the same opt-in gate as themes: a client built
+  // against the old event union would lose its whole config subscription.
   it.effect("routes websocket rpc subscribeServerConfig emits custom slash command updates", () =>
     Effect.gen(function* () {
       const changeEvent = {
@@ -6721,7 +6762,10 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       const wsUrl = yield* getWsServerUrl("/ws");
       const events = yield* Effect.scoped(
         withWsRpcClient(wsUrl, (client) =>
-          client[WS_METHODS.subscribeServerConfig]({}).pipe(Stream.take(2), Stream.runCollect),
+          client[WS_METHODS.subscribeServerConfig]({ customSlashCommands: true }).pipe(
+            Stream.take(2),
+            Stream.runCollect,
+          ),
         ),
       );
 
@@ -6736,6 +6780,47 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         },
       });
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect(
+    "subscribeServerConfig withholds custom slash command updates from other subscribers",
+    () =>
+      Effect.gen(function* () {
+        yield* buildAppUnderTest({
+          layers: {
+            keybindings: {
+              loadConfigState: Effect.succeed({ keybindings: [], issues: [] }),
+              streamChanges: Stream.empty,
+            },
+            providerRegistry: { streamChanges: Stream.empty },
+            customSlashCommands: {
+              loadConfigState: Effect.succeed({ commands: [], issues: [] }),
+              changes: Stream.succeed({
+                commands: [
+                  {
+                    command: "deploy",
+                    description: "Deploy the project",
+                    prompt: "Run the deployment workflow",
+                    sourcePath: "/tmp/slash-commands/deploy.md",
+                  },
+                ],
+                issues: [],
+              }),
+            },
+          },
+        });
+
+        const wsUrl = yield* getWsServerUrl("/ws");
+        const events = yield* Effect.scoped(
+          withWsRpcClient(wsUrl, (client) =>
+            client[WS_METHODS.subscribeServerConfig]({}).pipe(Stream.take(1), Stream.runCollect),
+          ),
+        );
+
+        const first = Array.from(events)[0];
+        assert.equal(first?.type, "snapshot");
+        if (first?.type === "snapshot") assert.deepEqual(first.config.customSlashCommands, []);
+      }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
   it.effect(

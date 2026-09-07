@@ -574,9 +574,11 @@ export const ServerConfig = Schema.Struct({
   auth: ServerAuthDescriptor,
   cwd: TrimmedNonEmptyString,
   keybindingsConfigPath: TrimmedNonEmptyString,
-  customSlashCommandsDirectoryPath: TrimmedNonEmptyString,
+  /** Absent on servers that predate custom slash commands. */
+  customSlashCommandsDirectoryPath: Schema.optional(TrimmedNonEmptyString),
   keybindings: ResolvedKeybindingsConfig,
-  customSlashCommands: Schema.Array(ServerCustomSlashCommand),
+  /** Absent on servers that predate custom slash commands. */
+  customSlashCommands: Schema.optional(Schema.Array(ServerCustomSlashCommand)),
   issues: ServerConfigIssues,
   providers: ServerProviders,
   // Editor ids grow over time; drop ones this build does not know rather than
