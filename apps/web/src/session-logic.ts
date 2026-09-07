@@ -381,7 +381,6 @@ export function shouldResetSendPhase({
   return latestTurn.completedAt !== sendBaselineLatestTurnCompletedAt;
 }
 
-
 function planStateFromActivity(activity: OrchestrationThreadActivity): ActivePlanState | null {
   const payload =
     activity.payload && typeof activity.payload === "object"
