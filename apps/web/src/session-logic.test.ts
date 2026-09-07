@@ -2980,4 +2980,3 @@ describe("shouldResetSendPhase", () => {
     ).toBe(true);
   });
 });
-
