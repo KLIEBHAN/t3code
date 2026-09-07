@@ -3924,7 +3924,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       );
     },
     [
-      activeThreadId,
       activePendingProgress?.activeQuestion,
       expandComposerForEditorChange,
       customSlashCommands,
