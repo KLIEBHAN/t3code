@@ -42,6 +42,7 @@ const readModel: OrchestrationReadModel = {
       runtimeMode: "full-access",
       branch: "main",
       worktreePath: null,
+      pullRequests: [],
       latestTurn: null,
       session: null,
       messages: [

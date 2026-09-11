@@ -25,7 +25,7 @@ const CODEX_DRIVER_KIND = ProviderDriverKind.make("codex");
 const DEFAULT_CODEX_TEXT_GENERATION_MODEL =
   DEFAULT_TEXT_GENERATION_MODEL_BY_PROVIDER[CODEX_DRIVER_KIND] ?? DEFAULT_TEXT_GENERATION_MODEL;
 
-export class CodexStructuredOutputError extends Schema.TaggedErrorClass<CodexStructuredOutputError>()(
+export class CodexStructuredOutputError extends Schema.TaggedError<CodexStructuredOutputError>()(
   "CodexStructuredOutputError",
   {
     operation: Schema.String,
