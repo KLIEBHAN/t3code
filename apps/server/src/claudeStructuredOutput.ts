@@ -32,7 +32,7 @@ const CLAUDE_INSTANCE_ID = ProviderInstanceId.make("claudeAgent");
 const DEFAULT_CLAUDE_TEXT_GENERATION_MODEL =
   DEFAULT_TEXT_GENERATION_MODEL_BY_PROVIDER[CLAUDE_DRIVER_KIND] ?? DEFAULT_TEXT_GENERATION_MODEL;
 
-export class ClaudeStructuredOutputError extends Schema.TaggedErrorClass<ClaudeStructuredOutputError>()(
+export class ClaudeStructuredOutputError extends Schema.TaggedError<ClaudeStructuredOutputError>()(
   "ClaudeStructuredOutputError",
   {
     operation: Schema.String,

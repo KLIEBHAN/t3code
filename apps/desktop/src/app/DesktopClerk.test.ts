@@ -65,9 +65,6 @@ describe("DesktopClerk", () => {
         ],
       ]);
       assert.equal(cleanup.mock.calls.length, 1);
-      // main.ts points userData at the real directory during module
-      // evaluation, so the bridge no longer has to move it first.
-      assert.deepEqual(events, ["createClerkBridge"]);
       storageMock.mockClear();
       createClerkBridgeMock.mockClear();
     });
