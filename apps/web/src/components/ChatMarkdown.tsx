@@ -3248,14 +3248,6 @@ const CHAT_MARKDOWN_COMPONENTS = {
         />
       );
     }
-    console.log(
-      "DBG-CLS src=",
-      classifiedSrc,
-      "tag=",
-      imageSource._tag,
-      "threadRef=",
-      Boolean(threadRef),
-    );
     if (imageSource._tag === "WorkspaceFile" && threadRef) {
       return (
         <ChatMarkdownAssetImage

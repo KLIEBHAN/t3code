@@ -7511,7 +7511,7 @@ export default function ChatView(props: ChatViewProps) {
       parsedStandaloneSlashCommand?.source === "custom" || sendInteractionModeEnabled
         ? parsedStandaloneSlashCommand
         : null;
-    if (standaloneSlashCommand?.source === "builtin") {
+    if (standaloneSlashCommand?.source === "builtin" && multipleModelSelections === null) {
       if (standaloneSlashCommand.id === "plan" || standaloneSlashCommand.id === "default") {
         handleInteractionModeChange(standaloneSlashCommand.id === "plan" ? "plan" : "default");
         promptRef.current = "";
@@ -7600,7 +7600,7 @@ export default function ChatView(props: ChatViewProps) {
       composerFiles.length === 0
     ) {
       const followUp = resolvePlanFollowUpSubmission({
-        draftText: promptForSend,
+        draftText: effectivePromptForSend,
         planMarkdown: activeProposedPlan.planMarkdown,
       });
       const outgoingFollowUpText = formatOutgoingPrompt({
@@ -7697,13 +7697,13 @@ export default function ChatView(props: ChatViewProps) {
       const sendSettings = readComposerSendSettings(sendCtx);
       if (
         composerRef.current?.validateProviderInput(
-          applyClaudePromptEffortPrefix(promptForSend, sendSettings.promptEffort),
+          applyClaudePromptEffortPrefix(effectivePromptForSend, sendSettings.promptEffort),
         ) === false
       ) {
         return;
       }
       useQueuedMessageStore.getState().enqueue(activeThreadKey, {
-        prompt: promptForSend,
+        prompt: effectivePromptForSend,
         images: [...composerImages],
         files: [...composerFiles],
         terminalContexts: [...composerTerminalContexts],
