@@ -686,7 +686,6 @@ export const ServerDirectEndpoint = Schema.Struct({
 });
 export type ServerDirectEndpoint = typeof ServerDirectEndpoint.Type;
 
-
 export const ServerCustomSlashCommand = Schema.Struct({
   command: TrimmedNonEmptyString,
   description: TrimmedNonEmptyString,

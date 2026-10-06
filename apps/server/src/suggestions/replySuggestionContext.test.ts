@@ -7,8 +7,7 @@ import { buildReplySuggestionContext } from "./replySuggestionContext.ts";
 const threadId = ThreadId.make("thread-1");
 
 function makeSource(
-  overrides: Partial<ComposerAssistThreadSource> &
-    Pick<ComposerAssistThreadSource, "messages">,
+  overrides: Partial<ComposerAssistThreadSource> & Pick<ComposerAssistThreadSource, "messages">,
 ): ComposerAssistThreadSource {
   return {
     thread: { title: "Layout cleanup", interactionMode: "default", worktreePath: null },

@@ -19,7 +19,9 @@ export interface ComposerAssistThreadSource {
     Pick<OrchestrationV2ConversationMessage, "role" | "text" | "runId">
   >;
   /** Checkpoints in capture order. */
-  readonly checkpoints: ReadonlyArray<Pick<OrchestrationV2Checkpoint, "runId" | "status" | "files">>;
+  readonly checkpoints: ReadonlyArray<
+    Pick<OrchestrationV2Checkpoint, "runId" | "status" | "files">
+  >;
 }
 
 /** The working directory a thread's agent runs in, or null when it has none. */
@@ -37,11 +39,9 @@ export const makeComposerAssistThreadSourceLoader = Effect.gen(function* () {
 
   return (threadId: ThreadId) =>
     Effect.gen(function* () {
-      const records = yield* projections.getThreadRecords(
-        threadId,
-        ["messages", "checkpoints"],
-        { messageRoles: ["user", "assistant"] },
-      );
+      const records = yield* projections.getThreadRecords(threadId, ["messages", "checkpoints"], {
+        messageRoles: ["user", "assistant"],
+      });
       const project = yield* projects.get(records.thread.projectId);
       return {
         thread: records.thread,

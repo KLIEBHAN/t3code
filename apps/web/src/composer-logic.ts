@@ -12,7 +12,6 @@ import {
   splitPromptIntoComposerSegments,
   type ComposerPromptSegment,
 } from "./composer-editor-mentions";
-import { INLINE_TERMINAL_CONTEXT_PLACEHOLDER } from "./lib/terminalContext";
 import { resolveShortcutCommand, type ShortcutEventLike } from "./keybindings";
 import {
   parseStandaloneSlashCommand,

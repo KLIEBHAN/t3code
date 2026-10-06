@@ -3607,7 +3607,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       nextCustomAnswer,
       isLiteralPendingAnswer,
       customSlashCommands,
-    );    setComposerCursor(cursor);
+    );
+    setComposerCursor(cursor);
     resetComposerTrigger(trigger);
     setComposerHighlightedItemId(null);
   }, [
@@ -3637,7 +3638,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       customSlashCommands,
     );
     setComposerCursor(cursor);
-    resetComposerTrigger(trigger);    setIsDragOverComposer(false);
+    resetComposerTrigger(trigger);
+    setIsDragOverComposer(false);
     setIsComposerScrollCollapsed(false);
   }, [
     draftId,
@@ -4026,7 +4028,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         isLiteralPendingAnswer
           ? null
           : detectComposerTrigger(next.text, nextExpandedCursor, customSlashCommands),
-      );      if (options?.focusEditorAfterReplace !== false) {
+      );
+      if (options?.focusEditorAfterReplace !== false) {
         window.requestAnimationFrame(() => {
           // Type-to-focus routes only the first key through here; once the
           // controlled update focuses the editor, later keys land natively.
@@ -4084,7 +4087,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         ? null
         : resolveComposerTrigger(
             detectComposerTrigger(snapshot.value, snapshot.expandedCursor, customSlashCommands),
-          ),    };
+          ),
+    };
   }, [customSlashCommands, isLiteralPendingAnswer, readComposerSnapshot, resolveComposerTrigger]);
 
   const replaceComposerPrompt = useComposerPromptReplacement({
@@ -7813,7 +7817,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 pendingUserInputs.length === 0 &&
                 promptAutocomplete.isLoading ? (
                   <div className="pointer-events-none mt-1 flex justify-end px-1">
-                    <div className="flex h-5 max-w-full items-center gap-1.5 rounded bg-background/90 px-1.5 text-[11px] leading-none text-muted-foreground shadow-sm ring-1 ring-border/60 backdrop-blur-sm">
+                    <div className="flex h-5 max-w-full items-center gap-1.5 rounded bg-background/90 px-1.5 text-2xs leading-none text-muted-foreground shadow-sm ring-1 ring-border/60 backdrop-blur-sm">
                       <Spinner className="size-3" aria-hidden />
                       <span className="truncate">Generating suggestion...</span>
                     </div>

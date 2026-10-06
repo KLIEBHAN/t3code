@@ -1,4 +1,9 @@
-import { MAX_PROMPT_AUTOCOMPLETE_DRAFT_LENGTH, MessageId, RunId, ThreadId } from "@t3tools/contracts";
+import {
+  MAX_PROMPT_AUTOCOMPLETE_DRAFT_LENGTH,
+  MessageId,
+  RunId,
+  ThreadId,
+} from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import { derivePromptAutocompleteRequest } from "./promptAutocomplete";

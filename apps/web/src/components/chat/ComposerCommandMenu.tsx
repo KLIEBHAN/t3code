@@ -262,9 +262,7 @@ const ComposerCommandMenuItem = memo(function ComposerCommandMenuItem(props: {
           className={cn("size-4 shrink-0", pullRequestPresentation.toneClassName)}
         />
       ) : null}
-      {props.item.type === "model" ? (
-<Badge variant="outline">model</Badge>
-      ) : null}
+      {props.item.type === "model" ? <Badge variant="outline">model</Badge> : null}
       <span className="flex min-w-0 flex-1 items-center gap-2">
         <span className="min-w-0 max-w-[45%] shrink-0 truncate font-sans text-xs font-medium">
           {isSlashSkill ? (
