@@ -23,9 +23,8 @@ export const PromptImproveActionButton = memo(function PromptImproveActionButton
         render={
           <Button
             type="button"
-            size="sm"
+            size="icon"
             variant="ghost"
-            className="size-9 rounded-full p-0 sm:size-8"
             onClick={onClick}
             disabled={disabled}
             aria-label={label}
