@@ -141,18 +141,6 @@ const DEFAULT_BINDINGS = compile([
     command: "themeEditor.toggle",
   },
   {
-    shortcut: {
-      key: "b",
-      metaKey: true,
-      ctrlKey: false,
-      shiftKey: false,
-      altKey: false,
-      modKey: false,
-    },
-    command: "projectSidebar.toggle",
-    whenAst: whenNot(whenIdentifier("terminalFocus")),
-  },
-  {
     shortcut: modShortcut("m", { shiftKey: true }),
     command: "modelPicker.toggle",
     whenAst: whenNot(whenIdentifier("terminalFocus")),
@@ -433,11 +421,7 @@ describe("shortcutLabelForCommand", () => {
   it("returns effective labels for non-terminal commands", () => {
     assert.strictEqual(
       shortcutLabelForCommand(DEFAULT_BINDINGS, "sidebar.toggle", "MacIntel"),
-      null,
-    );
-    assert.strictEqual(
-      shortcutLabelForCommand(DEFAULT_BINDINGS, "sidebar.toggle", "Linux"),
-      "Ctrl+B",
+      "⌘B",
     );
     assert.strictEqual(shortcutLabelForCommand(DEFAULT_BINDINGS, "chat.new", "MacIntel"), "⇧⌘O");
     assert.strictEqual(shortcutLabelForCommand(DEFAULT_BINDINGS, "diff.toggle", "Linux"), "Ctrl+D");
@@ -460,10 +444,6 @@ describe("shortcutLabelForCommand", () => {
     assert.strictEqual(
       shortcutLabelForCommand(DEFAULT_BINDINGS, "modelPicker.toggle", "Linux"),
       "Ctrl+Shift+M",
-    );
-    assert.strictEqual(
-      shortcutLabelForCommand(DEFAULT_BINDINGS, "projectSidebar.toggle", "MacIntel"),
-      "⌘B",
     );
     assert.strictEqual(
       shortcutLabelForCommand(DEFAULT_BINDINGS, "editor.openFavorite", "Linux"),
@@ -656,7 +636,7 @@ describe("model picker navigation helpers", () => {
   });
 });
 
-describe("app shortcuts", () => {
+describe("chat/editor shortcuts", () => {
   it("matches chat.new shortcut", () => {
     assert.strictEqual(
       resolveShortcutCommand(event({ key: "o", metaKey: true, shiftKey: true }), DEFAULT_BINDINGS, {
@@ -782,30 +762,6 @@ describe("app shortcuts", () => {
         platform: "MacIntel",
         context: { terminalFocus: true },
       }),
-    );
-  });
-
-  it("matches projectSidebar.toggle with Cmd+B outside terminal focus on macOS", () => {
-    assert.strictEqual(
-      resolveShortcutCommand(event({ key: "b", metaKey: true }), DEFAULT_BINDINGS, {
-        platform: "MacIntel",
-        context: { terminalFocus: false },
-      }),
-      "projectSidebar.toggle",
-    );
-    assert.notStrictEqual(
-      resolveShortcutCommand(event({ key: "b", ctrlKey: true }), DEFAULT_BINDINGS, {
-        platform: "MacIntel",
-        context: { terminalFocus: false },
-      }),
-      "projectSidebar.toggle",
-    );
-    assert.notStrictEqual(
-      resolveShortcutCommand(event({ key: "b", metaKey: true }), DEFAULT_BINDINGS, {
-        platform: "MacIntel",
-        context: { terminalFocus: true },
-      }),
-      "projectSidebar.toggle",
     );
   });
 });

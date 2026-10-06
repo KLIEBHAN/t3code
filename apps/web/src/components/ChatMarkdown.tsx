@@ -97,12 +97,6 @@ import {
   remarkCodexDirectives,
   renderCodexFileCitationsAsMarkdown,
 } from "@t3tools/client-runtime/codex-markdown-directives";
-import {
-  createSanitizedHtmlFragment,
-  extractSanitizedHtmlLinkHrefs,
-  renderSanitizedHtmlFragment,
-  shouldRenderHtmlFragment,
-} from "./chatHtmlRendering";
 import { renderSkillInlineMarkdownChildren } from "./chat/SkillInlineText";
 import {
   resolveMarkdownMediaPreview,
@@ -2301,7 +2295,6 @@ function useChatMarkdownState({
   environmentId: explicitEnvironmentId,
   onTaskListChange,
   isStreaming = false,
-  parseRawHtml = true,
   skills = EMPTY_MARKDOWN_SKILLS,
   onUseArtifactTemplate,
   onRunShellCommand,
@@ -2419,20 +2412,12 @@ function useChatMarkdownState({
   const diffThemeName = resolveDiffThemeName(resolvedTheme);
   // Raw-HTML rendering is opt-in per surface: user messages keep XML-like tags
   // literal, so the whole-message HTML path stays off whenever parsing is off.
-  const renderAsHtmlFragment = parseRawHtml && !isStreaming && shouldRenderHtmlFragment(text);
-  const sanitizedHtmlFragment = useMemo(
-    () => (renderAsHtmlFragment ? createSanitizedHtmlFragment(text) : null),
-    [renderAsHtmlFragment, text],
-  );
   const markdownFileLinkMetaByHref = useMemo(() => {
     const metaByHref = new Map<
       string,
       NonNullable<ReturnType<typeof resolveMarkdownFileLinkMeta>>
     >();
-    const linkHrefs = sanitizedHtmlFragment
-        ? extractSanitizedHtmlLinkHrefs(sanitizedHtmlFragment)
-        : extractMarkdownLinkHrefs(renderCodexFileCitationsAsMarkdown(text));
-      for (const href of linkHrefs) {
+    for (const href of extractMarkdownLinkHrefs(renderCodexFileCitationsAsMarkdown(text))) {
       if (parseComposerContextHref(href)) continue;
       const normalizedHref = normalizeMarkdownLinkHrefKey(href);
       if (metaByHref.has(normalizedHref)) continue;
@@ -2442,7 +2427,7 @@ function useChatMarkdownState({
       }
     }
     return metaByHref;
-  }, [cwd, imageBaseDir, sanitizedHtmlFragment, text]);
+  }, [cwd, imageBaseDir, text]);
   const inlineCodeFileLinkMetaByText = useMemo(() => {
     const metaByText = new Map<string, MarkdownFileLinkMeta>();
     for (const span of extractInlineCodeSpans(text)) {
@@ -2774,7 +2759,6 @@ function useChatMarkdownState({
     markdownRef,
     markdownUrlTransform,
     localMediaPreview,
-    sanitizedHtmlFragment,
     setLocalMediaPreview,
   };
 }
@@ -3264,6 +3248,14 @@ const CHAT_MARKDOWN_COMPONENTS = {
         />
       );
     }
+    console.log(
+      "DBG-CLS src=",
+      classifiedSrc,
+      "tag=",
+      imageSource._tag,
+      "threadRef=",
+      Boolean(threadRef),
+    );
     if (imageSource._tag === "WorkspaceFile" && threadRef) {
       return (
         <ChatMarkdownAssetImage
@@ -3356,9 +3348,8 @@ function ChatMarkdown({
     markdownRef,
     markdownUrlTransform,
     localMediaPreview,
-    sanitizedHtmlFragment,
     setLocalMediaPreview,
-  } = useChatMarkdownState({ text, parseRawHtml, ...props });
+  } = useChatMarkdownState({ text, ...props });
   const incrementalParsing =
     props.isStreaming === true &&
     extraRemarkPlugins.length === 0 &&
@@ -3370,17 +3361,6 @@ function ChatMarkdown({
       ...(incrementalParsing ? [createIncrementalMarkdownPlugin()] : []),
     ],
     [extraRemarkPlugins, incrementalParsing, lineBreaks],
-  );
-
-  const renderedHtmlFragment = useMemo(
-    () =>
-      sanitizedHtmlFragment
-        ? renderSanitizedHtmlFragment(
-            sanitizedHtmlFragment,
-            CHAT_MARKDOWN_COMPONENTS as Partial<HastComponents>,
-          )
-        : null,
-    [sanitizedHtmlFragment],
   );
 
   // react-markdown converts unparsed HTML nodes to text when skipHtml is false.
@@ -3399,17 +3379,15 @@ function ChatMarkdown({
       onCopy={handleCopy}
     >
       <ChatMarkdownRendererContext value={componentState}>
-        {renderedHtmlFragment ?? (
-          <ReactMarkdown
-            remarkPlugins={remarkPlugins}
-            rehypePlugins={parseRawHtml ? CHAT_MARKDOWN_REHYPE_PLUGINS : undefined}
-            skipHtml={false}
-            components={CHAT_MARKDOWN_COMPONENTS}
-            urlTransform={markdownUrlTransform}
-          >
-            {text}
-          </ReactMarkdown>
-        )}
+        <ReactMarkdown
+          remarkPlugins={remarkPlugins}
+          rehypePlugins={parseRawHtml ? CHAT_MARKDOWN_REHYPE_PLUGINS : undefined}
+          skipHtml={false}
+          components={CHAT_MARKDOWN_COMPONENTS}
+          urlTransform={markdownUrlTransform}
+        >
+          {text}
+        </ReactMarkdown>
       </ChatMarkdownRendererContext>
       {localMediaPreview ? (
         <ExpandedImageDialog

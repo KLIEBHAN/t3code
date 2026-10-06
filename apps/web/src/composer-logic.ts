@@ -14,7 +14,12 @@ import {
   type ExecutableSlashCommandDefinition,
 } from "./slashCommands";
 
-export type ComposerTriggerKind = "path" | "pull-request" | "slash-command" | "slash-model" | "skill";
+export type ComposerTriggerKind =
+  | "path"
+  | "pull-request"
+  | "slash-command"
+  | "slash-model"
+  | "skill";
 export type ComposerSlashCommand = "model" | "plan" | "default";
 export type ComposerSubmissionIntent = "foreground" | "background" | "alternate";
 

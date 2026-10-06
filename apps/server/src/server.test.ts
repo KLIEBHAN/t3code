@@ -127,10 +127,7 @@ import * as OrchestrationEngine from "./orchestration/Services/OrchestrationEngi
 import * as ReplySuggestionGeneration from "./suggestions/Services/ReplySuggestionGeneration.ts";
 import * as PromptImprovementGeneration from "./promptImprovement/Services/PromptImprovementGeneration.ts";
 import * as PromptAutocompleteGeneration from "./promptAutocomplete/Services/PromptAutocompleteGeneration.ts";
-import {
-  OrchestrationListenerCallbackError,
-  OrchestrationThreadSettleBlockedError,
-} from "./orchestration/Errors.ts";
+import { OrchestrationThreadSettleBlockedError } from "./orchestration/Errors.ts";
 import * as ProjectionSnapshotQuery from "./orchestration/Services/ProjectionSnapshotQuery.ts";
 import { ThreadDeletionReactor } from "./orchestration/Services/ThreadDeletionReactor.ts";
 import * as PullRequestSyncReactor from "./orchestration/PullRequestSyncReactor.ts";
@@ -780,7 +777,7 @@ const buildAppUnderTest = (options?: {
       Layer.provide(Layer.succeed(HostProcessEnvironment, {})),
     );
 
-    const servedRoutesLayer = HttpRouter.serve(
+    const servedRoutesBaseLayer = HttpRouter.serve(
       // Viewed-file marks for a host that keeps none of its own are rows, so the routes want a
       // database. Its own, in memory: nothing here shares a table with the auth store.
       makeRoutesLayer.pipe(

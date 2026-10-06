@@ -82,13 +82,13 @@ import {
 import { DISCONNECTED_COMPOSER_PLACEHOLDER } from "../../composerPlaceholder";
 import { listContinuationForEnter, listIndentForTab } from "../../composer-list-continuation";
 import {
+  deriveComposerSendState,
   getAntigravitySendBlockReason,
   readFileAsDataUrl,
   resolveComposerInteractionMode,
   resolveComposerProviderSelection,
   threadShellHasStarted,
 } from "../ChatView.logic";
-import { deriveComposerSendState } from "../../composerSendPreparation";
 import { buildComposerSlashCommandItems } from "../../composerSlashCommands";
 
 import {
@@ -183,6 +183,7 @@ import { getTerminalFocusOwner } from "../../lib/terminalFocus";
 import type { AssistantCitationSourceAnchor } from "~/lib/assistantTextSelection";
 import { resolveShortcutCommand, shortcutLabelForCommand } from "../../keybindings";
 import {
+  removeInlineTerminalContextPlaceholder,
   type TerminalContextDraft,
   type TerminalContextSelection,
 } from "../../lib/terminalContext";
@@ -246,13 +247,6 @@ import {
 } from "~/state/pullRequests";
 import { useEnvironmentQuery } from "~/state/query";
 import { useDebouncedValue } from "~/state/queries";
-import { observeResponsiveBreakpointFade, usePanelAnimationSettings } from "../../panelAnimations";
-import {
-  type ComposerCommandKey,
-  type ComposerPromptEditorHandle,
-  ComposerPromptEditor,
-} from "../ComposerPromptEditor";
-
 import { ProviderModelPicker } from "./ProviderModelPicker";
 import { resolveModelPickerSelectedModel } from "./ModelPickerContent";
 import { type ComposerCommandItem, ComposerCommandMenu } from "./ComposerCommandMenu";
@@ -2153,7 +2147,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const [composerCursor, setComposerCursor] = useState(() =>
     collapseExpandedComposerCursor(prompt, prompt.length),
   );
-    exactPullRequestLookup.data,
   const [composerHighlightedItemId, setComposerHighlightedItemId] = useState<string | null>(null);
   // Active ArrowUp recall. Cleared on edit and on thread switch.
   const promptHistoryPositionRef = useRef<ComposerPromptHistoryPosition | null>(null);
@@ -2297,6 +2290,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   // ------------------------------------------------------------------
   // Derived: composer trigger / menu
   // ------------------------------------------------------------------
+  const {
+    trigger: composerTrigger,
+    setTrigger: setComposerTrigger,
+    resolveTrigger: resolveComposerTrigger,
+    dismissTrigger: dismissComposerTrigger,
+    resetTrigger: resetComposerTrigger,
+  } = useComposerTriggerState(() => detectComposerTrigger(prompt, prompt.length));
   const composerTriggerKind = composerTrigger?.kind ?? null;
   const pathTriggerQuery = composerTrigger?.kind === "path" ? composerTrigger.query : "";
   const pullRequestTriggerQuery =
@@ -3271,7 +3271,14 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     );
     setIsDragOverComposer(false);
     setIsComposerScrollCollapsed(false);
-  }, [draftId, activeThreadId, customSlashCommands, promptRef, resetComposerTrigger, setIsComposerScrollCollapsed]);
+  }, [
+    draftId,
+    activeThreadId,
+    customSlashCommands,
+    promptRef,
+    resetComposerTrigger,
+    setIsComposerScrollCollapsed,
+  ]);
 
   // ------------------------------------------------------------------
   // Footer compact layout observation
@@ -7132,7 +7139,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 pendingUserInputs.length === 0 &&
                 promptAutocomplete.isLoading ? (
                   <div className="pointer-events-none mt-1 flex justify-end px-1">
-                    <div className="flex h-5 max-w-full items-center gap-1.5 rounded bg-background/90 px-1.5 text-[11px] leading-none text-muted-foreground shadow-sm ring-1 ring-border/60 backdrop-blur-sm">
+                    <div className="flex h-5 max-w-full items-center gap-1.5 rounded bg-background/90 px-1.5 text-2xs leading-none text-muted-foreground shadow-sm ring-1 ring-border/60 backdrop-blur-sm">
                       <Spinner className="size-3" aria-hidden />
                       <span className="truncate">Generating suggestion...</span>
                     </div>

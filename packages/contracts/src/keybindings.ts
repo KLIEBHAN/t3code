@@ -89,7 +89,6 @@ export const STATIC_KEYBINDING_COMMANDS = [
   "composer.workspace",
   "composer.previousWorktree",
   "composer.branch",
-  "projectSidebar.toggle",
   "chat.new",
   "chat.newLocal",
   "editor.openFavorite",

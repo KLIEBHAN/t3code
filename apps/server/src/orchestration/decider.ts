@@ -1693,6 +1693,8 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           updatedAt: command.createdAt,
         },
       };
+    }
+
     case "thread.review.start": {
       yield* requireThread({
         readModel,

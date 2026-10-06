@@ -100,3 +100,28 @@ export function migrateLegacyTerminalContextPlaceholders(
     return context ? formatTerminalContextReference(context) : "";
   });
 }
+
+export function removeInlineTerminalContextPlaceholder(
+  prompt: string,
+  contextIndex: number,
+): { prompt: string; cursor: number } {
+  if (contextIndex < 0) {
+    return { prompt, cursor: prompt.length };
+  }
+
+  let placeholderIndex = 0;
+  for (let index = 0; index < prompt.length; index += 1) {
+    if (prompt[index] !== INLINE_TERMINAL_CONTEXT_PLACEHOLDER) {
+      continue;
+    }
+    if (placeholderIndex === contextIndex) {
+      return {
+        prompt: prompt.slice(0, index) + prompt.slice(index + 1),
+        cursor: index,
+      };
+    }
+    placeholderIndex += 1;
+  }
+
+  return { prompt, cursor: prompt.length };
+}

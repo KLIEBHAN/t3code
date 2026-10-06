@@ -14,7 +14,7 @@ interface UseComposerPromptReplacementOptions {
   scheduleComposerFocus: () => void;
   setComposerCursor: (nextCursor: number) => void;
   setComposerHighlightedItemId: Dispatch<SetStateAction<string | null>>;
-  setComposerTrigger: Dispatch<SetStateAction<ComposerTrigger | null>>;
+  setComposerTrigger: (next: ComposerTrigger | null) => void;
   setPrompt: (nextPrompt: string) => void;
 }
 

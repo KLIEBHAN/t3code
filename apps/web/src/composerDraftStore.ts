@@ -97,7 +97,7 @@ type ComposerPersistState =
   | PersistedComposerDraftStoreState;
 
 const composerDebouncedStorage = createDeferredStorage<StorageValue<ComposerPersistState>>(
-  getSafeLocalStorage() ?? createMemoryStorage(),
+  typeof localStorage !== "undefined" ? localStorage : createMemoryStorage(),
   (value) =>
     JSON.stringify({
       state:

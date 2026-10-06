@@ -25,14 +25,7 @@ import { type ComposerTriggerKind } from "../../composer-logic";
 import { type SlashCommandDefinition } from "../../slashCommands";
 import { cn } from "~/lib/utils";
 import { Badge } from "../ui/badge";
-import {
-  Command,
-  CommandGroup,
-  CommandGroupLabel,
-  CommandItem,
-  CommandList,
-  CommandSeparator,
-} from "../ui/command";
+import { Command, CommandGroup, CommandGroupLabel, CommandItem, CommandList } from "../ui/command";
 import { PierreEntryIcon } from "./PierreEntryIcon";
 import { ComposerBanner } from "./ComposerBanner";
 import { resolvePullRequestState } from "../pullRequest/pullRequestPresentation";
@@ -163,13 +156,9 @@ export const ComposerCommandMenu = memo(function ComposerCommandMenu(props: {
           <CommandList className="max-h-72 min-h-0 scroll-pb-6">
             {groups.map((group, groupIndex) => (
               <div key={group.id}>
-                {groupIndex > 0 ? <CommandSeparator className="my-0.5" /> : null}
+                {groupIndex > 0 ? <div aria-hidden className="bg-border my-0.5 h-px" /> : null}
                 <CommandGroup>
-                  {group.label ? (
-                    <CommandGroupLabel className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-secondary-label">
-                      {group.label}
-                    </CommandGroupLabel>
-                  ) : null}
+                  {group.label ? <CommandGroupLabel>{group.label}</CommandGroupLabel> : null}
                   {group.items.map((item) => (
                     <ComposerCommandMenuItem
                       key={item.id}
@@ -252,11 +241,7 @@ const ComposerCommandMenuItem = memo(function ComposerCommandMenuItem(props: {
           className={cn("size-4 shrink-0", pullRequestPresentation.toneClassName)}
         />
       ) : null}
-      {props.item.type === "model" ? (
-        <Badge variant="outline" className="px-1.5 py-0 text-[10px]">
-          model
-        </Badge>
-      ) : null}
+      {props.item.type === "model" ? <Badge variant="outline">model</Badge> : null}
       <span className="flex min-w-0 flex-1 items-center gap-2">
         <span className="min-w-0 max-w-[45%] shrink-0 truncate font-sans text-xs font-medium">
           {isSlashSkill ? (

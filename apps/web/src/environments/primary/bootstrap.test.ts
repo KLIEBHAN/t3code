@@ -235,7 +235,7 @@ describe("environmentBootstrap", () => {
     expect(resolvePrimaryEnvironmentHttpUrl("/.well-known/t3/environment")).toBe(
       "t3code-dev://app/.well-known/t3/environment",
     );
-    expect(readPrimaryEnvironmentTarget().target.wsBaseUrl).toBe("ws://127.0.0.1:3773/");
+    expect(readPrimaryEnvironmentTarget()?.target.wsBaseUrl).toBe("ws://127.0.0.1:3773/");
   });
 
   it("retains the URL parser cause without exposing the configured URL in its message", () => {

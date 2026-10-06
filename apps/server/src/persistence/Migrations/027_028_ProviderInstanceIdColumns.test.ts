@@ -6,7 +6,9 @@ import * as SqlClient from "effect/unstable/sql/SqlClient";
 import { runMigrations } from "../Migrations.ts";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 
-const partialMigrationLayer = it.layer(Layer.mergeAll(NodeSqliteClient.layer({ filename: ":memory:" })));
+const partialMigrationLayer = it.layer(
+  Layer.mergeAll(NodeSqliteClient.layer({ filename: ":memory:" })),
+);
 
 partialMigrationLayer("027_028_ProviderInstanceIdColumns", (it) => {
   it.effect("continues when provider_session_runtime was partially migrated", () =>
@@ -74,7 +76,9 @@ partialMigrationLayer("027_028_ProviderInstanceIdColumns", (it) => {
   );
 });
 
-const repairMigrationLayer = it.layer(Layer.mergeAll(NodeSqliteClient.layerMemory()));
+const repairMigrationLayer = it.layer(
+  Layer.mergeAll(NodeSqliteClient.layer({ filename: ":memory:" })),
+);
 
 repairMigrationLayer("normalizeLegacyMigrationTimeline", (it) => {
   it.effect("normalizes legacy high-watermarks and runs the current migration timeline", () =>

@@ -3243,6 +3243,7 @@ export default function ChatView(props: ChatViewProps) {
     isCompacting ||
     awaitingBootstrapTurn;
   const isPreparingWorktree = isLocallyPreparingWorktree || awaitingBootstrapTurn;
+  const activeSession = activeThread?.session ?? null;
   const activeWorkStartedAt = deriveActiveWorkStartedAt(
     activeLatestTurn,
     activeSession,

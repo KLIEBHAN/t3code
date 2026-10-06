@@ -150,20 +150,9 @@ const registerDesktopSchemePrivileges = Effect.sync(registerDesktopSchemePrivile
 
 export const layerSchemePrivileges = Layer.effectDiscard(registerDesktopSchemePrivileges);
 
-function isBackendRoute(pathname: string): boolean {
-  return (
-    pathname === "/api" ||
-    pathname.startsWith("/api/") ||
-    pathname === "/attachments" ||
-    pathname.startsWith("/attachments/") ||
-    pathname === "/.well-known" ||
-    pathname.startsWith("/.well-known/")
-  );
-}
-
 async function proxyRequest(
   request: Request,
-  input: DesktopProtocolRegistrationInput,
+  targetOrigin: URL,
   contentSecurityPolicy: string,
 ): Promise<Response> {
   const requestUrl = new URL(request.url);
@@ -171,10 +160,7 @@ async function proxyRequest(
     return new Response(null, { status: 404 });
   }
 
-  const upstreamOrigin = isBackendRoute(requestUrl.pathname)
-    ? input.backendOrigin
-    : input.targetOrigin;
-  const targetUrl = new URL(`${requestUrl.pathname}${requestUrl.search}`, upstreamOrigin);
+  const targetUrl = new URL(`${requestUrl.pathname}${requestUrl.search}`, targetOrigin);
   const headers = new Headers(request.headers);
   const headersToRemove: string[] = [];
   for (const name of headers.keys()) {
