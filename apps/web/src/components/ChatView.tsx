@@ -7550,7 +7550,6 @@ export default function ChatView(props: ChatViewProps) {
         } else {
           clearUsageLimitsFor(routeThreadKey);
         }
-        return result._tag === "Success";
       } finally {
         sendInFlightRef.current = false;
       }
@@ -7571,21 +7570,6 @@ export default function ChatView(props: ChatViewProps) {
       setThreadError,
       startThreadTurn,
     ],
-  );
-
-  // Selecting a custom slash command sends its stored prompt as the turn and
-  // retires the draft only once the turn actually started.
-  const onSendPromptOverride = useCallback(
-    (text: string) => {
-      void (async () => {
-        const started = await sendStandaloneCommand(text, "Failed to run the command.");
-        if (started !== true) return;
-        promptRef.current = "";
-        clearComposerDraftContent(composerDraftTarget);
-        composerRef.current?.resetCursorState();
-      })();
-    },
-    [clearComposerDraftContent, composerDraftTarget, sendStandaloneCommand],
   );
   // A native /goal keeps the agent working across turns. Stop pauses a Codex
   // goal; once the thread is idle the row offers the native follow-ups.
@@ -9116,27 +9100,13 @@ export default function ChatView(props: ChatViewProps) {
       }
       return;
     }
-    // A typed custom command sends its stored prompt. Drafts with attachments or
-    // contexts are prompts, never commands.
-    const customSlashCommand = parseStandaloneComposerSlashCommand(
-      promptForSend,
-      serverConfig?.customSlashCommands ?? EMPTY_CUSTOM_SLASH_COMMANDS,
-      composerImages.length +
-        composerFiles.length +
-        composerTerminalContexts.length +
-        composerPreviewAnnotations.length +
-        composerReviewComments.length +
-        composerThreadContexts.length,
-    );
-    const effectivePromptForSend =
-      customSlashCommand?.source === "custom" ? customSlashCommand.prompt : promptForSend;
     const {
       trimmedPrompt: trimmed,
       sendableTerminalContexts: sendableComposerTerminalContexts,
       expiredTerminalContextCount,
       hasSendableContent,
     } = deriveComposerSendState({
-      prompt: effectivePromptForSend,
+      prompt: promptForSend,
       imageCount: composerImages.length + composerFiles.length,
       terminalContexts: composerTerminalContexts,
       elementContextCount:
@@ -9209,7 +9179,7 @@ export default function ChatView(props: ChatViewProps) {
       composerFiles.length === 0
     ) {
       const followUp = resolvePlanFollowUpSubmission({
-        draftText: effectivePromptForSend,
+        draftText: promptForSend,
         planMarkdown: activeProposedPlan.planMarkdown,
       });
       const outgoingFollowUpText = formatOutgoingPrompt({
@@ -9346,7 +9316,7 @@ export default function ChatView(props: ChatViewProps) {
       .reduce(
         (text, context) =>
           removeInlineContextReference(text, terminalContextReference(context).contextId).prompt,
-        effectivePromptForSend,
+        promptForSend,
       )
       .trim();
     // Records bind attachments by the id each side knows: the local id for the optimistic
@@ -11899,7 +11869,6 @@ export default function ChatView(props: ChatViewProps) {
                               onPageScrollRelease={onComposerPageScrollRelease}
                               onCompactContext={onComposerCompactContext}
                               onSend={onComposerSend}
-                              onSendPromptOverride={onSendPromptOverride}
                               customSlashCommands={
                                 serverConfig?.customSlashCommands ?? EMPTY_CUSTOM_SLASH_COMMANDS
                               }

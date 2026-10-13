@@ -85,6 +85,7 @@ import {
   detectComposerTrigger,
   expandCollapsedComposerCursor,
   formatAssistantCitationForComposer,
+  parseStandaloneComposerSlashCommand,
   replaceTextRange,
 } from "../../composer-logic";
 import { DISCONNECTED_COMPOSER_PLACEHOLDER } from "../../composerPlaceholder";
@@ -1686,7 +1687,6 @@ export interface ChatComposerProps {
     dispatchMode?: ComposerDispatchMode,
     submissionIntent?: ComposerSubmissionIntent,
   ) => void;
-  onSendPromptOverride: (text: string) => void;
   onResume: () => void;
   onInterrupt: () => void;
   onImplementPlanInNewThread: () => void;
@@ -1811,7 +1811,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     onCompactContext,
     onSend,
     onResume,
-    onSendPromptOverride,
     onInterrupt,
     onImplementPlanInNewThread,
     onRespondToApproval,
@@ -4152,8 +4151,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   }, [promptAutocomplete, readComposerSnapshot, replaceComposerPrompt]);
 
   const { onUsageLimitsCommand } = props;
+  /** Applies a menu item; returns "submit" when the draft should now be sent. */
   const onSelectComposerItem = useCallback(
-    (item: ComposerCommandItem) => {
+    (item: ComposerCommandItem): "submit" | undefined => {
       if (composerSelectLockRef.current) return;
       composerSelectLockRef.current = true;
       window.requestAnimationFrame(() => {
@@ -4203,9 +4203,17 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           return;
         }
         if (item.command.source === "custom") {
-          onSendPromptOverride(item.command.prompt);
+          // Expand in place; the caller sends it like a typed prompt. An answer
+          // to a pending question or a queued-message edit is only filled in.
+          const applied = applyPromptReplacement(
+            trigger.rangeStart,
+            trigger.rangeEnd,
+            item.command.prompt,
+            { expectedText: snapshot.value.slice(trigger.rangeStart, trigger.rangeEnd) },
+          );
+          if (!applied) return;
           setComposerHighlightedItemId(null);
-          return;
+          return activePendingProgress || isEditingQueuedMessage ? undefined : "submit";
         }
         if (
           item.command.source === "builtin" &&
@@ -4336,6 +4344,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       }
     },
     [
+      activePendingProgress,
+      isEditingQueuedMessage,
       addComposerDraftReviewComment,
       addComposerDraftThreadContexts,
       applyPromptReplacement,
@@ -4343,7 +4353,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       composerDraftTarget,
       handleInteractionModeChange,
       onProviderModelSelect,
-      onSendPromptOverride,
       planModeUiEnabled,
       onUsageLimitsCommand,
       resolveActiveComposerTrigger,
@@ -4423,6 +4432,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       event?: { preventDefault: () => void },
       dispatchMode?: ComposerDispatchMode,
       submissionIntent?: ComposerSubmissionIntent,
+      options?: { readonly expandCustomSlashCommand?: boolean },
     ) => {
       if (
         noProviderAvailable ||
@@ -4459,6 +4469,30 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         });
         return;
       }
+      // A draft that is exactly a custom command sends the command's stored
+      // prompt. Attachments or contexts make it a prompt, never a command, and
+      // answers or queued-message edits keep their literal text.
+      if (
+        options?.expandCustomSlashCommand !== false &&
+        !activePendingProgress &&
+        !isEditingQueuedMessage
+      ) {
+        const command = parseStandaloneComposerSlashCommand(
+          promptRef.current,
+          customSlashCommands,
+          composerImages.length +
+            composerFiles.length +
+            composerTerminalContexts.length +
+            composerPreviewAnnotations.length +
+            composerReviewComments.length +
+            composerThreadContexts.length,
+        );
+        if (command?.source === "custom") {
+          applyPromptReplacement(0, promptRef.current.length, command.prompt, {
+            focusEditorAfterReplace: false,
+          });
+        }
+      }
       const submission = submitComposerDraft({
         prompt: promptRef.current,
         submissionTarget: activePendingProgress ? "pending-user-input" : "provider-turn",
@@ -4490,7 +4524,16 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     [
       activeThreadId,
       activePendingProgress,
+      applyPromptReplacement,
       attachmentTargetKey,
+      composerFiles.length,
+      composerImages.length,
+      composerPreviewAnnotations.length,
+      composerReviewComments.length,
+      composerTerminalContexts.length,
+      composerThreadContexts.length,
+      customSlashCommands,
+      isEditingQueuedMessage,
       onTypingGuardSend,
       blurMobileComposerAfterSend,
       environmentId,
@@ -4502,6 +4545,16 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       promptRef,
       shouldBlurMobileComposerOnSubmit,
     ],
+  );
+  // Custom slash commands run through the regular send, so attachments,
+  // draft-thread bootstrap, and draft clearing behave as for a typed prompt.
+  const onSelectComposerMenuItem = useCallback(
+    (item: ComposerCommandItem) => {
+      if (onSelectComposerItem(item) === "submit") {
+        submitComposer(undefined, undefined, undefined, { expandCustomSlashCommand: false });
+      }
+    },
+    [onSelectComposerItem, submitComposer],
   );
   const handleSubmitMessage = useCallback(
     (event: React.MouseEvent<HTMLButtonElement>) => {
@@ -4702,7 +4755,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         return true;
       }
       if ((key === "Enter" || key === "Tab") && selectedItem) {
-        onSelectComposerItem(selectedItem);
+        onSelectComposerMenuItem(selectedItem);
         return true;
       }
     }
@@ -7312,7 +7365,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     emptyStateText={composerMenuEmptyState}
                     activeItemId={activeComposerMenuItem?.id ?? null}
                     onHighlightedItemChange={onComposerMenuItemHighlighted}
-                    onSelect={onSelectComposerItem}
+                    onSelect={onSelectComposerMenuItem}
                   />
                 </ComposerCommandMenuLayer>
               )}
