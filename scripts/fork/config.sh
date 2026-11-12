@@ -36,7 +36,6 @@ fork_app_commit() {
 }
 
 fork_app_running() {
-  # pgrep takes a regular expression, and the app name has parentheses. -a also
-  # matches ancestors, for a run started from a terminal inside the app.
-  pgrep -a -f "$(printf '%s' "$FORK_APP_PATH/Contents/MacOS/" | sed 's/[][().*+?^$|{}\\]/\\&/g')" >/dev/null
+  # Executable paths, not arguments: a shell or editor that only names the app does not count.
+  ps -axo comm= | grep -F "$FORK_APP_PATH/Contents/" >/dev/null
 }
