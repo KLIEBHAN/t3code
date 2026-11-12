@@ -13,9 +13,13 @@ on run
 	if state is "waiting" then
 		set version to valueOf(summary, "version")
 		set runs to valueOf(summary, "runs")
-		if runs is "" or runs is "0" then
+		if runs is "0" then
 			set question to "Version " & version & " ist bereit. Die App wird dafür kurz beendet und wieder gestartet."
 			set preferred to "Jetzt neu starten"
+		else if runs is "" then
+			-- manual-update.sh leaves the count empty when it cannot read it.
+			set question to "Version " & version & " ist bereit. Ob gerade Threads laufen, lässt sich nicht feststellen; ein Neustart würde sie unterbrechen." & return & return & "Ohne Neustart installiert der nächtliche Lauf das Update, sobald kein Thread mehr läuft."
+			set preferred to "Später"
 		else
 			set question to "Version " & version & " ist bereit. Gerade laufen " & runs & " Threads; ein Neustart unterbricht sie. Unterstützte Threads laufen danach weiter." & return & return & "Ohne Neustart installiert der nächtliche Lauf das Update, sobald kein Thread mehr läuft."
 			set preferred to "Später"
