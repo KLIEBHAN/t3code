@@ -4,7 +4,9 @@
 # it from there. Both Macs need the same home folder path: this script reads
 # the build host's app from the paths config.sh gives. See FORK.md.
 #
-# Usage: scripts/fork/fetch-app.sh
+# Usage: scripts/fork/fetch-app.sh [--commit]
+#   --commit  only print the commit of the build host's newest app; nothing
+#             when the build host is not reachable
 # Exit codes: 0 fetched, already current, or the build host is not reachable;
 # 1 the build host has no app, the copy failed, or its signature is invalid;
 # 2 no build host configured.
@@ -44,6 +46,10 @@ case "$status" in
 esac
 remote_app="$(sed -n 1p <<<"$found")"
 commit="$(sed -n 2p <<<"$found")"
+if [ "${1:-}" = "--commit" ]; then
+  echo "$commit"
+  exit 0
+fi
 if [ "$commit" = "$(fork_app_commit "$FORK_STAGED_APP")" ] || [ "$commit" = "$(fork_app_commit "$FORK_APP_PATH")" ]; then
   exit 0
 fi
