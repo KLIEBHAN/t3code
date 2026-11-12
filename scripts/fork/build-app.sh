@@ -25,7 +25,7 @@ rm -rf "$out"
 
 echo "build: $version at ${commit:0:10}"
 # Builds outside pingdotgg/t3code report as dev, as upstream's release workflow does.
-T3CODE_TELEMETRY_CHANNEL=dev T3CODE_DESKTOP_VERSION="$version" \
+T3CODE_TELEMETRY_CHANNEL=dev T3CODE_DESKTOP_VERSION="$version" T3CODE_DESKTOP_PACKAGE_NAME="$FORK_PACKAGE_NAME" \
   node scripts/build-desktop-artifact.ts --platform mac --target dir --arch arm64 --output-dir "$out"
 
 built=("$out"/mac-arm64/*.app)

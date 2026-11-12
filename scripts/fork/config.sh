@@ -4,6 +4,8 @@
 FORK_BRANCH=pi-prompt-suggestions
 FORK_APP_NAME="T3 Code (Fork)"
 FORK_BUNDLE_ID=com.kliebhan.t3code-fork
+# Electron's app name. Its keychain entry is "<name> Safe Storage".
+FORK_PACKAGE_NAME=t3code-fork
 FORK_APP_PATH="/Applications/$FORK_APP_NAME.app"
 # T3 home of the fork app. The official app keeps ~/.t3.
 FORK_T3_HOME="$HOME/.t3-fork"
