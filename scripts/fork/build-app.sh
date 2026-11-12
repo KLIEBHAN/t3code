@@ -12,8 +12,8 @@ if ! git diff --quiet || ! git diff --cached --quiet; then
   echo "build: uncommitted changes; the app records the commit it was built from" >&2
   exit 2
 fi
-if [ ! -f "$FORK_KEYCHAIN" ]; then
-  echo "build: no signing keychain; run scripts/fork/setup.sh once" >&2
+if ! security find-identity -v -p codesigning | grep -F "\"$FORK_SIGN_IDENTITY\"" >/dev/null; then
+  echo "build: no valid signing identity \"$FORK_SIGN_IDENTITY\" in the keychain; see FORK.md" >&2
   exit 2
 fi
 
@@ -58,10 +58,8 @@ for size in 16 32 128 256 512; do
 done
 iconutil -c icns "$iconset" -o "$app/Contents/Resources/icon.icns"
 
-# A fixed signing identity keeps macOS privacy grants across builds; an ad hoc
-# signature would make macOS ask again after every update.
-security unlock-keychain -p "$(cat "$FORK_KEYCHAIN_PASSWORD_FILE")" "$FORK_KEYCHAIN"
-codesign --force --deep --sign "$FORK_SIGN_IDENTITY" --keychain "$FORK_KEYCHAIN" "$app"
+# No secure timestamp: it needs Apple's server, and only notarization requires it.
+codesign --force --deep --timestamp=none --sign "$FORK_SIGN_IDENTITY" "$app"
 codesign --verify --deep --strict "$app"
 
 rm -rf "$FORK_STAGED_APP"
