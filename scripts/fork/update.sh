@@ -8,9 +8,11 @@
 # With fork.buildHost set (setup.sh --build-host), this Mac neither syncs nor
 # builds: every run fetches the build host's newest app (fetch-app.sh).
 #
-# Usage: scripts/fork/update.sh [--scheduled]
+# Usage: scripts/fork/update.sh [--scheduled] [--restart]
 #   --scheduled  launchd mode, started every hour: sync and build at most once
 #                a day, from 04:00; every run installs a waiting build.
+#   --restart    restart a running app for a waiting build now, whatever the
+#                hour and whether threads run; the Dock applet asks first.
 # Exit codes: 0 done, 1 sync, build, fetch, or install failed, 2 wrong checkout state.
 set -euo pipefail
 
@@ -49,7 +51,17 @@ if [ "${FORK_UPDATE_LOCKED:-}" != 1 ]; then
 fi
 
 scheduled=0
-[ "${1:-}" = "--scheduled" ] && scheduled=1
+restart_now=0
+for arg in "$@"; do
+  case "$arg" in
+    --scheduled) scheduled=1 ;;
+    --restart) restart_now=1 ;;
+    *)
+      echo "update: unknown argument $arg" >&2
+      exit 2
+      ;;
+  esac
+done
 
 # Best effort: a banner on this Mac. The log has the details.
 notify() {
@@ -151,11 +163,13 @@ if [ -n "$staged" ] && [ "$staged" != "$(fork_app_commit "$FORK_APP_PATH")" ]; t
   hour="$((10#$(date +%H)))"
   pids="$(fork_app_pids)"
   # One app only: with two, the homes and their threads cannot be told apart by one check.
-  if [ -n "$pids" ] && [ "$(wc -l <<<"$pids" | tr -d ' ')" = 1 ] &&
-    [ "$hour" -ge "$FORK_RESTART_FROM_HOUR" ] && [ "$hour" -lt "$FORK_RESTART_BEFORE_HOUR" ]; then
+  if [ -n "$pids" ] && [ "$(wc -l <<<"$pids" | tr -d ' ')" = 1 ] && {
+    [ "$restart_now" = 1 ] ||
+      { [ "$hour" -ge "$FORK_RESTART_FROM_HOUR" ] && [ "$hour" -lt "$FORK_RESTART_BEFORE_HOUR" ]; }
+  }; then
     app_home="$(fork_app_home "$pids")"
-    if [ "$(fork_active_runs "$app_home")" = 0 ]; then
-      echo "update: no thread is running in $app_home; restarting $FORK_APP_NAME for the update"
+    if [ "$restart_now" = 1 ] || [ "$(fork_active_runs "$app_home")" = 0 ]; then
+      echo "update: restarting $FORK_APP_NAME on $app_home for the update"
       if stop_app "$pids"; then
         quit_home="$app_home"
       else

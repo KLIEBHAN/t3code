@@ -2,10 +2,11 @@
 # One-time setup of the fork app on this Mac. Safe to run again: it keeps what
 # exists. See FORK.md.
 #   1. A check that the signing identity from config.sh is in the keychain.
-#   2. The launchd job that runs update.sh every hour from this checkout.
+#   2. The Dock applet for updates by hand, ~/Applications/T3 Code Fork Update.app.
+#   3. The launchd job that runs update.sh every hour from this checkout.
 #
 # Usage: scripts/fork/setup.sh [--no-job] [--build-host <ssh host>]
-#   --no-job      skip step 2, for a checkout that only builds
+#   --no-job      skip steps 2 and 3, for a checkout that only builds
 #   --build-host  this Mac installs the app that Mac builds, and makes none
 #                 itself: no step 1, and update.sh fetches instead of building
 set -euo pipefail
@@ -40,6 +41,15 @@ if [ -z "$FORK_BUILD_HOST" ] && ! security find-identity -v -p codesigning | gre
 fi
 
 if [ "$job" = 1 ]; then
+  applet="$HOME/Applications/T3 Code Fork Update.app"
+  source="$(mktemp)"
+  sed -e "s#@REPO@#$PWD#" -e "s#@LOG@#$FORK_STATE_DIR/logs/update.log#" scripts/fork/update-applet.applescript >"$source"
+  mkdir -p "$(dirname "$applet")"
+  rm -rf "$applet"
+  osacompile -o "$applet" "$source"
+  rm -f "$source"
+  echo "setup: the Dock applet is $applet"
+
   plist="$HOME/Library/LaunchAgents/$FORK_LAUNCHD_LABEL.plist"
   mkdir -p "$FORK_STATE_DIR/logs" "$(dirname "$plist")"
   cat >"$plist" <<EOF
