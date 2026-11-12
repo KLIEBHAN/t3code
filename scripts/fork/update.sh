@@ -3,10 +3,13 @@
 # has no matching build, and install the build while the app is closed. A
 # running app is not replaced; its build waits for the next run. See FORK.md.
 #
+# With fork.buildHost set (setup.sh --build-host), this Mac neither syncs nor
+# builds: every run fetches the build host's newest app (fetch-app.sh).
+#
 # Usage: scripts/fork/update.sh [--scheduled]
 #   --scheduled  launchd mode, started every hour: sync and build at most once
 #                a day, from 04:00; every run installs a waiting build.
-# Exit codes: 0 done, 1 sync, build, or install failed, 2 wrong checkout state.
+# Exit codes: 0 done, 1 sync, build, fetch, or install failed, 2 wrong checkout state.
 set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
@@ -16,6 +19,21 @@ cd "$(git rev-parse --show-toplevel)"
 # it when that process ends, however it ends.
 if [ "${FORK_UPDATE_LOCKED:-}" != 1 ]; then
   mkdir -p "$FORK_STATE_DIR/logs"
+  # A Mac that installs another Mac's builds keeps these scripts at the commit
+  # of its newest app. Here, before the locked run starts, no script is mid-read:
+  # bash has parsed this whole block already.
+  if [ -n "$FORK_BUILD_HOST" ]; then
+    wanted="$(fork_app_commit "$FORK_STAGED_APP")"
+    [ -n "$wanted" ] || wanted="$(fork_app_commit "$FORK_APP_PATH")"
+    if [ -n "$wanted" ] && [ "$wanted" != "$(git rev-parse HEAD)" ] && [ "$(git branch --show-current)" = "$FORK_BRANCH" ]; then
+      if ! git fetch --quiet --depth 1 origin "$wanted"; then
+        echo "update: could not fetch the scripts of ${wanted:0:10}" >&2
+      # An app built before this Mac's role existed has no scripts for it; keep the current ones.
+      elif [ -n "$(git ls-tree --name-only FETCH_HEAD scripts/fork/fetch-app.sh)" ]; then
+        git checkout --quiet -B "$FORK_BRANCH" FETCH_HEAD || echo "update: could not move the scripts to ${wanted:0:10}" >&2
+      fi
+    fi
+  fi
   status=0
   FORK_UPDATE_LOCKED=1 lockf -s -k -t 0 "$FORK_STATE_DIR/update.lock" scripts/fork/update.sh "$@" || status=$?
   if [ "$status" = 75 ]; then
@@ -55,7 +73,19 @@ if [ "$scheduled" = 1 ]; then
   fi
 fi
 
-if [ "$full" = 1 ]; then
+if [ -n "$FORK_BUILD_HOST" ]; then
+  # Runs every hour, so a lasting failure is announced once.
+  failed="$FORK_STATE_DIR/fetch-failed"
+  if scripts/fork/fetch-app.sh; then
+    rm -f "$failed"
+  else
+    status=1
+    if [ ! -f "$failed" ]; then
+      touch "$failed"
+      notify "Das Update ließ sich nicht von $FORK_BUILD_HOST holen. Log: $FORK_STATE_DIR/logs"
+    fi
+  fi
+elif [ "$full" = 1 ]; then
   date +%s >"$stamp"
   echo "update: run of $(date '+%Y-%m-%d %H:%M')"
   if ! scripts/fork/sync-upstream.sh; then
