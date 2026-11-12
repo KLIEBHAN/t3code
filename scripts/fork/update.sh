@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # One update run for the fork app: sync with upstream, build when the branch
 # has no matching build, and install the build while the app is closed. A
-# running app is not replaced; its build waits for the next run. See FORK.md.
+# running app is not replaced. At night, while no thread runs, it is quit,
+# updated, and started again; otherwise its build waits for the next run. See
+# FORK.md.
 #
 # With fork.buildHost set (setup.sh --build-host), this Mac neither syncs nor
 # builds: every run fetches the build host's newest app (fetch-app.sh).
@@ -101,8 +103,46 @@ elif [ "$full" = 1 ]; then
   fi
 fi
 
+# Quits the app the way the Dock does. Upstream answers the first signal with a
+# clean shutdown and ends a stalled one on a second signal after ten seconds.
+stop_app() {
+  local pid
+  pid="$(fork_app_pid)"
+  [ -n "$pid" ] || return 1
+  local attempt wait
+  for attempt in 1 2; do
+    kill -TERM "$pid" 2>/dev/null || true
+    for ((wait = 0; wait < 30; wait++)); do
+      fork_app_running || return 0
+      sleep 1
+    done
+  done
+  return 1
+}
+
+# Starts the app with the environment the Dock gives it: `open` hands its own
+# environment to the app, and this script's has the build toolchain on PATH.
+start_app() {
+  local environment=(HOME="$HOME" USER="$USER" LOGNAME="${LOGNAME:-$USER}" SHELL="${SHELL:-/bin/zsh}"
+    TMPDIR="${TMPDIR:-/tmp}" PATH=/usr/bin:/bin:/usr/sbin:/sbin)
+  [ -z "${SSH_AUTH_SOCK:-}" ] || environment+=(SSH_AUTH_SOCK="$SSH_AUTH_SOCK")
+  [ -z "${T3CODE_HOME:-}" ] || environment+=(T3CODE_HOME="$T3CODE_HOME")
+  env -i "${environment[@]}" open -g -a "$FORK_APP_PATH"
+}
+
 staged="$(fork_app_commit "$FORK_STAGED_APP")"
 if [ -n "$staged" ] && [ "$staged" != "$(fork_app_commit "$FORK_APP_PATH")" ]; then
+  restarted=0
+  hour="$((10#$(date +%H)))"
+  if fork_app_running && [ "$hour" -ge "$FORK_RESTART_FROM_HOUR" ] && [ "$hour" -lt "$FORK_RESTART_BEFORE_HOUR" ] && [ "$(fork_active_runs)" = 0 ]; then
+    echo "update: no thread is running; restarting $FORK_APP_NAME for the update"
+    if stop_app; then
+      restarted=1
+    else
+      echo "update: $FORK_APP_NAME did not quit" >&2
+    fi
+  fi
+
   incoming="$FORK_APP_PATH.incoming"
   previous="$FORK_APP_PATH.previous"
   rm -rf "$incoming" "$previous"
@@ -113,10 +153,10 @@ if [ -n "$staged" ] && [ "$staged" != "$(fork_app_commit "$FORK_APP_PATH")" ]; t
   fi
   if fork_app_running; then
     rm -rf "$incoming"
-    echo "update: a new build waits until $FORK_APP_NAME is closed"
+    echo "update: a new build waits until $FORK_APP_NAME is closed or idle at night"
     if [ "$(cat "$FORK_STATE_DIR/announced" 2>/dev/null)" != "$staged" ]; then
       echo "$staged" >"$FORK_STATE_DIR/announced"
-      notify "Update bereit. Es wird installiert, sobald die App beendet ist."
+      notify "Update bereit. Es wird nachts installiert, wenn kein Thread läuft, oder sobald die App beendet ist."
     fi
   else
     # The installed app stays reachable as $previous until the new one is in place.
@@ -132,6 +172,12 @@ if [ -n "$staged" ] && [ "$staged" != "$(fork_app_commit "$FORK_APP_PATH")" ]; t
       echo "update: could not move the new build into place; the installed app is unchanged" >&2
       notify "Das Update ließ sich nicht installieren. Log: $FORK_STATE_DIR/logs"
     fi
+  fi
+  # Whatever the install did, an app this run quit comes back.
+  if [ "$restarted" = 1 ] && ! start_app; then
+    status=1
+    echo "update: could not start $FORK_APP_NAME again" >&2
+    notify "Die App ließ sich nach dem Update nicht wieder starten."
   fi
 fi
 exit "$status"
