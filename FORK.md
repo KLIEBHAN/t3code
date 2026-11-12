@@ -69,6 +69,8 @@ Started this way the app runs beside the daily one, on the next free port. `<T3 
 
 launchd starts `scripts/fork/update.sh --scheduled` at minute 30 of every hour. Once a day, from 04:00, the run syncs with upstream and builds; every run installs a waiting build if the fork app is closed. A running app is restarted for it only between 02:00 and 06:00 and only while the database shows no unfinished run; otherwise the build waits. The app is quit with the signal upstream treats as a clean quit and started again afterwards, and threads that were interrupted resume if **Continue threads after restarts** is on. The installed app stays in place until the new one has been moved in. Run `scripts/fork/update.sh` by hand for a full run now. The log is `~/workspace/t3code-fork-build/logs/update.log`; failures and installed updates also show as a macOS notification.
 
+**Update by hand:** open **T3 Code Fork Update** (`~/Applications`, created by `setup.sh`; drag it into the Dock). It runs `scripts/fork/manual-update.sh`, a full `update.sh` run logged like the scheduled ones. When a build is ready but the app runs, it says how many threads are running and asks before it restarts the app (`update.sh --restart`); without the restart, the nightly run installs the build once no thread runs.
+
 `scripts/fork/sync-upstream.sh` does the merge:
 
 1. It merges the newest `v*-nightly.*` tag in a scratch worktree, `~/workspace/t3code-fork-build/sync-worktree`.
