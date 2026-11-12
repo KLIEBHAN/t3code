@@ -41,8 +41,9 @@ export const resolveUserDataPath = Effect.fn("desktop.userData.resolveUserDataPa
   }) {
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
-    // Fork: a T3 home other than ~/.t3 keeps its own profile, so that app runs beside the official one.
+    // Fork: on macOS a T3 home other than ~/.t3 keeps its own profile, so that app runs beside the official one.
     if (
+      input.platform === "darwin" &&
       !input.isDevelopment &&
       input.baseDir !== undefined &&
       input.homeDirectory !== undefined &&

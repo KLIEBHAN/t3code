@@ -24,6 +24,8 @@ out="$FORK_STATE_DIR/build-out"
 rm -rf "$out"
 
 echo "build: $version at ${commit:0:10}"
+# A sync installs only in its scratch worktree, and upstream may have changed the lockfile.
+vp i
 # Builds outside pingdotgg/t3code report as dev, as upstream's release workflow does.
 T3CODE_TELEMETRY_CHANNEL=dev T3CODE_DESKTOP_VERSION="$version" T3CODE_DESKTOP_PACKAGE_NAME="$FORK_PACKAGE_NAME" \
   node scripts/build-desktop-artifact.ts --platform mac --target dir --arch arm64 --output-dir "$out"
