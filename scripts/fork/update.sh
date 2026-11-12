@@ -26,8 +26,11 @@ if [ "${FORK_UPDATE_LOCKED:-}" != 1 ]; then
     wanted="$(fork_app_commit "$FORK_STAGED_APP")"
     [ -n "$wanted" ] || wanted="$(fork_app_commit "$FORK_APP_PATH")"
     if [ -n "$wanted" ] && [ "$wanted" != "$(git rev-parse HEAD)" ] && [ "$(git branch --show-current)" = "$FORK_BRANCH" ]; then
-      if ! { git fetch --quiet --depth 1 origin "$wanted" && git checkout --quiet -B "$FORK_BRANCH" FETCH_HEAD; }; then
-        echo "update: could not move the scripts to ${wanted:0:10}" >&2
+      if ! git fetch --quiet --depth 1 origin "$wanted"; then
+        echo "update: could not fetch the scripts of ${wanted:0:10}" >&2
+      # An app built before this Mac's role existed has no scripts for it; keep the current ones.
+      elif [ -n "$(git ls-tree --name-only FETCH_HEAD scripts/fork/fetch-app.sh)" ]; then
+        git checkout --quiet -B "$FORK_BRANCH" FETCH_HEAD || echo "update: could not move the scripts to ${wanted:0:10}" >&2
       fi
     fi
   fi
