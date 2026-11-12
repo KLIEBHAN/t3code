@@ -16,6 +16,9 @@ FORK_STAGED_APP="$FORK_STATE_DIR/staged/$FORK_APP_NAME.app"
 # and privacy grants to its team, so they survive every rebuild.
 FORK_SIGN_IDENTITY="${FORK_SIGN_IDENTITY:-Apple Development: fabian.kliebhan@gmail.com (7VHQ3DW64R)}"
 FORK_LAUNCHD_LABEL=com.kliebhan.t3code-fork.update
+# Set on a Mac that installs another Mac's builds instead of making its own:
+# the SSH host it fetches the app from. Stored in this checkout's git config.
+FORK_BUILD_HOST="${FORK_BUILD_HOST:-$(git config --get fork.buildHost || true)}"
 # Pi arguments for the model that repairs a failed merge.
 FORK_MERGE_PI_ARGS=(
   --no-extensions -e "$HOME/.pi/agent/extensions/cpa.ts"
@@ -25,9 +28,12 @@ FORK_MERGE_TIMEOUT_SECONDS=1800
 
 # launchd starts jobs with a bare PATH.
 PATH="$HOME/.cargo/bin:$HOME/.pi/agent/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
-# Vite+ provides vp and the Node version the repository pins.
-# shellcheck source=/dev/null
-. "${VP_ENV:-$HOME/workspace/t3code-fork-toolchain/vite-plus/env}"
+# Vite+ provides vp and the Node version the repository pins. Only a Mac that builds has it.
+VP_ENV="${VP_ENV:-$HOME/workspace/t3code-fork-toolchain/vite-plus/env}"
+if [ -z "$FORK_BUILD_HOST" ] || [ -f "$VP_ENV" ]; then
+  # shellcheck source=/dev/null
+  . "$VP_ENV"
+fi
 export PATH
 
 # The commit an app bundle was built from, or nothing when the bundle is missing.

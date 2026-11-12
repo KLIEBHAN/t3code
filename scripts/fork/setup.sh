@@ -5,14 +5,37 @@
 #   2. The fork's T3 home, marked so the app leaves the `t3` command alone.
 #   3. The launchd job that runs update.sh every hour from this checkout.
 #
-# Usage: scripts/fork/setup.sh [--no-job]
-#   --no-job  skip step 3, for a checkout that only builds
+# Usage: scripts/fork/setup.sh [--no-job] [--build-host <ssh host>]
+#   --no-job      skip step 3, for a checkout that only builds
+#   --build-host  this Mac installs the app that Mac builds, and makes none
+#                 itself: no step 1, and update.sh fetches instead of building
 set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
 . scripts/fork/config.sh
 
-if ! security find-identity -v -p codesigning | grep -F "\"$FORK_SIGN_IDENTITY\"" >/dev/null; then
+job=1
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --no-job) job=0 ;;
+    --build-host)
+      if [ $# -lt 2 ]; then
+        echo "setup: --build-host needs an SSH host" >&2
+        exit 2
+      fi
+      git config fork.buildHost "$2"
+      FORK_BUILD_HOST="$2"
+      shift
+      ;;
+    *)
+      echo "setup: unknown argument $1" >&2
+      exit 2
+      ;;
+  esac
+  shift
+done
+
+if [ -z "$FORK_BUILD_HOST" ] && ! security find-identity -v -p codesigning | grep -F "\"$FORK_SIGN_IDENTITY\"" >/dev/null; then
   echo "setup: no valid signing identity \"$FORK_SIGN_IDENTITY\" in the keychain; see FORK.md" >&2
   exit 1
 fi
@@ -21,7 +44,7 @@ mkdir -p "$FORK_T3_HOME/userdata"
 # The app installs a `t3` command on its first launch unless this file exists.
 touch "$FORK_T3_HOME/userdata/cli-command-first-launch"
 
-if [ "${1:-}" != "--no-job" ]; then
+if [ "$job" = 1 ]; then
   plist="$HOME/Library/LaunchAgents/$FORK_LAUNCHD_LABEL.plist"
   mkdir -p "$FORK_STATE_DIR/logs" "$(dirname "$plist")"
   cat >"$plist" <<EOF
