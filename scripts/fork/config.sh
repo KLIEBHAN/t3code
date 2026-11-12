@@ -9,12 +9,12 @@ FORK_PACKAGE_NAME=t3code-fork
 FORK_APP_PATH="/Applications/$FORK_APP_NAME.app"
 # T3 home of the fork app. The official app keeps ~/.t3.
 FORK_T3_HOME="$HOME/.t3-fork"
-# Build output, the staged app, logs, and the signing keychain.
+# Build output, the staged app, and logs.
 FORK_STATE_DIR="${FORK_STATE_DIR:-$HOME/workspace/t3code-fork-build}"
 FORK_STAGED_APP="$FORK_STATE_DIR/staged/$FORK_APP_NAME.app"
-FORK_SIGN_IDENTITY="T3 Code Fork Local Signing"
-FORK_KEYCHAIN="$FORK_STATE_DIR/signing/fork.keychain-db"
-FORK_KEYCHAIN_PASSWORD_FILE="$FORK_STATE_DIR/signing/keychain-password"
+# An Apple-issued identity from the login keychain. macOS ties the app's keychain
+# and privacy grants to its team, so they survive every rebuild.
+FORK_SIGN_IDENTITY="${FORK_SIGN_IDENTITY:-Apple Development: fabian.kliebhan@gmail.com (7VHQ3DW64R)}"
 FORK_LAUNCHD_LABEL=com.kliebhan.t3code-fork.update
 # Pi arguments for the model that repairs a failed merge.
 FORK_MERGE_PI_ARGS=(

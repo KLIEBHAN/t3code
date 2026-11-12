@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # One-time setup of the fork app on this Mac. Safe to run again: it keeps what
 # exists. See FORK.md.
-#   1. A signing identity in a keychain of its own (config.sh: FORK_KEYCHAIN).
+#   1. A check that the signing identity from config.sh is in the keychain.
 #   2. The fork's T3 home, marked so the app leaves the `t3` command alone.
 #   3. The launchd job that runs update.sh every hour from this checkout.
 #
@@ -12,49 +12,9 @@ set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 . scripts/fork/config.sh
 
-# The identity decides, not the file: a run that failed halfway leaves a keychain without one.
-# A keychain that cannot be read is left alone; replacing it would cost the app its privacy grants.
-identities="$(security find-identity -p codesigning "$FORK_KEYCHAIN" 2>/dev/null)" || identities=unreadable
-if [ "$identities" = unreadable ] && [ -f "$FORK_KEYCHAIN" ]; then
-  echo "setup: cannot read $FORK_KEYCHAIN" >&2
+if ! security find-identity -v -p codesigning | grep -F "\"$FORK_SIGN_IDENTITY\"" >/dev/null; then
+  echo "setup: no valid signing identity \"$FORK_SIGN_IDENTITY\" in the keychain; see FORK.md" >&2
   exit 1
-fi
-if [[ $identities != *"\"$FORK_SIGN_IDENTITY\""* ]]; then
-  [ ! -f "$FORK_KEYCHAIN" ] || security delete-keychain "$FORK_KEYCHAIN"
-  signing="$(dirname "$FORK_KEYCHAIN")"
-  work="$(mktemp -d)"
-  trap 'rm -rf "$work"' EXIT
-  (
-    umask 077
-    mkdir -p "$signing"
-    /usr/bin/openssl rand -hex 24 >"$FORK_KEYCHAIN_PASSWORD_FILE"
-  )
-  password="$(cat "$FORK_KEYCHAIN_PASSWORD_FILE")"
-  cat >"$work/cert.cnf" <<EOF
-[req]
-distinguished_name = dn
-x509_extensions = ext
-prompt = no
-[dn]
-CN = $FORK_SIGN_IDENTITY
-[ext]
-basicConstraints = critical,CA:false
-keyUsage = critical,digitalSignature
-extendedKeyUsage = critical,codeSigning
-EOF
-  # The system LibreSSL writes a PKCS#12 file that `security import` reads.
-  /usr/bin/openssl req -x509 -newkey rsa:2048 -nodes -days 3650 -config "$work/cert.cnf" \
-    -keyout "$work/key.pem" -out "$work/cert.pem" 2>/dev/null
-  /usr/bin/openssl pkcs12 -export -inkey "$work/key.pem" -in "$work/cert.pem" \
-    -name "$FORK_SIGN_IDENTITY" -out "$work/identity.p12" -passout "pass:$password"
-  security create-keychain -p "$password" "$FORK_KEYCHAIN"
-  # No lock timeout; build-app.sh unlocks it after a restart.
-  security set-keychain-settings "$FORK_KEYCHAIN"
-  security unlock-keychain -p "$password" "$FORK_KEYCHAIN"
-  security import "$work/identity.p12" -k "$FORK_KEYCHAIN" -P "$password" -T /usr/bin/codesign >/dev/null
-  # Lets codesign use the key without a confirmation dialog.
-  security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$password" "$FORK_KEYCHAIN" >/dev/null
-  echo "setup: created the signing identity in $FORK_KEYCHAIN"
 fi
 
 mkdir -p "$FORK_T3_HOME/userdata"

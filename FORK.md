@@ -25,17 +25,17 @@ The suggestion text comes from the Pi extension [`@kliebhan/pi-prompt-autocomple
 | Server port                 | 3773                                      | the next free port, 3774 while the official app runs |
 | `t3code://` and web links   | handled                                   | not registered                                       |
 | Updates                     | built-in updater                          | `scripts/fork/update.sh`                             |
-| Signature                   | T3 Tools, Inc.                            | a local self-signed identity                         |
+| Signature                   | T3 Tools, Inc.                            | an Apple Development certificate                     |
 
 The fork app has the dev icon. Its menu bar still says "T3 Code (Nightly)": Electron finds its helper apps by that name. It is built without `.env`, so T3 Connect and the other cloud features are off.
 
-The local signing identity lives in a keychain of its own under `~/workspace/t3code-fork-build/signing`, next to its password file. Every build is signed with it, so macOS keeps the app's privacy grants and keychain access across updates. An ad hoc signature would make macOS ask again after every update.
+Every build is signed with the Apple Development certificate named in `scripts/fork/config.sh`, from the login keychain. macOS ties keychain access and privacy grants to the certificate's team, so they survive every rebuild. A self-signed or ad hoc signature has no team: macOS then binds keychain access to the exact build and shows a keychain dialog after every update. The certificate expires after a year; Xcode renews it, and a build with an expired certificate fails with a message.
 
 ## Set up on a Mac
 
 1. Check out `pi-prompt-suggestions` to `~/workspace/t3code-fork`, with remotes `origin` (this fork) and `upstream` (pingdotgg/t3code). Keep the checkout outside `~/Documents`, `~/Desktop`, and `~/Downloads`: launchd jobs there wait on macOS privacy prompts.
 2. Install Vite+ to `~/workspace/t3code-fork-toolchain/vite-plus` (`VP_HOME=... bash` on the installer from the upstream README) and Rust with rustup. `scripts/fork/config.sh` holds these paths.
-3. Run `scripts/fork/setup.sh`. It creates the signing identity, the fork's T3 home, and the launchd job `com.kliebhan.t3code-fork.update`.
+3. Run `scripts/fork/setup.sh`. It checks that the signing certificate is in the keychain and creates the fork's T3 home and the launchd job `com.kliebhan.t3code-fork.update`. If `codesign` asks for the key on the first build, choose **Always Allow**.
 4. Run `scripts/fork/update.sh` to build and install `/Applications/T3 Code (Fork).app`.
 5. In the fork app, turn on Settings > Labs > Suggest next prompt and add `--prompt-autocomplete-next-prompt` to Settings > Providers > Pi > Launch arguments.
 
