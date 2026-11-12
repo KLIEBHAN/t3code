@@ -21,11 +21,14 @@ cd "$(git rev-parse --show-toplevel)"
 # it when that process ends, however it ends.
 if [ "${FORK_UPDATE_LOCKED:-}" != 1 ]; then
   mkdir -p "$FORK_STATE_DIR/logs"
-  # A Mac that installs another Mac's builds keeps these scripts at the commit
-  # of its newest app. Here, before the locked run starts, no script is mid-read:
-  # bash has parsed this whole block already.
+  # A Mac that installs another Mac's builds moves these scripts to the commit
+  # of the app it is about to fetch, so an app never meets scripts older than
+  # itself. Away from the build host they stay with the app this Mac has. Here,
+  # before the locked run starts, no script is mid-read: bash has parsed this
+  # whole block already.
   if [ -n "$FORK_BUILD_HOST" ]; then
-    wanted="$(fork_app_commit "$FORK_STAGED_APP")"
+    wanted="$(scripts/fork/fetch-app.sh --commit 2>/dev/null || true)"
+    [ -n "$wanted" ] || wanted="$(fork_app_commit "$FORK_STAGED_APP")"
     [ -n "$wanted" ] || wanted="$(fork_app_commit "$FORK_APP_PATH")"
     if [ -n "$wanted" ] && [ "$wanted" != "$(git rev-parse HEAD)" ] && [ "$(git branch --show-current)" = "$FORK_BRANCH" ]; then
       if ! git fetch --quiet --depth 1 origin "$wanted"; then

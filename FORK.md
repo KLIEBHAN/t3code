@@ -49,6 +49,8 @@ Every build is signed with the Apple Development certificate named in `scripts/f
 
 The flag needs `@kliebhan/pi-prompt-autocomplete` 0.4.0 or later (`pi update npm:@kliebhan/pi-prompt-autocomplete`). Each suggestion is one extra model request; `--prompt-autocomplete-model <provider/model>` in the same launch arguments picks a fast model for it.
 
+A suggestion belongs to a thread's latest completed turn and lives in the server's memory. A thread from before the switch shows one after its next turn, and quitting the app drops the suggestions it holds.
+
 From then on, open only the fork app on that Mac. The official app updates itself and can migrate the database to a version the fork has not merged yet. To go back, quit the fork app and open the official one; that is safe while the official app is at least as new as the fork app.
 
 ## Try a build on a copy of the data
@@ -90,7 +92,7 @@ scripts/fork/setup.sh --build-host <ssh host of the build Mac>
 scripts/fork/update.sh
 ```
 
-`setup.sh --build-host` stores the host in the checkout's git config (`fork.buildHost`) and installs the same launchd job. On such a Mac every hourly run asks the build Mac for its newest app, its waiting build if it has one. A new one is copied with `rsync`, checked with `codesign --verify`, and installed while the fork app is closed. A build Mac that is not reachable is skipped without a message. The scripts move to the commit of the newest app at the start of the following run.
+`setup.sh --build-host` stores the host in the checkout's git config (`fork.buildHost`) and installs the same launchd job. On such a Mac every hourly run asks the build Mac for its newest app, its waiting build if it has one. A new one is copied with `rsync`, checked with `codesign --verify`, and installed while the fork app is closed. A build Mac that is not reachable is skipped without a message. Before it fetches, a run moves the scripts to the commit of the app the build Mac offers.
 
 Then follow [Switch from the official app](#switch-from-the-official-app).
 
