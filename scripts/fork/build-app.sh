@@ -38,9 +38,9 @@ mv "${built[0]}" "$app"
 
 # Own identity and T3 home, so it runs beside the official app. Without the URL
 # and document types it never takes t3code:// or web links from that app.
+# CFBundleName stays: Electron finds its helper apps by that name.
 plist="$app/Contents/Info.plist"
 plutil -replace CFBundleIdentifier -string "$FORK_BUNDLE_ID" "$plist"
-plutil -replace CFBundleName -string "$FORK_APP_NAME" "$plist"
 plutil -replace CFBundleDisplayName -string "$FORK_APP_NAME" "$plist"
 plutil -replace LSEnvironment.T3CODE_HOME -string "$FORK_T3_HOME" "$plist"
 plutil -remove CFBundleURLTypes "$plist"
