@@ -1,0 +1,8 @@
+# Paths in which the fork may differ from upstream. sync-upstream.sh rejects a
+# merge that differs anywhere else. A trailing slash covers a directory.
+FORK.md
+scripts/fork/
+packages/provider-pi/src/server/adapter.ts
+packages/provider-pi/src/server/adapter.test.ts
+apps/desktop/src/app/DesktopUserData.ts
+apps/desktop/src/app/DesktopUserData.test.ts
