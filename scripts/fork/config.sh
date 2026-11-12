@@ -1,7 +1,7 @@
 # Settings shared by the fork scripts. Source it from the repository root; see FORK.md.
 # shellcheck shell=bash
 
-FORK_BRANCH=pi-prompt-suggestions
+FORK_BRANCH="${FORK_BRANCH:-pi-prompt-suggestions}"
 FORK_APP_NAME="T3 Code (Fork)"
 FORK_BUNDLE_ID=com.kliebhan.t3code-fork
 FORK_APP_PATH="/Applications/$FORK_APP_NAME.app"
@@ -12,6 +12,10 @@ FORK_STAGED_APP="$FORK_STATE_DIR/staged/$FORK_APP_NAME.app"
 # and privacy grants to its team, so they survive every rebuild.
 FORK_SIGN_IDENTITY="${FORK_SIGN_IDENTITY:-Apple Development: fabian.kliebhan@gmail.com (7VHQ3DW64R)}"
 FORK_LAUNCHD_LABEL=com.kliebhan.t3code-fork.update
+# update.sh restarts a running app for an update only between these hours, and
+# only while no thread runs.
+FORK_RESTART_FROM_HOUR="${FORK_RESTART_FROM_HOUR:-2}"
+FORK_RESTART_BEFORE_HOUR="${FORK_RESTART_BEFORE_HOUR:-6}"
 # Set on a Mac that installs another Mac's builds instead of making its own:
 # the SSH host it fetches the app from. Stored in this checkout's git config.
 FORK_BUILD_HOST="${FORK_BUILD_HOST:-$(git config --get fork.buildHost || true)}"
@@ -40,4 +44,25 @@ fork_app_commit() {
 fork_app_running() {
   # Executable paths, not arguments: a shell or editor that only names the app does not count.
   ps -axo comm= | grep -F "$FORK_APP_PATH/Contents/" >/dev/null
+}
+
+# The running app's main processes, one PID per line: those launchd started.
+# An app started twice, each time with another T3 home, gives two.
+fork_app_pids() {
+  ps -axo pid=,ppid=,comm= | awk -v exe="$FORK_APP_PATH/Contents/MacOS/" '$2 == 1 && index($0, exe) { print $1 }'
+}
+
+# The T3 home a running app process was started with; ~/.t3 unless its
+# environment names another.
+fork_app_home() {
+  local home
+  home="$(ps eww -o command= -p "$1" | sed -n -E 's/.* T3CODE_HOME=//p' | sed -E 's/ [A-Za-z_][A-Za-z0-9_]*=.*//')"
+  printf '%s\n' "${home:-$HOME/.t3}"
+}
+
+# How many runs are unfinished in a T3 home. Prints nothing when the database
+# cannot be read, which callers must not take for zero.
+fork_active_runs() {
+  sqlite3 "file:$1/userdata/statev2.sqlite?mode=ro" \
+    "select count(*) from orchestration_v2_projection_runs where status in ('preparing','queued','starting','running','waiting');" 2>/dev/null || true
 }
