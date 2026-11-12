@@ -671,6 +671,73 @@ describe("PiAdapterV2", () => {
       }).pipe(Effect.scoped, Effect.provide(layerTest)),
   );
 
+  it.effect("offers extension editor text after a completed turn as the next prompt", () =>
+    Effect.gen(function* () {
+      const fake = yield* makeFakePi;
+      const adapter = yield* makeAdapter(fake);
+      let suggestionsEnabled = true;
+      const runtime = yield* adapter.openSession({
+        threadId: THREAD_ID,
+        providerSessionId: SESSION_ID,
+        modelSelection: modelSelection("default"),
+        runtimePolicy,
+        promptSuggestions: Effect.sync(() => suggestionsEnabled),
+      });
+      const emitted = yield* Queue.unbounded<ProviderAdapter.ProviderAdapterV2Event>();
+      yield* runtime.events.pipe(
+        Stream.runForEach((event) => Queue.offer(emitted, event)),
+        Effect.forkScoped,
+      );
+      const observed: ProviderAdapter.ProviderAdapterV2Event[] = [];
+      const takeEvent = (type: ProviderAdapter.ProviderAdapterV2Event["type"]) =>
+        Effect.gen(function* () {
+          while (true) {
+            const event = yield* Queue.take(emitted);
+            observed.push(event);
+            if (event.type === type) return event;
+          }
+        });
+      const editorText = (text: string) =>
+        fake.emit({ type: "extension_ui_request", id: text, method: "set_editor_text", text });
+      const providerThread = yield* runtime.ensureThread({
+        threadId: THREAD_ID,
+        modelSelection: modelSelection("default"),
+        runtimePolicy,
+      });
+      yield* startTurn(runtime, providerThread);
+      yield* fake.takeRequest("prompt");
+      yield* fake.emit({ type: "agent_settled" });
+      yield* takeEvent("turn.terminal");
+      yield* editorText("  Run the tests  ");
+      assert.deepEqual(yield* takeEvent("prompt_suggestion.updated"), {
+        type: "prompt_suggestion.updated",
+        driver: PI_PROVIDER,
+        threadId: THREAD_ID,
+        runId: RunId.make(`run:${THREAD_ID}:1`),
+        text: "Run the tests",
+      });
+      // Text while the next turn runs belongs to no completed run.
+      yield* startTurn(runtime, providerThread, "default", [], "Hello again", undefined, 2);
+      yield* fake.takeRequest("prompt");
+      yield* editorText("During the turn");
+      yield* fake.emit({ type: "agent_settled" });
+      yield* takeEvent("turn.terminal");
+      suggestionsEnabled = false;
+      yield* editorText("With the Labs setting off");
+      yield* fake.emit({
+        type: "extension_ui_request",
+        id: "suggestion-barrier",
+        method: "input",
+        title: "Continue?",
+      });
+      yield* takeEvent("runtime_request.updated");
+      assert.lengthOf(
+        observed.filter((event) => event.type === "prompt_suggestion.updated"),
+        1,
+      );
+    }).pipe(Effect.scoped, Effect.provide(layerTest)),
+  );
+
   it.effect("bounds native extension statuses and lets cleared keys free capacity", () =>
     Effect.gen(function* () {
       const fake = yield* makeFakePi;

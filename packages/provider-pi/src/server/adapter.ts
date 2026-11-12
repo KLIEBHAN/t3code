@@ -6,6 +6,7 @@ import { readToolOutputImage } from "@t3tools/shared/toolOutput";
 import * as Predicate from "effect/Predicate";
 import {
   ProviderDriverKind,
+  isDelegatedAppThread,
   type ChatAttachment,
   type ModelSelection,
   type OrchestrationV2ExecutionNode,
@@ -554,6 +555,8 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
       // Turn failures can leave Pi alive; pump termination retires the runtime.
       let runtimeRetired = false;
       let pendingWake: PiWake | null = null;
+      // The latest completed turn; an extension's `set_editor_text` after it is its suggested next prompt.
+      let suggestionTurn: ActivePiTurn | null = null;
       let extensionStatusReset: {
         previous: NonNullable<OrchestrationV2ProviderSession["extensionStatuses"]>;
         readonly touched: Set<string>;
@@ -1490,6 +1493,27 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
           );
           return;
         }
+        // Same guards as Claude and Codex: Labs setting on, thread idle, a person drives it.
+        if (method === "set_editor_text") {
+          const turn = suggestionTurn;
+          const text = recordString(event, "text")?.trim() ?? "";
+          if (
+            turn !== null &&
+            threadState?.activeTurn === null &&
+            text.length > 0 &&
+            !isDelegatedAppThread(turn.turnInput.appThread) &&
+            (yield* input.promptSuggestions ?? Effect.succeed(false))
+          ) {
+            yield* emit({
+              type: "prompt_suggestion.updated",
+              driver: PI_PROVIDER,
+              threadId: turn.turnInput.threadId,
+              runId: turn.turnInput.runId,
+              text,
+            });
+          }
+          return;
+        }
         if (
           method !== "select" &&
           method !== "confirm" &&
@@ -1743,6 +1767,7 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
           ? yield* readTokenUsage(turn.latestCompactionAfterTokens, completedAt)
           : undefined;
         const failure = interrupted ? null : (turn.rejectedPromptFailure ?? turn.failure);
+        suggestionTurn = interrupted || failure !== null ? null : turn;
         yield* emit({
           type: "provider_turn.updated",
           driver: PI_PROVIDER,
