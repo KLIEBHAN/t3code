@@ -39,13 +39,7 @@ Every build is signed with the Apple Development certificate named in `scripts/f
 4. Run `scripts/fork/update.sh` to build and install `/Applications/T3 Code (Fork).app`.
 5. In the fork app, turn on Settings > Labs > Suggest next prompt and add `--prompt-autocomplete-next-prompt` to Settings > Providers > Pi > Launch arguments.
 
-The flag needs `@kliebhan/pi-prompt-autocomplete` 0.4.0. Until that version is on npm, the launch arguments load a copy of the extension instead of the installed one, because Pi refuses to load both:
-
-```text
---no-extensions -e builtin:mcp -e ~/.pi/agent/extensions/cpa.ts -e ~/workspace/t3code-fork-build/pi-prompt-autocomplete/index.ts --prompt-autocomplete-next-prompt
-```
-
-`--no-extensions` drops every other Pi extension, so list each one the fork app needs with its own `-e`.
+The flag needs `@kliebhan/pi-prompt-autocomplete` 0.4.0 or later (`pi update npm:@kliebhan/pi-prompt-autocomplete`). Each suggestion is one extra model request; `--prompt-autocomplete-model <provider/model>` in the same launch arguments picks a fast model for it.
 
 ## Updates
 
