@@ -27,7 +27,7 @@ echo "build: $version at ${commit:0:10}"
 # A sync installs only in its scratch worktree, and upstream may have changed the lockfile.
 vp i
 # Builds outside pingdotgg/t3code report as dev, as upstream's release workflow does.
-T3CODE_TELEMETRY_CHANNEL=dev T3CODE_DESKTOP_VERSION="$version" T3CODE_DESKTOP_PACKAGE_NAME="$FORK_PACKAGE_NAME" \
+T3CODE_TELEMETRY_CHANNEL=dev T3CODE_DESKTOP_VERSION="$version" \
   node scripts/build-desktop-artifact.ts --platform mac --target dir --arch arm64 --output-dir "$out"
 
 built=("$out"/mac-arm64/*.app)
@@ -38,13 +38,14 @@ fi
 app="$out/mac-arm64/$FORK_APP_NAME.app"
 mv "${built[0]}" "$app"
 
-# Own identity and T3 home, so it runs beside the official app. Without the URL
-# and document types it never takes t3code:// or web links from that app.
-# CFBundleName stays: Electron finds its helper apps by that name.
+# An identity of its own, so macOS tells it apart from the official app. It
+# uses the official app's data all the same: T3 home, browser profile, and
+# keychain entry come from upstream's code, which this leaves alone. Without
+# the URL and document types it never takes t3code:// or web links from the
+# official app. CFBundleName stays: Electron finds its helper apps by that name.
 plist="$app/Contents/Info.plist"
 plutil -replace CFBundleIdentifier -string "$FORK_BUNDLE_ID" "$plist"
 plutil -replace CFBundleDisplayName -string "$FORK_APP_NAME" "$plist"
-plutil -replace LSEnvironment.T3CODE_HOME -string "$FORK_T3_HOME" "$plist"
 plutil -remove CFBundleURLTypes "$plist"
 plutil -remove CFBundleDocumentTypes "$plist"
 plutil -insert T3ForkCommit -string "$commit" "$plist"

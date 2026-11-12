@@ -3898,8 +3898,7 @@ const buildDesktopArtifactUnlocked = Effect.fn("buildDesktopArtifactUnlocked")(f
       ? path.join(stageAppDir, WINDOWS_SERVER_RESOURCE_SOURCE_DIR, WINDOWS_SERVER_ASAR_RESOURCE)
       : undefined;
   const stagePackageJson: StagePackageJson = {
-    // Fork: Electron names the app's keychain entry after this, and the fork app needs its own.
-    name: process.env.T3CODE_DESKTOP_PACKAGE_NAME ?? "t3code",
+    name: "t3code",
     version: appVersion,
     buildVersion: appVersion,
     t3codeCommitHash: commitHash,

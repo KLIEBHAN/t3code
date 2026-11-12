@@ -1,31 +1,32 @@
 # Fork: Pi prompt suggestions
 
-This fork of [pingdotgg/t3code](https://github.com/pingdotgg/t3code) adds one feature: **Suggest next prompt** (Settings > Labs) works for Pi threads as well as Claude and Codex threads. Branch `pi-prompt-suggestions` follows the upstream nightly tags. It builds a macOS app, **T3 Code (Fork)**, that runs beside the official app.
+This fork of [pingdotgg/t3code](https://github.com/pingdotgg/t3code) adds one feature: **Suggest next prompt** (Settings > Labs) works for Pi threads as well as Claude and Codex threads. Branch `pi-prompt-suggestions` follows the upstream nightly tags. It builds a macOS app, **T3 Code (Fork)**, that takes the official app's place on a Mac and uses the same data.
 
 ## Patches
 
 The fork differs from upstream only in the paths listed in `scripts/fork/owned-paths.txt`. Each change to upstream code is marked `Fork:` or covered by a test named below.
 
 - **Pi suggestions** (`packages/provider-pi/src/server/adapter.ts`): upstream's Pi adapter ignores the `set_editor_text` call that Pi extensions use to prefill the input. After a completed turn the fork turns that call into the `prompt_suggestion.updated` event Claude and Codex emit, under the same rules: the Labs setting is on, no turn is running, and the thread is not delegated. Test: `offers extension editor text after a completed turn as the next prompt`.
-- **Own browser profile** (`apps/desktop/src/app/DesktopUserData.ts`): on macOS, with a T3 home other than `~/.t3`, the app keeps its Chromium profile in `<T3 home>/desktop-profile`. Upstream uses one fixed profile, which also holds the single-instance lock, so a second app could not start. Test: `keeps a separate profile on macOS for a T3 home other than ~/.t3`.
-- **Own app name** (`scripts/build-desktop-artifact.ts`): `T3CODE_DESKTOP_PACKAGE_NAME` sets Electron's app name. Electron keeps its encryption key in the keychain entry `<name> Safe Storage`; with upstream's name the fork app would ask for the official app's entry and macOS would show a keychain dialog.
+- **Own browser profile for another T3 home** (`apps/desktop/src/app/DesktopUserData.ts`): on macOS, an app started with `T3CODE_HOME` set to something other than `~/.t3` keeps its Chromium profile in `<T3 home>/desktop-profile`. Upstream uses one fixed profile, which also holds the single-instance lock. With the patch, a build can be tried on a copy of the data while the daily app runs; see [Try a build on a copy of the data](#try-a-build-on-a-copy-of-the-data). Test: `keeps a separate profile on macOS for a T3 home other than ~/.t3`.
 
 The suggestion text comes from the Pi extension [`@kliebhan/pi-prompt-autocomplete`](https://github.com/KLIEBHAN/pi-extensions/tree/main/extensions/prompt-autocomplete) with `--prompt-autocomplete-next-prompt`. After each settled turn it requests one predicted prompt and sends it with `set_editor_text`.
 
 ## The app
 
-`scripts/fork/build-app.sh` builds the current commit with upstream's build script, then changes the bundle so both apps can run at once:
+`scripts/fork/build-app.sh` builds the current commit with upstream's build script and then gives the bundle an identity of its own. Everything that decides which data the app uses is upstream's code, so the fork app works on the official app's data:
 
-|                             | Official app                              | T3 Code (Fork)                                       |
-| --------------------------- | ----------------------------------------- | ---------------------------------------------------- |
-| Bundle ID                   | `com.t3tools.t3code`                      | `com.kliebhan.t3code-fork`                           |
-| T3 home (threads, settings) | `~/.t3`                                   | `~/.t3-fork`                                         |
-| Browser profile             | `~/Library/Application Support/t3code-v2` | `~/.t3-fork/desktop-profile`                         |
-| Keychain entry              | `t3code Safe Storage`                     | `t3code-fork Safe Storage`                           |
-| Server port                 | 3773                                      | the next free port, 3774 while the official app runs |
-| `t3code://` and web links   | handled                                   | not registered                                       |
-| Updates                     | built-in updater                          | `scripts/fork/update.sh`                             |
-| Signature                   | T3 Tools, Inc.                            | an Apple Development certificate                     |
+|                             | Official app                              | T3 Code (Fork)                   |
+| --------------------------- | ----------------------------------------- | -------------------------------- |
+| T3 home (threads, settings) | `~/.t3`                                   | the same                         |
+| Browser profile             | `~/Library/Application Support/t3code-v2` | the same                         |
+| Keychain entry              | `t3code Safe Storage`                     | the same                         |
+| Server port                 | 3773                                      | the same                         |
+| Bundle ID                   | `com.t3tools.t3code`                      | `com.kliebhan.t3code-fork`       |
+| `t3code://` and web links   | handled                                   | not registered                   |
+| Updates                     | built-in updater                          | `scripts/fork/update.sh`         |
+| Signature                   | T3 Tools, Inc.                            | an Apple Development certificate |
+
+Only one of the two apps can run at a time: they share the T3 home and the profile lock. Threads, scheduled tasks, paired devices, and access tokens all live in the T3 home, so they carry over in both directions.
 
 The fork app has the dev icon. Its menu bar still says "T3 Code (Nightly)": Electron finds its helper apps by that name. It is built without `.env`, so T3 Connect and the other cloud features are off.
 
@@ -35,11 +36,32 @@ Every build is signed with the Apple Development certificate named in `scripts/f
 
 1. Check out `pi-prompt-suggestions` to `~/workspace/t3code-fork`, with remotes `origin` (this fork) and `upstream` (pingdotgg/t3code). Keep the checkout outside `~/Documents`, `~/Desktop`, and `~/Downloads`: launchd jobs there wait on macOS privacy prompts.
 2. Install Vite+ to `~/workspace/t3code-fork-toolchain/vite-plus` (`VP_HOME=... bash` on the installer from the upstream README) and Rust with rustup. `scripts/fork/config.sh` holds these paths.
-3. Run `scripts/fork/setup.sh`. It checks that the signing certificate is in the keychain and creates the fork's T3 home and the launchd job `com.kliebhan.t3code-fork.update`. If `codesign` asks for the key on the first build, choose **Always Allow**.
+3. Run `scripts/fork/setup.sh`. It checks that the signing certificate is in the keychain and creates the launchd job `com.kliebhan.t3code-fork.update`. If `codesign` asks for the key on the first build, choose **Always Allow**.
 4. Run `scripts/fork/update.sh` to build and install `/Applications/T3 Code (Fork).app`.
-5. In the fork app, turn on Settings > Labs > Suggest next prompt and add `--prompt-autocomplete-next-prompt` to Settings > Providers > Pi > Launch arguments.
+5. Follow [Switch from the official app](#switch-from-the-official-app).
+
+## Switch from the official app
+
+1. Check that the fork app is at least as new as the official app (**Settings > About** in each, or `CFBundleShortVersionString` in each bundle's `Info.plist`). An older server must not open a database a newer one has migrated; `scripts/fork/update.sh` brings the fork app up to the newest nightly.
+2. Quit the official app. Running threads stop; with **Continue threads after restarts** on, supported ones resume in the fork app.
+3. Open **T3 Code (Fork)**. The first time, macOS asks whether it may use `t3code Safe Storage`: enter the login password and choose **Always Allow**. That entry holds the key for the saved secrets and connections.
+4. Turn on **Settings > Labs > Suggest next prompt** and add `--prompt-autocomplete-next-prompt` to **Settings > Providers > Pi > Launch arguments**.
 
 The flag needs `@kliebhan/pi-prompt-autocomplete` 0.4.0 or later (`pi update npm:@kliebhan/pi-prompt-autocomplete`). Each suggestion is one extra model request; `--prompt-autocomplete-model <provider/model>` in the same launch arguments picks a fast model for it.
+
+From then on, open only the fork app on that Mac. The official app updates itself and can migrate the database to a version the fork has not merged yet. To go back, quit the fork app and open the official one; that is safe while the official app is at least as new as the fork app.
+
+## Try a build on a copy of the data
+
+A copy of a live T3 home repeats real work when a server starts on it: scheduled tasks, pending actions, and interrupted threads. Upstream's `migrate-dev-db` makes a copy without them, with a few recent projects and their stopped threads:
+
+```sh
+node apps/server/scripts/migrate-dev-db.ts --base-dir /path/to/copy/.t3
+env -i HOME="$HOME" USER="$USER" LOGNAME="$USER" SHELL=/bin/zsh PATH=/usr/bin:/bin:/usr/sbin:/sbin TMPDIR="$TMPDIR" \
+  T3CODE_HOME=/path/to/copy/.t3 "<app>/Contents/MacOS/T3 Code (Nightly)"
+```
+
+Started this way the app runs beside the daily one, on the next free port. `<T3 home>/bin/t3 pair --base-dir /path/to/copy/.t3` prints a link for a browser. Use a throwaway project for new threads: a thread in a real project works in the real checkout.
 
 ## Updates
 
@@ -58,7 +80,7 @@ A patch that touches a new upstream file needs that path in `scripts/fork/owned-
 
 ## A second Mac
 
-A second Mac can install the app the first one builds. It needs no signing certificate, toolchain, or full checkout, only SSH access to the build Mac without a password prompt. Both Macs need the same home folder path, such as `/Users/fabi`: the app carries its T3 home as an absolute path.
+A second Mac can install the app the first one builds. It needs no signing certificate, toolchain, or full checkout, only SSH access to the build Mac without a password prompt. Both Macs need the same home folder path, such as `/Users/fabi`: the second Mac reads the app from the paths `scripts/fork/config.sh` gives.
 
 ```sh
 cd ~/workspace
@@ -70,7 +92,7 @@ scripts/fork/update.sh
 
 `setup.sh --build-host` stores the host in the checkout's git config (`fork.buildHost`) and installs the same launchd job. On such a Mac every hourly run asks the build Mac for its newest app, its waiting build if it has one. A new one is copied with `rsync`, checked with `codesign --verify`, and installed while the fork app is closed. A build Mac that is not reachable is skipped without a message. The scripts move to the commit of the newest app at the start of the following run.
 
-Then follow step 5 of [Set up on a Mac](#set-up-on-a-mac).
+Then follow [Switch from the official app](#switch-from-the-official-app).
 
 ## Remove it
 
@@ -80,4 +102,4 @@ rm ~/Library/LaunchAgents/com.kliebhan.t3code-fork.update.plist
 rm -rf "/Applications/T3 Code (Fork).app" ~/workspace/t3code-fork-build
 ```
 
-`~/.t3-fork` holds the fork app's threads and settings; delete it as well to remove them. The keychain entry `t3code-fork Safe Storage` can be deleted in Keychain Access.
+The data in `~/.t3` belongs to the official app as much as to the fork app and stays.

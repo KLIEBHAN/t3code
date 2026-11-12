@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 # Fetches the build host's newest fork app into FORK_STAGED_APP, on a Mac that
 # installs builds another Mac makes (setup.sh --build-host). update.sh installs
-# it from there. Both Macs need the same home folder path: the app carries its
-# T3 home as an absolute path, and this script reads the build host's app from
-# the paths config.sh gives. See FORK.md.
+# it from there. Both Macs need the same home folder path: this script reads
+# the build host's app from the paths config.sh gives. See FORK.md.
 #
 # Usage: scripts/fork/fetch-app.sh
 # Exit codes: 0 fetched, already current, or the build host is not reachable;
@@ -65,12 +64,6 @@ fi
 if [ "$(fork_app_commit "$incoming")" != "$commit" ] || ! codesign --verify --deep --strict "$incoming" 2>/dev/null; then
   rm -rf "$incoming"
   echo "fetch: the copy is incomplete or its signature is invalid" >&2
-  exit 1
-fi
-app_home="$(plutil -extract LSEnvironment.T3CODE_HOME raw "$incoming/Contents/Info.plist" 2>/dev/null || true)"
-if [ "$app_home" != "$FORK_T3_HOME" ]; then
-  rm -rf "$incoming"
-  echo "fetch: the app keeps its data in $app_home, this Mac expects $FORK_T3_HOME; both Macs need the same home folder path" >&2
   exit 1
 fi
 
