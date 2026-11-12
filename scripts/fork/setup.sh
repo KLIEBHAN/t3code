@@ -12,7 +12,15 @@ set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 . scripts/fork/config.sh
 
-if [ ! -f "$FORK_KEYCHAIN" ]; then
+# The identity decides, not the file: a run that failed halfway leaves a keychain without one.
+# A keychain that cannot be read is left alone; replacing it would cost the app its privacy grants.
+identities="$(security find-identity -p codesigning "$FORK_KEYCHAIN" 2>/dev/null)" || identities=unreadable
+if [ "$identities" = unreadable ] && [ -f "$FORK_KEYCHAIN" ]; then
+  echo "setup: cannot read $FORK_KEYCHAIN" >&2
+  exit 1
+fi
+if [[ $identities != *"\"$FORK_SIGN_IDENTITY\""* ]]; then
+  [ ! -f "$FORK_KEYCHAIN" ] || security delete-keychain "$FORK_KEYCHAIN"
   signing="$(dirname "$FORK_KEYCHAIN")"
   work="$(mktemp -d)"
   trap 'rm -rf "$work"' EXIT
@@ -55,7 +63,7 @@ touch "$FORK_T3_HOME/userdata/cli-command-first-launch"
 
 if [ "${1:-}" != "--no-job" ]; then
   plist="$HOME/Library/LaunchAgents/$FORK_LAUNCHD_LABEL.plist"
-  mkdir -p "$FORK_STATE_DIR/logs"
+  mkdir -p "$FORK_STATE_DIR/logs" "$(dirname "$plist")"
   cat >"$plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

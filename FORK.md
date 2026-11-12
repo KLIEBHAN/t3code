@@ -49,14 +49,14 @@ The flag needs `@kliebhan/pi-prompt-autocomplete` 0.4.0. Until that version is o
 
 ## Updates
 
-launchd starts `scripts/fork/update.sh --scheduled` at minute 30 of every hour. Once a day, from 04:00, the run syncs with upstream and builds; every run installs a waiting build if the fork app is closed. A running app is never replaced. Run `scripts/fork/update.sh` by hand for a full run now. The log is `~/workspace/t3code-fork-build/logs/update.log`; failures and installed updates also show as a macOS notification.
+launchd starts `scripts/fork/update.sh --scheduled` at minute 30 of every hour. Once a day, from 04:00, the run syncs with upstream and builds; every run installs a waiting build if the fork app is closed, and leaves it waiting while the app runs. The installed app stays in place until the new one has been moved in. Run `scripts/fork/update.sh` by hand for a full run now. The log is `~/workspace/t3code-fork-build/logs/update.log`; failures and installed updates also show as a macOS notification.
 
 `scripts/fork/sync-upstream.sh` does the merge:
 
 1. It merges the newest `v*-nightly.*` tag in a scratch worktree, `~/workspace/t3code-fork-build/sync-worktree`.
 2. It accepts the merge only if the result differs from the tag in fork-owned paths alone, the tests of both patches pass, and both packages typecheck.
 3. On a conflict or a failed check, a model gets one attempt to repair the merge (`scripts/fork/merge-prompt.md`, run through `pi --print` with the model in `config.sh`). Its result has to pass step 2 like any other merge. The list of fork-owned paths is read before the merge, so the repair cannot widen it.
-4. Only then does `pi-prompt-suggestions` move forward, and the script pushes it to `origin`.
+4. Only then does `pi-prompt-suggestions` move forward, and the script pushes it to `origin`. A push that fails is retried by the next run.
 
 When a sync fails, the branch and the installed app stay as they were, and the attempt stays in the scratch worktree with `sync-report.txt` beside it until the next run. To finish it by hand, merge the tag on `pi-prompt-suggestions`, keep the behavior described under [Patches](#patches), run the commands from `sync-upstream.sh`, and push.
 

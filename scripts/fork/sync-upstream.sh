@@ -35,6 +35,14 @@ if ! git diff --quiet || ! git diff --cached --quiet; then
   exit 2
 fi
 
+# Pushes the branch when origin lacks its head, which also retries a push that failed in an earlier run.
+publish() {
+  [ "$push" = 1 ] || return 0
+  if [ "$(git rev-parse HEAD)" != "$(git rev-parse -q --verify "refs/remotes/origin/$FORK_BRANCH" || true)" ]; then
+    git push --quiet origin "$FORK_BRANCH" || echo "sync: the push to origin failed; the next run retries it" >&2
+  fi
+}
+
 git fetch --quiet --no-tags upstream '+refs/tags/*:refs/tags/*'
 tag="$(git tag --list 'v*-nightly.*' --sort=-creatordate | head -n 1)"
 if [ -z "$tag" ]; then
@@ -43,6 +51,7 @@ if [ -z "$tag" ]; then
 fi
 if git merge-base --is-ancestor "$tag" HEAD; then
   echo "sync: $FORK_BRANCH already contains $tag"
+  publish
   exit 0
 fi
 
@@ -157,7 +166,5 @@ merged="$(git rev-parse HEAD)"
 cd "$checkout"
 git merge --quiet --ff-only "$merged"
 git worktree remove --force "$worktree"
-if [ "$push" = 1 ] && ! git push --quiet origin "$FORK_BRANCH"; then
-  echo "sync: merged locally, but the push to origin failed" >&2
-fi
+publish
 echo "sync: $FORK_BRANCH now contains $tag"
