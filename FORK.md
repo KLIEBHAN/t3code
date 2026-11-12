@@ -62,6 +62,22 @@ When a sync fails, the branch and the installed app stay as they were, and the a
 
 A patch that touches a new upstream file needs that path in `scripts/fork/owned-paths.txt`, in a commit of its own before the next sync.
 
+## A second Mac
+
+A second Mac can install the app the first one builds. It needs no signing certificate, toolchain, or full checkout, only SSH access to the build Mac without a password prompt. Both Macs keep the app and `~/workspace/t3code-fork-build` at the same paths below the home folder.
+
+```sh
+cd ~/workspace
+git clone --depth 1 --filter=blob:none --sparse --branch pi-prompt-suggestions https://github.com/KLIEBHAN/t3code.git t3code-fork
+cd t3code-fork && git sparse-checkout set scripts/fork
+scripts/fork/setup.sh --build-host <ssh host of the build Mac>
+scripts/fork/update.sh
+```
+
+`setup.sh --build-host` stores the host in the checkout's git config (`fork.buildHost`) and installs the same launchd job. On such a Mac every hourly run asks the build Mac for its newest app, its waiting build if it has one. A new one is copied with `rsync`, checked with `codesign --verify`, and installed while the fork app is closed. A build Mac that is not reachable is skipped without a message. The scripts move to the commit of the newest app at the start of the following run.
+
+Then follow step 5 of [Set up on a Mac](#set-up-on-a-mac).
+
 ## Remove it
 
 ```sh
