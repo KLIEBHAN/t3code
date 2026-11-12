@@ -42,6 +42,21 @@ it.effect.each(["t3code", "T3 Code (Alpha)"])(
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );
 
+it.effect("keeps a separate profile for a T3 home other than ~/.t3", () =>
+  Effect.gen(function* () {
+    const profile = (baseDir: string) =>
+      resolveUserDataPath({
+        appDataDirectory: "/home/me/Library/Application Support",
+        isDevelopment: false,
+        platform: "darwin",
+        baseDir,
+        homeDirectory: "/home/me",
+      });
+    assert.equal(yield* profile("/home/me/.t3-fork"), "/home/me/.t3-fork/desktop-profile");
+    assert.equal(yield* profile("/home/me/.t3/"), "/home/me/Library/Application Support/t3code-v2");
+  }).pipe(Effect.provide(NodeServices.layer)),
+);
+
 const gpuCacheDirectories = [
   "GPUCache",
   "GrShaderCache",

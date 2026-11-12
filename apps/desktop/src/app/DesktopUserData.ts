@@ -36,9 +36,20 @@ export const resolveUserDataPath = Effect.fn("desktop.userData.resolveUserDataPa
     readonly appDataDirectory: string;
     readonly isDevelopment: boolean;
     readonly platform: NodeJS.Platform;
+    readonly baseDir?: string;
+    readonly homeDirectory?: string;
   }) {
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
+    // Fork: a T3 home other than ~/.t3 keeps its own profile, so that app runs beside the official one.
+    if (
+      !input.isDevelopment &&
+      input.baseDir !== undefined &&
+      input.homeDirectory !== undefined &&
+      path.resolve(input.baseDir) !== path.resolve(input.homeDirectory, ".t3")
+    ) {
+      return path.join(input.baseDir, "desktop-profile");
+    }
     const names = input.isDevelopment
       ? { current: "t3code-dev", legacy: "T3 Code (Dev)" }
       : { current: "t3code-v2", legacy: "T3 Code (Alpha)" };
