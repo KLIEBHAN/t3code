@@ -12,8 +12,8 @@
 set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
-. scripts/fork/config.sh
 
+# Before config.sh: it loads the build toolchain unless a build host is set.
 job=1
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -24,7 +24,6 @@ while [ $# -gt 0 ]; do
         exit 2
       fi
       git config fork.buildHost "$2"
-      FORK_BUILD_HOST="$2"
       shift
       ;;
     *)
@@ -34,6 +33,7 @@ while [ $# -gt 0 ]; do
   esac
   shift
 done
+. scripts/fork/config.sh
 
 if [ -z "$FORK_BUILD_HOST" ] && ! security find-identity -v -p codesigning | grep -F "\"$FORK_SIGN_IDENTITY\"" >/dev/null; then
   echo "setup: no valid signing identity \"$FORK_SIGN_IDENTITY\" in the keychain; see FORK.md" >&2

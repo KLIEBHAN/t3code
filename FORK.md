@@ -64,7 +64,7 @@ A patch that touches a new upstream file needs that path in `scripts/fork/owned-
 
 ## A second Mac
 
-A second Mac can install the app the first one builds. It needs no signing certificate, toolchain, or full checkout, only SSH access to the build Mac without a password prompt. Both Macs keep the app and `~/workspace/t3code-fork-build` at the same paths below the home folder.
+A second Mac can install the app the first one builds. It needs no signing certificate, toolchain, or full checkout, only SSH access to the build Mac without a password prompt. Both Macs need the same home folder path, such as `/Users/fabi`: the app carries its T3 home as an absolute path.
 
 ```sh
 cd ~/workspace
