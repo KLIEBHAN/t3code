@@ -103,15 +103,13 @@ elif [ "$full" = 1 ]; then
   fi
 fi
 
-# Quits the app the way the Dock does. Upstream answers the first signal with a
-# clean shutdown and ends a stalled one on a second signal after ten seconds.
+# Quits the app process $1 the way the Dock does. Upstream answers the first
+# signal with a clean shutdown and ends a stalled one on a second signal after
+# ten seconds.
 stop_app() {
-  local pid
-  pid="$(fork_app_pid)"
-  [ -n "$pid" ] || return 1
   local attempt wait
   for attempt in 1 2; do
-    kill -TERM "$pid" 2>/dev/null || true
+    kill -TERM "$1" 2>/dev/null || true
     for ((wait = 0; wait < 30; wait++)); do
       fork_app_running || return 0
       sleep 1
@@ -120,26 +118,46 @@ stop_app() {
   return 1
 }
 
-# Starts the app with the environment the Dock gives it: `open` hands its own
-# environment to the app, and this script's has the build toolchain on PATH.
+# Starts the app on the T3 home $1 with the environment the Dock gives it:
+# `open` hands its own environment to the app, and this script's has the build
+# toolchain on PATH.
 start_app() {
   local environment=(HOME="$HOME" USER="$USER" LOGNAME="${LOGNAME:-$USER}" SHELL="${SHELL:-/bin/zsh}"
     TMPDIR="${TMPDIR:-/tmp}" PATH=/usr/bin:/bin:/usr/sbin:/sbin)
   [ -z "${SSH_AUTH_SOCK:-}" ] || environment+=(SSH_AUTH_SOCK="$SSH_AUTH_SOCK")
-  [ -z "${T3CODE_HOME:-}" ] || environment+=(T3CODE_HOME="$T3CODE_HOME")
+  [ "$1" = "$HOME/.t3" ] || environment+=(T3CODE_HOME="$1")
   env -i "${environment[@]}" open -g -a "$FORK_APP_PATH"
 }
 
+# Brings back an app this run quit. Also the exit handler, so a step that fails
+# after the quit cannot leave the app closed.
+quit_home=""
+relaunch() {
+  [ -n "$quit_home" ] || return 0
+  local home="$quit_home"
+  quit_home=""
+  if ! start_app "$home"; then
+    echo "update: could not start $FORK_APP_NAME again" >&2
+    notify "Die App ließ sich nach dem Update nicht wieder starten."
+  fi
+}
+trap relaunch EXIT
+
 staged="$(fork_app_commit "$FORK_STAGED_APP")"
 if [ -n "$staged" ] && [ "$staged" != "$(fork_app_commit "$FORK_APP_PATH")" ]; then
-  restarted=0
   hour="$((10#$(date +%H)))"
-  if fork_app_running && [ "$hour" -ge "$FORK_RESTART_FROM_HOUR" ] && [ "$hour" -lt "$FORK_RESTART_BEFORE_HOUR" ] && [ "$(fork_active_runs)" = 0 ]; then
-    echo "update: no thread is running; restarting $FORK_APP_NAME for the update"
-    if stop_app; then
-      restarted=1
-    else
-      echo "update: $FORK_APP_NAME did not quit" >&2
+  pids="$(fork_app_pids)"
+  # One app only: with two, the homes and their threads cannot be told apart by one check.
+  if [ -n "$pids" ] && [ "$(wc -l <<<"$pids" | tr -d ' ')" = 1 ] &&
+    [ "$hour" -ge "$FORK_RESTART_FROM_HOUR" ] && [ "$hour" -lt "$FORK_RESTART_BEFORE_HOUR" ]; then
+    app_home="$(fork_app_home "$pids")"
+    if [ "$(fork_active_runs "$app_home")" = 0 ]; then
+      echo "update: no thread is running in $app_home; restarting $FORK_APP_NAME for the update"
+      if stop_app "$pids"; then
+        quit_home="$app_home"
+      else
+        echo "update: $FORK_APP_NAME did not quit" >&2
+      fi
     fi
   fi
 
@@ -173,11 +191,6 @@ if [ -n "$staged" ] && [ "$staged" != "$(fork_app_commit "$FORK_APP_PATH")" ]; t
       notify "Das Update ließ sich nicht installieren. Log: $FORK_STATE_DIR/logs"
     fi
   fi
-  # Whatever the install did, an app this run quit comes back.
-  if [ "$restarted" = 1 ] && ! start_app; then
-    status=1
-    echo "update: could not start $FORK_APP_NAME again" >&2
-    notify "Die App ließ sich nach dem Update nicht wieder starten."
-  fi
+  relaunch
 fi
 exit "$status"

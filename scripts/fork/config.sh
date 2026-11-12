@@ -46,14 +46,23 @@ fork_app_running() {
   ps -axo comm= | grep -F "$FORK_APP_PATH/Contents/" >/dev/null
 }
 
-# The PID of the running app's main process, the one launchd started, or nothing.
-fork_app_pid() {
-  ps -axo pid=,ppid=,comm= | awk -v exe="$FORK_APP_PATH/Contents/MacOS/" '$2 == 1 && index($0, exe) { print $1; exit }'
+# The running app's main processes, one PID per line: those launchd started.
+# An app started twice, each time with another T3 home, gives two.
+fork_app_pids() {
+  ps -axo pid=,ppid=,comm= | awk -v exe="$FORK_APP_PATH/Contents/MacOS/" '$2 == 1 && index($0, exe) { print $1 }'
 }
 
-# How many runs are unfinished in the T3 home the app uses. Prints nothing when
-# the database cannot be read, which callers must not take for zero.
+# The T3 home a running app process was started with; ~/.t3 unless its
+# environment names another.
+fork_app_home() {
+  local home
+  home="$(ps eww -o command= -p "$1" | sed -n -E 's/.* T3CODE_HOME=//p' | sed -E 's/ [A-Za-z_][A-Za-z0-9_]*=.*//')"
+  printf '%s\n' "${home:-$HOME/.t3}"
+}
+
+# How many runs are unfinished in a T3 home. Prints nothing when the database
+# cannot be read, which callers must not take for zero.
 fork_active_runs() {
-  sqlite3 "file:${T3CODE_HOME:-$HOME/.t3}/userdata/statev2.sqlite?mode=ro" \
+  sqlite3 "file:$1/userdata/statev2.sqlite?mode=ro" \
     "select count(*) from orchestration_v2_projection_runs where status in ('preparing','queued','starting','running','waiting');" 2>/dev/null || true
 }
