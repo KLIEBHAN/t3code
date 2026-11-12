@@ -2,11 +2,10 @@
 # One-time setup of the fork app on this Mac. Safe to run again: it keeps what
 # exists. See FORK.md.
 #   1. A check that the signing identity from config.sh is in the keychain.
-#   2. The fork's T3 home, marked so the app leaves the `t3` command alone.
-#   3. The launchd job that runs update.sh every hour from this checkout.
+#   2. The launchd job that runs update.sh every hour from this checkout.
 #
 # Usage: scripts/fork/setup.sh [--no-job] [--build-host <ssh host>]
-#   --no-job      skip step 3, for a checkout that only builds
+#   --no-job      skip step 2, for a checkout that only builds
 #   --build-host  this Mac installs the app that Mac builds, and makes none
 #                 itself: no step 1, and update.sh fetches instead of building
 set -euo pipefail
@@ -39,10 +38,6 @@ if [ -z "$FORK_BUILD_HOST" ] && ! security find-identity -v -p codesigning | gre
   echo "setup: no valid signing identity \"$FORK_SIGN_IDENTITY\" in the keychain; see FORK.md" >&2
   exit 1
 fi
-
-mkdir -p "$FORK_T3_HOME/userdata"
-# The app installs a `t3` command on its first launch unless this file exists.
-touch "$FORK_T3_HOME/userdata/cli-command-first-launch"
 
 if [ "$job" = 1 ]; then
   plist="$HOME/Library/LaunchAgents/$FORK_LAUNCHD_LABEL.plist"

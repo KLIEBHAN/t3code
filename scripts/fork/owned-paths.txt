@@ -6,4 +6,3 @@ packages/provider-pi/src/server/adapter.ts
 packages/provider-pi/src/server/adapter.test.ts
 apps/desktop/src/app/DesktopUserData.ts
 apps/desktop/src/app/DesktopUserData.test.ts
-scripts/build-desktop-artifact.ts
