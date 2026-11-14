@@ -1,47 +1,37 @@
-// Draws the Dock applet's icon: the fork app's icon with an update badge.
-// Run once when the look changes; install-applet.sh uses the committed PNG.
-//   swift scripts/fork/applet-icon.swift assets/dev/blueprint-macos-1024.png scripts/fork/applet-icon.png
+// Draws the update badge as a transparent 1024 px layer for the applet's
+// Icon Composer icon; make-applet-icon.sh puts it on top of the fork's icon.
+//   swift scripts/fork/applet-icon.swift <out.png>
 import AppKit
 
-let arguments = CommandLine.arguments
-guard arguments.count == 3, let base = NSImage(contentsOfFile: arguments[1]) else {
-  FileHandle.standardError.write("usage: applet-icon.swift <base.png> <out.png>\n".data(using: .utf8)!)
+guard CommandLine.arguments.count == 2 else {
+  FileHandle.standardError.write("usage: applet-icon.swift <out.png>\n".data(using: .utf8)!)
   exit(2)
 }
-let size = 512
+let size = CGFloat(1024)
 let rep = NSBitmapImageRep(
-  bitmapDataPlanes: nil, pixelsWide: size, pixelsHigh: size, bitsPerSample: 8, samplesPerPixel: 4,
-  hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+  bitmapDataPlanes: nil, pixelsWide: Int(size), pixelsHigh: Int(size), bitsPerSample: 8,
+  samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
+  bytesPerRow: 0, bitsPerPixel: 0)!
 NSGraphicsContext.saveGraphicsState()
 NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
-let canvas = NSRect(x: 0, y: 0, width: size, height: size)
-base.draw(in: canvas)
 
-// Badge in the lower right, inside the icon's rounded square.
-let diameter = CGFloat(size) * 0.42
-let badge = NSRect(x: CGFloat(size) * 0.52, y: CGFloat(size) * 0.08, width: diameter, height: diameter)
-let shadow = NSShadow()
-shadow.shadowBlurRadius = CGFloat(size) * 0.025
-shadow.shadowOffset = NSSize(width: 0, height: -CGFloat(size) * 0.008)
-shadow.shadowColor = NSColor.black.withAlphaComponent(0.35)
-NSGraphicsContext.saveGraphicsState()
-shadow.set()
-NSColor(srgbRed: 0.19, green: 0.74, blue: 0.35, alpha: 1).setFill()
+// Lower right, clear of the icon's rounded corner.
+let diameter = size * 0.44
+let badge = NSRect(x: size * 0.50, y: size * 0.06, width: diameter, height: diameter)
+NSColor.white.setFill()
 NSBezierPath(ovalIn: badge).fill()
-NSGraphicsContext.restoreGraphicsState()
-NSColor.white.setStroke()
-let ring = NSBezierPath(ovalIn: badge.insetBy(dx: CGFloat(size) * 0.006, dy: CGFloat(size) * 0.006))
-ring.lineWidth = CGFloat(size) * 0.012
-ring.stroke()
+NSColor(srgbRed: 0.19, green: 0.74, blue: 0.35, alpha: 1).setFill()
+NSBezierPath(ovalIn: badge.insetBy(dx: size * 0.016, dy: size * 0.016)).fill()
 
-let configuration = NSImage.SymbolConfiguration(pointSize: diameter * 0.52, weight: .bold)
+let configuration = NSImage.SymbolConfiguration(pointSize: diameter * 0.5, weight: .bold)
   .applying(NSImage.SymbolConfiguration(paletteColors: [.white]))
 if let symbol = NSImage(systemSymbolName: "arrow.triangle.2.circlepath", accessibilityDescription: nil)?
   .withSymbolConfiguration(configuration)
 {
   let symbolSize = symbol.size
-  let origin = NSPoint(x: badge.midX - symbolSize.width / 2, y: badge.midY - symbolSize.height / 2)
-  symbol.draw(at: origin, from: .zero, operation: .sourceOver, fraction: 1)
+  symbol.draw(
+    at: NSPoint(x: badge.midX - symbolSize.width / 2, y: badge.midY - symbolSize.height / 2),
+    from: .zero, operation: .sourceOver, fraction: 1)
 }
 NSGraphicsContext.restoreGraphicsState()
-try! rep.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: arguments[2]))
+try! rep.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: CommandLine.arguments[1]))
