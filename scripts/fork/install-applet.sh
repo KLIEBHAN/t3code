@@ -14,9 +14,23 @@ cd "$(git rev-parse --show-toplevel)"
 applet="$HOME/Applications/T3 Code Fork Update.app"
 # Outside the bundle: a file added to it would break its signature.
 stamp="$FORK_STATE_DIR/applet-source.sha256"
+work="$(dirname "$applet")/.fork-applet"
+incoming="$work/incoming/$(basename "$applet")"
+previous="$work/previous/$(basename "$applet")"
+
+# Puts back an applet that a stopped swap left aside.
+restore_previous() {
+  if [ ! -e "$applet" ] && [ -d "$previous" ]; then
+    mv "$previous" "$applet"
+  fi
+}
+restore_previous
+# Only empty folders go; a swap in progress elsewhere keeps its files.
+rmdir "$work/incoming" "$work/previous" "$work" 2>/dev/null || true
+
 source="$(mktemp)"
-work=""
-trap 'rm -f "$source"; [ -z "$work" ] || rm -rf "$work"' EXIT
+cleanup_work=0
+trap 'rm -f "$source"; if [ "$cleanup_work" = 1 ]; then restore_previous; rm -rf "$work"; fi' EXIT
 sed -e "s#@REPO@#$PWD#" -e "s#@STATE@#$FORK_STATE_DIR#" scripts/fork/update-applet.applescript >"$source"
 hash="$(shasum -a 256 "$source" | cut -d' ' -f1)"
 
@@ -35,18 +49,14 @@ fi
 # template leaves the installed applet in place.
 mkdir -p "$(dirname "$applet")" "$(dirname "$stamp")"
 # osacompile writes a bundle only for a name that ends in .app, hence the folders.
-work="$(dirname "$applet")/.fork-applet"
-incoming="$work/incoming/$(basename "$applet")"
-previous="$work/previous/$(basename "$applet")"
+cleanup_work=1
 rm -rf "$work"
 mkdir -p "$(dirname "$incoming")" "$(dirname "$previous")"
 osacompile -o "$incoming" "$source"
 [ ! -d "$applet" ] || mv "$applet" "$previous"
 if ! mv "$incoming" "$applet"; then
-  [ ! -d "$previous" ] || mv "$previous" "$applet"
   echo "applet: could not move the new applet into place" >&2
   exit 1
 fi
-rm -rf "$work"
 printf '%s\n' "$hash" >"$stamp"
 echo "applet: compiled $applet"
