@@ -25,11 +25,12 @@ end run
 -- Starts manual-update.sh detached from this applet and waits for its result.
 -- Returns "" when the user stops watching; the update goes on regardless.
 on runInBackground(extraArgument)
-	set resultPath to stateDir & "/manual-result"
-	set progressPath to stateDir & "/manual-progress"
-	do shell script "rm -f " & quoted form of resultPath & " " & quoted form of progressPath
+	-- A run of its own: an earlier run this applet stopped watching writes to other files.
+	set runId to do shell script "/usr/bin/uuidgen"
+	set resultPath to stateDir & "/manual-result." & runId
+	set progressPath to stateDir & "/manual-progress." & runId
 	-- The script reads its state directory from the environment; passing it keeps both sides on the same files.
-	do shell script "cd " & quoted form of repoPath & " && FORK_STATE_DIR=" & quoted form of stateDir & " /usr/bin/nohup /bin/bash scripts/fork/manual-update.sh " & extraArgument & " >/dev/null 2>&1 &"
+	do shell script "cd " & quoted form of repoPath & " && FORK_STATE_DIR=" & quoted form of stateDir & " MANUAL_RUN_ID=" & runId & " /usr/bin/nohup /bin/bash scripts/fork/manual-update.sh " & extraArgument & " >/dev/null 2>&1 &"
 	set progress total steps to -1
 	set progress completed steps to 0
 	set progress description to "Update von " & appTitle
@@ -40,7 +41,7 @@ on runInBackground(extraArgument)
 			set summary to do shell script "cat " & quoted form of resultPath & " 2>/dev/null || true"
 			if summary is not "" then exit repeat
 			set elapsed to (current date) - started
-			if elapsed > maxWaitSeconds then return "status=failed"
+			if elapsed > maxWaitSeconds then return "status=slow"
 			set phase to do shell script "cat " & quoted form of progressPath & " 2>/dev/null || true"
 			set progress additional description to phase & "   " & elapsedText(elapsed)
 			delay 1
@@ -49,6 +50,7 @@ on runInBackground(extraArgument)
 		display notification "Das Update läuft im Hintergrund weiter. Ergebnis im Log oder beim nächsten Öffnen." with title appTitle
 		return ""
 	end try
+	do shell script "rm -f " & quoted form of resultPath
 	return summary
 end runInBackground
 
@@ -97,6 +99,8 @@ on report(state, version)
 		display dialog "Die App ist aktuell (Version " & version & ")." with title appTitle buttons {"OK"} default button "OK"
 	else if state is "waiting" then
 		display dialog "Das Update auf Version " & version & " wartet noch, weil die App läuft." with title appTitle buttons {"OK"} default button "OK"
+	else if state is "slow" then
+		display dialog "Das Update läuft seit über einer Stunde und wird im Hintergrund fortgesetzt. Ob es durchkam, steht im Log." with title appTitle buttons {"OK"} default button "OK"
 	else if state is "busy" then
 		display dialog "Gerade läuft schon ein Update. Versuche es in ein paar Minuten noch einmal." with title appTitle buttons {"OK"} default button "OK"
 	else

@@ -3,8 +3,10 @@
 # starts it in the background and only watches, so closing the applet cannot
 # stop the update. Output streams into update.log as the run goes.
 #
-# While it runs, $FORK_STATE_DIR/manual-progress holds one line for the applet
-# to show. At the end $FORK_STATE_DIR/manual-result holds the summary:
+# While it runs, $FORK_STATE_DIR/manual-progress.<run> holds one line for the
+# applet to show. At the end $FORK_STATE_DIR/manual-result.<run> holds the
+# summary. <run> is MANUAL_RUN_ID, which the applet picks for each run, so a run
+# it stopped watching cannot answer for a later one:
 #   status=<installed|waiting|current|busy|failed> version=<version> runs=<n>
 # `waiting` means a build is ready but the app runs; `runs` counts its
 # unfinished runs, which a restart would interrupt, and is empty when unknown.
@@ -16,8 +18,9 @@ cd "$(dirname "$0")/../.."
 . scripts/fork/config.sh
 
 log="$FORK_STATE_DIR/logs/update.log"
-progress="$FORK_STATE_DIR/manual-progress"
-result="$FORK_STATE_DIR/manual-result"
+run_id="${MANUAL_RUN_ID:-last}"
+progress="$FORK_STATE_DIR/manual-progress.$run_id"
+result="$FORK_STATE_DIR/manual-result.$run_id"
 mkdir -p "$(dirname "$log")"
 echo "Prüft auf neue Versionen …" >"$progress"
 echo "update: manual run of $(date '+%Y-%m-%d %H:%M')" >>"$log"

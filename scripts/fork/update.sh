@@ -172,9 +172,10 @@ if [ -n "$staged" ] && [ "$staged" != "$(fork_app_commit "$FORK_APP_PATH")" ]; t
     app_home="$(fork_app_home "$pids")"
     if [ "$restart_now" = 1 ] || [ "$(fork_active_runs "$app_home")" = 0 ]; then
       echo "update: restarting $FORK_APP_NAME on $app_home for the update"
-      if stop_app "$pids"; then
-        quit_home="$app_home"
-      else
+      # Set first: a run stopped while the app quits must still bring it back.
+      quit_home="$app_home"
+      if ! stop_app "$pids"; then
+        quit_home=""
         echo "update: $FORK_APP_NAME did not quit" >&2
       fi
     fi
