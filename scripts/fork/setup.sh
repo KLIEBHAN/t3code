@@ -43,7 +43,7 @@ fi
 if [ "$job" = 1 ]; then
   applet="$HOME/Applications/T3 Code Fork Update.app"
   source="$(mktemp)"
-  sed -e "s#@REPO@#$PWD#" -e "s#@LOG@#$FORK_STATE_DIR/logs/update.log#" scripts/fork/update-applet.applescript >"$source"
+  sed -e "s#@REPO@#$PWD#" -e "s#@STATE@#$FORK_STATE_DIR#" scripts/fork/update-applet.applescript >"$source"
   mkdir -p "$(dirname "$applet")"
   rm -rf "$applet"
   osacompile -o "$applet" "$source"

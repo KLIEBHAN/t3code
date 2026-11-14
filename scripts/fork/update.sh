@@ -157,6 +157,8 @@ relaunch() {
   fi
 }
 trap relaunch EXIT
+# A stopped run still brings the app back: `exit` runs the EXIT trap.
+trap 'exit 1' TERM INT HUP
 
 staged="$(fork_app_commit "$FORK_STAGED_APP")"
 if [ -n "$staged" ] && [ "$staged" != "$(fork_app_commit "$FORK_APP_PATH")" ]; then
