@@ -146,7 +146,7 @@ end valueOf
 
 on report(state, versionText)
 	if state is "installed" then
-		display dialog "Aktualisiert" & return & versionLabel(versionText) & return & return & "Die App läuft wieder." with title appTitle buttons {"OK"} default button "OK" with icon dialogIcon()
+		display dialog "Aktualisiert" & return & versionLabel(versionText) & return & return & "Die neue Version ist installiert." with title appTitle buttons {"OK"} default button "OK" with icon dialogIcon()
 	else if state is "current" then
 		display dialog "Alles aktuell" & return & versionLabel(versionText) & return & return & "Es gibt keine neuere Upstream-Version." with title appTitle buttons {"OK"} default button "OK" with icon dialogIcon()
 	else if state is "waiting" then

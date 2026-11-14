@@ -51,7 +51,8 @@ while IFS= read -r line; do
     "sync: asking the model"*) echo "2|Löst einen Merge-Konflikt mit KI …" >"$progress" ;;
     "build: "*" at "*) echo "3|Baut die App (2–3 Minuten) …" >"$progress" ;;
     "fetch: "*" from "*) echo "3|Lädt die neue Version vom Build-Mac …" >"$progress" ;;
-    "update: restarting "*) echo "4|Installiert und startet die App neu …" >"$progress" ;;
+    "update: restarting "*) echo "4|Beendet die App für das Update …" >"$progress" ;;
+    "update: installing "*) echo "4|Installiert die neue Version …" >"$progress" ;;
   esac
 done < <(
   scripts/fork/update.sh "$@" 2>&1
