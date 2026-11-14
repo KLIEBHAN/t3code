@@ -1,5 +1,5 @@
--- Dock applet that updates T3 Code (Fork) by hand. setup.sh compiles it to
--- ~/Applications/T3 Code Fork Update.app and fills in the paths.
+-- Dock applet that updates T3 Code (Fork) by hand. install-applet.sh compiles
+-- it to ~/Applications/T3 Code Fork Update.app and fills in the paths.
 -- It starts manual-update.sh in the background and only watches its progress
 -- and result files, so it stays responsive and closing it cannot stop the
 -- update. It asks before it restarts a running app.
@@ -8,13 +8,14 @@ property repoPath : "@REPO@"
 property stateDir : "@STATE@"
 property appTitle : "T3 Code (Fork)"
 property maxWaitSeconds : 3600
+property totalSteps : 4
 
 on run
 	set summary to runInBackground("")
 	if summary is "" then return
 	set state to valueOf(summary, "status")
 	if state is "waiting" then
-		if not confirmRestart(valueOf(summary, "version"), valueOf(summary, "runs")) then return
+		if not confirmRestart(valueOf(summary, "current"), valueOf(summary, "version"), valueOf(summary, "runs")) then return
 		set summary to runInBackground("--restart")
 		if summary is "" then return
 		set state to valueOf(summary, "status")
@@ -31,9 +32,9 @@ on runInBackground(extraArgument)
 	set progressPath to stateDir & "/manual-progress." & runId
 	-- The script reads its state directory from the environment; passing it keeps both sides on the same files.
 	do shell script "cd " & quoted form of repoPath & " && FORK_STATE_DIR=" & quoted form of stateDir & " MANUAL_RUN_ID=" & runId & " /usr/bin/nohup /bin/bash scripts/fork/manual-update.sh " & extraArgument & " >/dev/null 2>&1 &"
-	set progress total steps to -1
+	set progress total steps to totalSteps
 	set progress completed steps to 0
-	set progress description to "Update von " & appTitle
+	set progress description to appTitle & " wird aktualisiert"
 	set progress additional description to "Startet …"
 	set started to current date
 	try
@@ -42,33 +43,84 @@ on runInBackground(extraArgument)
 			if summary is not "" then exit repeat
 			set elapsed to (current date) - started
 			if elapsed > maxWaitSeconds then return "status=slow"
-			set phase to do shell script "cat " & quoted form of progressPath & " 2>/dev/null || true"
-			set progress additional description to phase & "   " & elapsedText(elapsed)
+			showProgress(do shell script "cat " & quoted form of progressPath & " 2>/dev/null || true", elapsed)
 			delay 1
 		end repeat
 	on error number -128
 		display notification "Das Update läuft im Hintergrund weiter. Ergebnis im Log oder beim nächsten Öffnen." with title appTitle
 		return ""
 	end try
+	set progress completed steps to totalSteps
 	do shell script "rm -f " & quoted form of resultPath
 	return summary
 end runInBackground
 
-on confirmRestart(version, runs)
+-- Shows a progress line `<step>|<text>` from manual-update.sh with the elapsed time.
+on showProgress(progressLine, elapsed)
+	if progressLine is "" then return
+	set saved to AppleScript's text item delimiters
+	set AppleScript's text item delimiters to "|"
+	set parts to text items of progressLine
+	set AppleScript's text item delimiters to saved
+	if (count of parts) < 2 then return
+	try
+		set step to (item 1 of parts) as integer
+	on error
+		return
+	end try
+	set progress completed steps to step - 1
+	set progress additional description to "Schritt " & step & " von " & totalSteps & ": " & (item 2 of parts) & "   " & elapsedText(elapsed)
+end showProgress
+
+on confirmRestart(currentVersion, newVersion, runs)
+	set headline to "Update bereit" & return & versionLabel(currentVersion) & "  →  " & versionLabel(newVersion) & return & return
 	if runs is "0" then
-		set question to "Version " & version & " ist bereit. Die App wird dafür kurz beendet und wieder gestartet."
+		set question to headline & "Die App wird dafür kurz beendet und wieder gestartet. Gerade läuft kein Thread."
 		set preferred to "Jetzt neu starten"
 	else if runs is "" then
 		-- manual-update.sh leaves the count empty when it cannot read it.
-		set question to "Version " & version & " ist bereit. Ob gerade Threads laufen, lässt sich nicht feststellen; ein Neustart würde sie unterbrechen." & return & return & "Ohne Neustart installiert der nächtliche Lauf das Update, sobald kein Thread mehr läuft."
+		set question to headline & "Ob gerade Threads laufen, lässt sich nicht feststellen; ein Neustart würde sie unterbrechen." & return & return & "Ohne Neustart installiert der nächtliche Lauf das Update, sobald kein Thread mehr läuft."
 		set preferred to "Später"
 	else
-		set question to "Version " & version & " ist bereit. Gerade laufen " & runs & " Threads; ein Neustart unterbricht sie. Unterstützte Threads laufen danach weiter." & return & return & "Ohne Neustart installiert der nächtliche Lauf das Update, sobald kein Thread mehr läuft."
+		set question to headline & threadsText(runs) & " gerade; ein Neustart unterbricht sie. Unterstützte Threads laufen danach weiter." & return & return & "Ohne Neustart installiert der nächtliche Lauf das Update, sobald kein Thread mehr läuft."
 		set preferred to "Später"
 	end if
-	set answer to button returned of (display dialog question with title appTitle buttons {"Später", "Jetzt neu starten"} default button preferred)
+	set answer to button returned of (display dialog question with title appTitle buttons {"Später", "Jetzt neu starten"} default button preferred with icon dialogIcon())
 	return answer is "Jetzt neu starten"
 end confirmRestart
+
+on threadsText(runs)
+	if runs is "1" then return "1 Thread läuft"
+	return runs & " Threads laufen"
+end threadsText
+
+-- "Nightly 4682 vom 14.11.2026" for "0.1.10-nightly.20261114.4682"; other versions unchanged.
+on versionLabel(versionText)
+	if versionText is "" then return "unbekannte Version"
+	set saved to AppleScript's text item delimiters
+	set AppleScript's text item delimiters to "-nightly."
+	set parts to text items of versionText
+	set AppleScript's text item delimiters to "."
+	try
+		set nightly to text items of (item 2 of parts)
+		set AppleScript's text item delimiters to saved
+		set datePart to item 1 of nightly
+		set label to "Nightly " & (item 2 of nightly) & " vom " & (text 7 thru 8 of datePart) & "." & (text 5 thru 6 of datePart) & "." & (text 1 thru 4 of datePart)
+		return label
+	on error
+		set AppleScript's text item delimiters to saved
+		return versionText
+	end try
+end versionLabel
+
+-- The applet's own icon, or the standard note icon if it is missing.
+on dialogIcon()
+	try
+		return path to resource "applet.icns"
+	on error
+		return note
+	end try
+end dialogIcon
 
 on elapsedText(elapsedSeconds)
 	set minutesPart to elapsedSeconds div 60
@@ -92,19 +144,19 @@ on valueOf(summary, key)
 	return ""
 end valueOf
 
-on report(state, version)
+on report(state, versionText)
 	if state is "installed" then
-		display dialog "Aktualisiert auf Version " & version & "." with title appTitle buttons {"OK"} default button "OK"
+		display dialog "Aktualisiert" & return & versionLabel(versionText) & return & return & "Die neue Version ist installiert." with title appTitle buttons {"OK"} default button "OK" with icon dialogIcon()
 	else if state is "current" then
-		display dialog "Die App ist aktuell (Version " & version & ")." with title appTitle buttons {"OK"} default button "OK"
+		display dialog "Alles aktuell" & return & versionLabel(versionText) & return & return & "Es gibt keine neuere Upstream-Version." with title appTitle buttons {"OK"} default button "OK" with icon dialogIcon()
 	else if state is "waiting" then
-		display dialog "Das Update auf Version " & version & " wartet noch, weil die App läuft." with title appTitle buttons {"OK"} default button "OK"
+		display dialog "Update wartet" & return & versionLabel(versionText) & return & return & "Es wird installiert, sobald die App beendet ist oder nachts kein Thread läuft." with title appTitle buttons {"OK"} default button "OK" with icon dialogIcon()
 	else if state is "slow" then
-		display dialog "Das Update läuft seit über einer Stunde und wird im Hintergrund fortgesetzt. Ob es durchkam, steht im Log." with title appTitle buttons {"OK"} default button "OK"
+		display dialog "Update läuft noch" & return & return & "Es läuft seit über einer Stunde und wird im Hintergrund fortgesetzt. Ob es durchkam, steht im Log." with title appTitle buttons {"OK"} default button "OK" with icon dialogIcon()
 	else if state is "busy" then
-		display dialog "Gerade läuft schon ein Update. Versuche es in ein paar Minuten noch einmal." with title appTitle buttons {"OK"} default button "OK"
+		display dialog "Update läuft bereits" & return & return & "Ein anderes Update ist gerade aktiv. Versuche es in ein paar Minuten noch einmal." with title appTitle buttons {"OK"} default button "OK" with icon dialogIcon()
 	else
-		set answer to button returned of (display dialog "Das Update ist fehlgeschlagen. Die installierte App bleibt unverändert." with title appTitle buttons {"Log öffnen", "OK"} default button "OK")
+		set answer to button returned of (display dialog "Update fehlgeschlagen" & return & return & "Die installierte App bleibt unverändert. Details stehen im Log." with title appTitle buttons {"Log öffnen", "OK"} default button "OK" with icon caution)
 		if answer is "Log öffnen" then do shell script "open " & quoted form of (stateDir & "/logs/update.log")
 	end if
 end report

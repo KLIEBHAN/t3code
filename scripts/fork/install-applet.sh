@@ -32,7 +32,8 @@ source="$(mktemp)"
 cleanup_work=0
 trap 'rm -f "$source"; if [ "$cleanup_work" = 1 ]; then restore_previous; rm -rf "$work"; fi' EXIT
 sed -e "s#@REPO@#$PWD#" -e "s#@STATE@#$FORK_STATE_DIR#" scripts/fork/update-applet.applescript >"$source"
-hash="$(shasum -a 256 "$source" | cut -d' ' -f1)"
+icon_png="scripts/fork/applet-icon.png"
+hash="$(cat "$source" "$icon_png" | shasum -a 256 | cut -d' ' -f1)"
 
 if [ "${1:-}" = "--if-changed" ]; then
   [ -d "$applet" ] || exit 0
@@ -53,6 +54,16 @@ cleanup_work=1
 rm -rf "$work"
 mkdir -p "$(dirname "$incoming")" "$(dirname "$previous")"
 osacompile -o "$incoming" "$source"
+# The applet's own icon, then a fresh ad hoc signature over the changed bundle.
+iconset="$work/applet.iconset"
+mkdir -p "$iconset"
+for size in 16 32 128 256; do
+  sips -z "$size" "$size" "$icon_png" --out "$iconset/icon_${size}x${size}.png" >/dev/null
+  sips -z "$((size * 2))" "$((size * 2))" "$icon_png" --out "$iconset/icon_${size}x${size}@2x.png" >/dev/null
+done
+cp "$icon_png" "$iconset/icon_512x512.png"
+iconutil -c icns "$iconset" -o "$incoming/Contents/Resources/applet.icns"
+codesign --force --sign - "$incoming" 2>/dev/null
 [ ! -d "$applet" ] || mv "$applet" "$previous"
 if ! mv "$incoming" "$applet"; then
   echo "applet: could not move the new applet into place" >&2

@@ -187,6 +187,7 @@ if [ -n "$staged" ] && [ "$staged" != "$(fork_app_commit "$FORK_APP_PATH")" ]; t
   # Copy next to the target first, so the swap itself is two renames. The check
   # comes after the copy: an app started during the copy keeps its bundle.
   if ! fork_app_running; then
+    echo "update: installing ${staged:0:10}"
     ditto "$FORK_STAGED_APP" "$incoming"
   fi
   if fork_app_running; then
