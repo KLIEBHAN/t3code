@@ -116,7 +116,7 @@ end versionLabel
 -- The applet's own icon, or the standard note icon if it is missing.
 on dialogIcon()
 	try
-		return path to resource "applet.icns"
+		return path to resource "AppIcon.icns"
 	on error
 		return note
 	end try
