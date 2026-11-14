@@ -41,14 +41,7 @@ if [ -z "$FORK_BUILD_HOST" ] && ! security find-identity -v -p codesigning | gre
 fi
 
 if [ "$job" = 1 ]; then
-  applet="$HOME/Applications/T3 Code Fork Update.app"
-  source="$(mktemp)"
-  sed -e "s#@REPO@#$PWD#" -e "s#@STATE@#$FORK_STATE_DIR#" scripts/fork/update-applet.applescript >"$source"
-  mkdir -p "$(dirname "$applet")"
-  rm -rf "$applet"
-  osacompile -o "$applet" "$source"
-  rm -f "$source"
-  echo "setup: the Dock applet is $applet"
+  scripts/fork/install-applet.sh
 
   plist="$HOME/Library/LaunchAgents/$FORK_LAUNCHD_LABEL.plist"
   mkdir -p "$FORK_STATE_DIR/logs" "$(dirname "$plist")"

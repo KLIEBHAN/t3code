@@ -213,4 +213,7 @@ if [ -n "$staged" ] && [ "$staged" != "$(fork_app_commit "$FORK_APP_PATH")" ]; t
   fi
   relaunch
 fi
+
+# The applet's source moves with these scripts; a failure here leaves the old applet working.
+scripts/fork/install-applet.sh --if-changed || echo "update: could not refresh the Dock applet" >&2
 exit "$status"
