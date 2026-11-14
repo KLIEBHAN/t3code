@@ -34,7 +34,7 @@ trap 'rm -f "$source"; if [ "$cleanup_work" = 1 ]; then restore_previous; rm -rf
 sed -e "s#@REPO@#$PWD#" -e "s#@STATE@#$FORK_STATE_DIR#" scripts/fork/update-applet.applescript >"$source"
 icon_dir="scripts/fork/applet-icon"
 # This script is part of the hash too, so a change to the build steps reaches every Mac.
-hash="$(cat "$source" "$icon_dir/Assets.car" "$icon_dir/AppIcon.icns" "$0" | shasum -a 256 | cut -d' ' -f1)"
+hash="$(cat "$source" "$icon_dir/Assets.car" "$icon_dir/AppIcon.icns" scripts/fork/install-applet.sh | shasum -a 256 | cut -d' ' -f1)"
 
 if [ "${1:-}" = "--if-changed" ]; then
   [ -d "$applet" ] || exit 0
