@@ -23,42 +23,56 @@ cd "$(git rev-parse --show-toplevel)"
 # it when that process ends, however it ends.
 if [ "${FORK_UPDATE_LOCKED:-}" != 1 ]; then
   mkdir -p "$FORK_STATE_DIR/logs"
-  # A Mac that installs another Mac's builds moves these scripts before it
-  # fetches, so an app never meets scripts older than itself: to the fork
-  # branch's head when that contains the app it is about to fetch, as on the
-  # build host, otherwise to the app's own commit. The head keeps script changes
-  # merged since the last build, such as a new applet, from going back until
-  # the next build. Away from the build host they stay with the app this Mac
-  # has. Here, before the locked run starts, no script is mid-read: bash has
-  # parsed this whole block already.
-  if [ -n "$FORK_BUILD_HOST" ] && [ "$(git branch --show-current)" = "$FORK_BRANCH" ]; then
-    wanted="$(scripts/fork/fetch-app.sh --commit 2>/dev/null || true)"
-    [ -n "$wanted" ] || wanted="$(fork_app_commit "$FORK_STAGED_APP")"
-    [ -n "$wanted" ] || wanted="$(fork_app_commit "$FORK_APP_PATH")"
-    target=""
-    if [ -z "$wanted" ]; then
-      :
-    elif ! git fetch --quiet --depth 1 origin "$wanted"; then
-      echo "update: could not fetch the scripts of ${wanted:0:10}" >&2
-    else
-      target="$wanted"
-      # The checkout is shallow; 50 commits reach any recent build, and a build
-      # beyond them is treated as not contained, which keeps its commit.
-      if git fetch --quiet --depth 50 origin "$FORK_BRANCH" && git merge-base --is-ancestor "$wanted" FETCH_HEAD 2>/dev/null; then
-        target="$(git rev-parse FETCH_HEAD)"
+  # Puts the time in front of every line of the run, stderr included, for the
+  # log. It ignores the signals that stop a run and reads until update.sh has
+  # exited: a closed pipe would end update.sh before it brings the app back.
+  stamp_lines() {
+    trap '' TERM INT HUP
+    local line
+    while IFS= read -r line || [ -n "$line" ]; do
+      printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$line"
+    done
+  }
+  status=0
+  {
+    # A Mac that installs another Mac's builds moves these scripts before it
+    # fetches, so an app never meets scripts older than itself: to the fork
+    # branch's head when that contains the app it is about to fetch, as on the
+    # build host, otherwise to the app's own commit. The head keeps script changes
+    # merged since the last build, such as a new applet, from going back until
+    # the next build. Away from the build host they stay with the app this Mac
+    # has. Here, before the locked run starts, no script is mid-read: bash has
+    # parsed this whole block already.
+    if [ -n "$FORK_BUILD_HOST" ] && [ "$(git branch --show-current)" = "$FORK_BRANCH" ]; then
+      wanted="$(scripts/fork/fetch-app.sh --commit 2>/dev/null || true)"
+      [ -n "$wanted" ] || wanted="$(fork_app_commit "$FORK_STAGED_APP")"
+      [ -n "$wanted" ] || wanted="$(fork_app_commit "$FORK_APP_PATH")"
+      target=""
+      if [ -z "$wanted" ]; then
+        :
+      elif ! git fetch --quiet --depth 1 origin "$wanted"; then
+        echo "update: could not fetch the scripts of ${wanted:0:10}" >&2
+      else
+        target="$wanted"
+        # The checkout is shallow; 50 commits reach any recent build, and a build
+        # beyond them is treated as not contained, which keeps its commit.
+        if git fetch --quiet --depth 50 origin "$FORK_BRANCH" && git merge-base --is-ancestor "$wanted" FETCH_HEAD 2>/dev/null; then
+          target="$(git rev-parse FETCH_HEAD)"
+        fi
+      fi
+      # An app built before this Mac's role existed has no scripts for it; keep the current ones.
+      if [ -n "$target" ] && [ "$target" != "$(git rev-parse HEAD)" ] && [ -n "$(git ls-tree --name-only "$target" scripts/fork/fetch-app.sh)" ]; then
+        git checkout --quiet -B "$FORK_BRANCH" "$target" || echo "update: could not move the scripts to ${target:0:10}" >&2
       fi
     fi
-    # An app built before this Mac's role existed has no scripts for it; keep the current ones.
-    if [ -n "$target" ] && [ "$target" != "$(git rev-parse HEAD)" ] && [ -n "$(git ls-tree --name-only "$target" scripts/fork/fetch-app.sh)" ]; then
-      git checkout --quiet -B "$FORK_BRANCH" "$target" || echo "update: could not move the scripts to ${target:0:10}" >&2
+    locked=0
+    FORK_UPDATE_LOCKED=1 lockf -s -k -t 0 "$FORK_STATE_DIR/update.lock" scripts/fork/update.sh "$@" || locked=$?
+    if [ "$locked" = 75 ]; then
+      echo "update: another run is active"
+      locked=0
     fi
-  fi
-  status=0
-  FORK_UPDATE_LOCKED=1 lockf -s -k -t 0 "$FORK_STATE_DIR/update.lock" scripts/fork/update.sh "$@" || status=$?
-  if [ "$status" = 75 ]; then
-    echo "update: another run is active"
-    exit 0
-  fi
+    exit "$locked"
+  } 2>&1 | stamp_lines || status=$?
   exit "$status"
 fi
 
@@ -116,7 +130,7 @@ if [ -n "$FORK_BUILD_HOST" ]; then
   fi
 elif [ "$full" = 1 ]; then
   date +%s >"$stamp"
-  echo "update: run of $(date '+%Y-%m-%d %H:%M')"
+  echo "update: daily sync and build"
   if ! scripts/fork/sync-upstream.sh; then
     status=1
     notify "Upstream ließ sich nicht einspielen. Log: $FORK_STATE_DIR/logs"

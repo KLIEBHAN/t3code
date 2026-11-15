@@ -26,7 +26,7 @@ progress="$FORK_STATE_DIR/manual-progress.$run_id"
 result="$FORK_STATE_DIR/manual-result.$run_id"
 mkdir -p "$(dirname "$log")"
 echo "1|Prüft auf neue Versionen …" >"$progress"
-echo "update: manual run of $(date '+%Y-%m-%d %H:%M')" >>"$log"
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] update: manual run" >>"$log"
 before="$(fork_app_commit "$FORK_APP_PATH")"
 version_of() {
   plutil -extract CFBundleShortVersionString raw "$1/Contents/Info.plist" 2>/dev/null || true
@@ -45,7 +45,8 @@ while IFS= read -r line; do
       ;;
   esac
   printf '%s\n' "$line" >>"$log"
-  case "$line" in
+  # update.sh puts the time in front: [YYYY-MM-DD HH:MM:SS] <message>
+  case "${line#\[*\] }" in
     "update: another run is active"*) busy=1 ;;
     "sync: merging "*) echo "2|Spielt die neue Upstream-Version ein …" >"$progress" ;;
     "sync: asking the model"*) echo "2|Löst einen Merge-Konflikt mit KI …" >"$progress" ;;
