@@ -100,14 +100,18 @@ notify() {
 alert() {
   notify "$1"
   [ "$scheduled" = 1 ] || return 0
+  if [ ! -x "$FORK_PUSH_DIR/python3" ]; then
+    echo "update: no Python for phone pushes; run scripts/fork/setup.sh" >&2
+    return 0
+  fi
   local message
   message="$(scutil --get ComputerName 2>/dev/null || hostname -s): $1"
   if [ -f "$FORK_PUSH_DIR/bark/scripts/send.py" ]; then
-    /usr/bin/python3 "$FORK_PUSH_DIR/bark/scripts/send.py" --event fehler --title "$FORK_APP_NAME" --message "$message" >/dev/null 2>&1 ||
+    "$FORK_PUSH_DIR/python3" "$FORK_PUSH_DIR/bark/scripts/send.py" --event fehler --title "$FORK_APP_NAME" --message "$message" >/dev/null 2>&1 ||
       echo "update: the Bark push failed" >&2
   fi
   if [ -f "$FORK_PUSH_DIR/ntfy/scripts/publish.py" ]; then
-    /usr/bin/python3 "$FORK_PUSH_DIR/ntfy/scripts/publish.py" --priority 4 --title "$FORK_APP_NAME" --message "$message" >/dev/null 2>&1 ||
+    "$FORK_PUSH_DIR/python3" "$FORK_PUSH_DIR/ntfy/scripts/publish.py" --priority 4 --title "$FORK_APP_NAME" --message "$message" >/dev/null 2>&1 ||
       echo "update: the ntfy push failed" >&2
   fi
 }
