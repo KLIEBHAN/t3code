@@ -116,8 +116,10 @@ alert() {
 warned="$FORK_STATE_DIR/branch-warned"
 if [ "$(git branch --show-current)" != "$FORK_BRANCH" ]; then
   echo "update: check out $FORK_BRANCH first" >&2
+  # Only a scheduled run marks a failure as announced: a manual run's banner
+  # reaches no phone, so it must not silence the scheduled push.
   if [ ! -f "$warned" ]; then
-    touch "$warned"
+    [ "$scheduled" = 0 ] || touch "$warned"
     alert "Kein Update: Der Checkout steht nicht auf $FORK_BRANCH."
   fi
   exit 2
@@ -135,14 +137,14 @@ if [ "$scheduled" = 1 ]; then
 fi
 
 if [ -n "$FORK_BUILD_HOST" ]; then
-  # Runs every hour, so a lasting failure is announced once.
+  # Runs every hour, so a lasting failure is announced once, as for the branch above.
   failed="$FORK_STATE_DIR/fetch-failed"
   if scripts/fork/fetch-app.sh; then
     rm -f "$failed"
   else
     status=1
     if [ ! -f "$failed" ]; then
-      touch "$failed"
+      [ "$scheduled" = 0 ] || touch "$failed"
       alert "Das Update ließ sich nicht von $FORK_BUILD_HOST holen. Log: $FORK_STATE_DIR/logs"
     fi
   fi
