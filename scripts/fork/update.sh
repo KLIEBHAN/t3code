@@ -94,13 +94,31 @@ notify() {
   osascript -e 'on run argv' -e 'display notification (item 1 of argv) with title "T3 Code (Fork)"' -e 'end run' "$1" >/dev/null 2>&1 || true
 }
 
+# A failure: the banner, and in a scheduled run, which nobody watches, also a
+# push to the phone through the senders setup.sh copied. A push that fails
+# leaves a line in the log.
+alert() {
+  notify "$1"
+  [ "$scheduled" = 1 ] || return 0
+  local message
+  message="$(scutil --get ComputerName 2>/dev/null || hostname -s): $1"
+  if [ -f "$FORK_PUSH_DIR/bark/scripts/send.py" ]; then
+    /usr/bin/python3 "$FORK_PUSH_DIR/bark/scripts/send.py" --event fehler --title "$FORK_APP_NAME" --message "$message" >/dev/null 2>&1 ||
+      echo "update: the Bark push failed" >&2
+  fi
+  if [ -f "$FORK_PUSH_DIR/ntfy/scripts/publish.py" ]; then
+    /usr/bin/python3 "$FORK_PUSH_DIR/ntfy/scripts/publish.py" --priority 4 --title "$FORK_APP_NAME" --message "$message" >/dev/null 2>&1 ||
+      echo "update: the ntfy push failed" >&2
+  fi
+}
+
 # Anything this checkout builds gets installed, so it has to be the fork branch.
 warned="$FORK_STATE_DIR/branch-warned"
 if [ "$(git branch --show-current)" != "$FORK_BRANCH" ]; then
   echo "update: check out $FORK_BRANCH first" >&2
   if [ ! -f "$warned" ]; then
     touch "$warned"
-    notify "Kein Update: Der Checkout steht nicht auf $FORK_BRANCH."
+    alert "Kein Update: Der Checkout steht nicht auf $FORK_BRANCH."
   fi
   exit 2
 fi
@@ -125,7 +143,7 @@ if [ -n "$FORK_BUILD_HOST" ]; then
     status=1
     if [ ! -f "$failed" ]; then
       touch "$failed"
-      notify "Das Update ließ sich nicht von $FORK_BUILD_HOST holen. Log: $FORK_STATE_DIR/logs"
+      alert "Das Update ließ sich nicht von $FORK_BUILD_HOST holen. Log: $FORK_STATE_DIR/logs"
     fi
   fi
 elif [ "$full" = 1 ]; then
@@ -133,13 +151,13 @@ elif [ "$full" = 1 ]; then
   echo "update: daily sync and build"
   if ! scripts/fork/sync-upstream.sh; then
     status=1
-    notify "Upstream ließ sich nicht einspielen. Log: $FORK_STATE_DIR/logs"
+    alert "Upstream ließ sich nicht einspielen. Log: $FORK_STATE_DIR/logs"
   fi
   head="$(git rev-parse HEAD)"
   if [ "$(fork_app_commit "$FORK_STAGED_APP")" != "$head" ] && [ "$(fork_app_commit "$FORK_APP_PATH")" != "$head" ]; then
     if ! scripts/fork/build-app.sh; then
       status=1
-      notify "Der Build ist fehlgeschlagen. Log: $FORK_STATE_DIR/logs"
+      alert "Der Build ist fehlgeschlagen. Log: $FORK_STATE_DIR/logs"
     fi
   fi
 fi
@@ -179,7 +197,7 @@ relaunch() {
   quit_home=""
   if ! start_app "$home"; then
     echo "update: could not start $FORK_APP_NAME again" >&2
-    notify "Die App ließ sich nach dem Update nicht wieder starten."
+    alert "Die App ließ sich nach dem Update nicht wieder starten."
   fi
 }
 trap relaunch EXIT
@@ -235,7 +253,7 @@ if [ -n "$staged" ] && [ "$staged" != "$(fork_app_commit "$FORK_APP_PATH")" ]; t
       [ ! -d "$previous" ] || mv "$previous" "$FORK_APP_PATH"
       status=1
       echo "update: could not move the new build into place; the installed app is unchanged" >&2
-      notify "Das Update ließ sich nicht installieren. Log: $FORK_STATE_DIR/logs"
+      alert "Das Update ließ sich nicht installieren. Log: $FORK_STATE_DIR/logs"
     fi
   fi
   relaunch

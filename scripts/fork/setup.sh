@@ -3,10 +3,13 @@
 # exists. See FORK.md.
 #   1. A check that the signing identity from config.sh is in the keychain.
 #   2. The Dock applet for updates by hand, ~/Applications/T3 Code Fork Update.app.
-#   3. The launchd job that runs update.sh every hour from this checkout.
+#   3. Copies of the bark and ntfy skill senders with their .env, through which
+#      the hourly run reports failures to the phone. Run setup.sh again when
+#      those credentials change.
+#   4. The launchd job that runs update.sh every hour from this checkout.
 #
 # Usage: scripts/fork/setup.sh [--no-job] [--build-host <ssh host>]
-#   --no-job      skip steps 2 and 3, for a checkout that only builds
+#   --no-job      skip steps 2 to 4, for a checkout that only builds
 #   --build-host  this Mac installs the app that Mac builds, and makes none
 #                 itself: no step 1, and update.sh fetches instead of building
 set -euo pipefail
@@ -40,8 +43,34 @@ if [ -z "$FORK_BUILD_HOST" ] && ! security find-identity -v -p codesigning | gre
   exit 1
 fi
 
+# Copies the sender $2 of skill $1 and the skill's .env to $FORK_PUSH_DIR/$1,
+# where update.sh finds it. The launchd job must not read the skills
+# themselves: they live in ~/Documents, where every access goes through the
+# macOS privacy check and an unanswered prompt stalls it for all apps.
+install_push_sender() {
+  local skill="$FORK_SKILLS_DIR/$1" target="$FORK_PUSH_DIR/$1"
+  if [ ! -f "$skill/scripts/$2" ] || [ ! -f "$skill/.env" ]; then
+    echo "setup: no $1 skill with .env in $FORK_SKILLS_DIR; failures reach no phone through $1"
+    return 0
+  fi
+  mkdir -p "$target/scripts"
+  (
+    umask 077
+    cp "$skill/scripts/$2" "$target/scripts/$2"
+    cp "$skill/.env" "$target/.env"
+  )
+  chmod 600 "$target/.env"
+  if /usr/bin/python3 "$target/scripts/$2" --check >/dev/null 2>&1; then
+    echo "setup: failures of the hourly run are pushed through $1"
+  else
+    echo "setup: the copied $1 sender reports an invalid configuration; run $target/scripts/$2 --check" >&2
+  fi
+}
+
 if [ "$job" = 1 ]; then
   scripts/fork/install-applet.sh
+  install_push_sender bark send.py
+  install_push_sender ntfy publish.py
 
   plist="$HOME/Library/LaunchAgents/$FORK_LAUNCHD_LABEL.plist"
   mkdir -p "$FORK_STATE_DIR/logs" "$(dirname "$plist")"

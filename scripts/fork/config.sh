@@ -8,6 +8,10 @@ FORK_APP_PATH="/Applications/$FORK_APP_NAME.app"
 # Build output, the staged app, and logs.
 FORK_STATE_DIR="${FORK_STATE_DIR:-$HOME/workspace/t3code-fork-build}"
 FORK_STAGED_APP="$FORK_STATE_DIR/staged/$FORK_APP_NAME.app"
+# Phone pushes for failures of the hourly run: setup.sh copies the bark and ntfy
+# skill senders from FORK_SKILLS_DIR to FORK_PUSH_DIR.
+FORK_SKILLS_DIR="${FORK_SKILLS_DIR:-$HOME/.pi/agent/skills}"
+FORK_PUSH_DIR="$FORK_STATE_DIR/push"
 # An Apple-issued identity from the login keychain. macOS ties the app's keychain
 # and privacy grants to its team, so they survive every rebuild.
 FORK_SIGN_IDENTITY="${FORK_SIGN_IDENTITY:-Apple Development: fabian.kliebhan@gmail.com (7VHQ3DW64R)}"
