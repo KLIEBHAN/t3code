@@ -23,22 +23,34 @@ cd "$(git rev-parse --show-toplevel)"
 # it when that process ends, however it ends.
 if [ "${FORK_UPDATE_LOCKED:-}" != 1 ]; then
   mkdir -p "$FORK_STATE_DIR/logs"
-  # A Mac that installs another Mac's builds moves these scripts to the commit
-  # of the app it is about to fetch, so an app never meets scripts older than
-  # itself. Away from the build host they stay with the app this Mac has. Here,
-  # before the locked run starts, no script is mid-read: bash has parsed this
-  # whole block already.
-  if [ -n "$FORK_BUILD_HOST" ]; then
+  # A Mac that installs another Mac's builds moves these scripts before it
+  # fetches, so an app never meets scripts older than itself: to the fork
+  # branch's head when that contains the app it is about to fetch, as on the
+  # build host, otherwise to the app's own commit. The head keeps script changes
+  # merged since the last build, such as a new applet, from going back until
+  # the next build. Away from the build host they stay with the app this Mac
+  # has. Here, before the locked run starts, no script is mid-read: bash has
+  # parsed this whole block already.
+  if [ -n "$FORK_BUILD_HOST" ] && [ "$(git branch --show-current)" = "$FORK_BRANCH" ]; then
     wanted="$(scripts/fork/fetch-app.sh --commit 2>/dev/null || true)"
     [ -n "$wanted" ] || wanted="$(fork_app_commit "$FORK_STAGED_APP")"
     [ -n "$wanted" ] || wanted="$(fork_app_commit "$FORK_APP_PATH")"
-    if [ -n "$wanted" ] && [ "$wanted" != "$(git rev-parse HEAD)" ] && [ "$(git branch --show-current)" = "$FORK_BRANCH" ]; then
-      if ! git fetch --quiet --depth 1 origin "$wanted"; then
-        echo "update: could not fetch the scripts of ${wanted:0:10}" >&2
-      # An app built before this Mac's role existed has no scripts for it; keep the current ones.
-      elif [ -n "$(git ls-tree --name-only FETCH_HEAD scripts/fork/fetch-app.sh)" ]; then
-        git checkout --quiet -B "$FORK_BRANCH" FETCH_HEAD || echo "update: could not move the scripts to ${wanted:0:10}" >&2
+    target=""
+    if [ -z "$wanted" ]; then
+      :
+    elif ! git fetch --quiet --depth 1 origin "$wanted"; then
+      echo "update: could not fetch the scripts of ${wanted:0:10}" >&2
+    else
+      target="$wanted"
+      # The checkout is shallow; 50 commits reach any recent build, and a build
+      # beyond them is treated as not contained, which keeps its commit.
+      if git fetch --quiet --depth 50 origin "$FORK_BRANCH" && git merge-base --is-ancestor "$wanted" FETCH_HEAD 2>/dev/null; then
+        target="$(git rev-parse FETCH_HEAD)"
       fi
+    fi
+    # An app built before this Mac's role existed has no scripts for it; keep the current ones.
+    if [ -n "$target" ] && [ "$target" != "$(git rev-parse HEAD)" ] && [ -n "$(git ls-tree --name-only "$target" scripts/fork/fetch-app.sh)" ]; then
+      git checkout --quiet -B "$FORK_BRANCH" "$target" || echo "update: could not move the scripts to ${target:0:10}" >&2
     fi
   fi
   status=0

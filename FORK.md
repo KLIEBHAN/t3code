@@ -94,7 +94,7 @@ scripts/fork/setup.sh --build-host <ssh host of the build Mac>
 scripts/fork/update.sh
 ```
 
-`setup.sh --build-host` stores the host in the checkout's git config (`fork.buildHost`) and installs the same launchd job. On such a Mac every hourly run asks the build Mac for its newest app, its waiting build if it has one. A new one is copied with `rsync`, checked with `codesign --verify`, and installed while the fork app is closed. A build Mac that is not reachable is skipped without a message. Before it fetches, a run moves the scripts to the commit of the app the build Mac offers.
+`setup.sh --build-host` stores the host in the checkout's git config (`fork.buildHost`) and installs the same launchd job. On such a Mac every hourly run asks the build Mac for its newest app, its waiting build if it has one. A new one is copied with `rsync`, checked with `codesign --verify`, and installed while the fork app is closed. A build Mac that is not reachable is skipped without a message. Before it fetches, a run moves the scripts to the head of `pi-prompt-suggestions` when that contains the app the build Mac offers, otherwise to that app's commit. So scripts merged after the last build stay, and an app never runs with scripts older than itself.
 
 Then follow [Switch from the official app](#switch-from-the-official-app).
 
