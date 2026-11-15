@@ -99,7 +99,11 @@ notify() {
 # leaves a line in the log.
 alert() {
   notify "$1"
-  [ "$scheduled" = 1 ] && [ -x "$FORK_PUSH_DIR/python3" ] || return 0
+  [ "$scheduled" = 1 ] || return 0
+  if [ ! -x "$FORK_PUSH_DIR/python3" ]; then
+    echo "update: no Python for phone pushes; run scripts/fork/setup.sh" >&2
+    return 0
+  fi
   local message
   message="$(scutil --get ComputerName 2>/dev/null || hostname -s): $1"
   if [ -f "$FORK_PUSH_DIR/bark/scripts/send.py" ]; then

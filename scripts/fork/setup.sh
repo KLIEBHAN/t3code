@@ -46,18 +46,22 @@ fi
 
 # Links $FORK_PUSH_DIR/python3 to the first Python 3.10 or newer, which the
 # skill senders need; macOS's /usr/bin/python3 is older. launchd's PATH has
-# only the system directories, so update.sh calls the link.
+# only the system directories, so update.sh calls the link. A Python in a
+# folder under the macOS privacy check would stall the job, so those are skipped.
 link_push_python() {
   local candidate
   for candidate in /opt/homebrew/bin/python3 /usr/local/bin/python3 "$(command -v python3 || true)" /usr/bin/python3; do
+    case "$candidate" in
+      "$HOME/Documents/"* | "$HOME/Desktop/"* | "$HOME/Downloads/"*) continue ;;
+    esac
     if [ -x "$candidate" ] && "$candidate" -c 'import sys; sys.exit(sys.version_info < (3, 10))' 2>/dev/null; then
-      mkdir -p "$FORK_PUSH_DIR"
-      ln -sfn "$candidate" "$FORK_PUSH_DIR/python3"
-      return 0
+      # Called as an if condition, where set -e is off.
+      mkdir -p "$FORK_PUSH_DIR" && ln -sfn "$candidate" "$FORK_PUSH_DIR/python3" && return 0
+      break
     fi
   done
   rm -f "$FORK_PUSH_DIR/python3"
-  echo "setup: no Python 3.10 or newer found; failures reach no phone" >&2
+  echo "setup: could not link a Python 3.10 or newer to $FORK_PUSH_DIR; failures reach no phone" >&2
   return 1
 }
 
