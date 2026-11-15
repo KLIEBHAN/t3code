@@ -3,8 +3,9 @@
 # exists. See FORK.md.
 #   1. A check that the signing identity from config.sh is in the keychain.
 #   2. The Dock applet for updates by hand, ~/Applications/T3 Code Fork Update.app.
-#   3. Copies of the bark and ntfy skill senders with their .env, through which
-#      the hourly run reports failures to the phone. Run setup.sh again when
+#   3. Copies of the bark and ntfy skill senders with their .env and a link to
+#      Python 3.10 or newer, through which the hourly run reports failures to
+#      the phone. Run setup.sh again when
 #      those credentials change.
 #   4. The launchd job that runs update.sh every hour from this checkout.
 #
@@ -43,6 +44,23 @@ if [ -z "$FORK_BUILD_HOST" ] && ! security find-identity -v -p codesigning | gre
   exit 1
 fi
 
+# Links $FORK_PUSH_DIR/python3 to the first Python 3.10 or newer, which the
+# skill senders need; macOS's /usr/bin/python3 is older. launchd's PATH has
+# only the system directories, so update.sh calls the link.
+link_push_python() {
+  local candidate
+  for candidate in /opt/homebrew/bin/python3 /usr/local/bin/python3 "$(command -v python3 || true)" /usr/bin/python3; do
+    if [ -x "$candidate" ] && "$candidate" -c 'import sys; sys.exit(sys.version_info < (3, 10))' 2>/dev/null; then
+      mkdir -p "$FORK_PUSH_DIR"
+      ln -sfn "$candidate" "$FORK_PUSH_DIR/python3"
+      return 0
+    fi
+  done
+  rm -f "$FORK_PUSH_DIR/python3"
+  echo "setup: no Python 3.10 or newer found; failures reach no phone" >&2
+  return 1
+}
+
 # Copies the sender $2 of skill $1 and the skill's .env to $FORK_PUSH_DIR/$1,
 # where update.sh finds it. The launchd job must not read the skills
 # themselves: they live in ~/Documents, where every access goes through the
@@ -60,7 +78,7 @@ install_push_sender() {
     cp "$skill/.env" "$target/.env"
   )
   chmod 600 "$target/.env"
-  if /usr/bin/python3 "$target/scripts/$2" --check >/dev/null 2>&1; then
+  if "$FORK_PUSH_DIR/python3" "$target/scripts/$2" --check >/dev/null 2>&1; then
     echo "setup: failures of the hourly run are pushed through $1"
   else
     echo "setup: the copied $1 sender reports an invalid configuration; run $target/scripts/$2 --check" >&2
@@ -69,8 +87,10 @@ install_push_sender() {
 
 if [ "$job" = 1 ]; then
   scripts/fork/install-applet.sh
-  install_push_sender bark send.py
-  install_push_sender ntfy publish.py
+  if link_push_python; then
+    install_push_sender bark send.py
+    install_push_sender ntfy publish.py
+  fi
 
   plist="$HOME/Library/LaunchAgents/$FORK_LAUNCHD_LABEL.plist"
   mkdir -p "$FORK_STATE_DIR/logs" "$(dirname "$plist")"
