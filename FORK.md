@@ -76,7 +76,7 @@ launchd starts `scripts/fork/update.sh --scheduled` at minute 30 of every hour. 
 
 1. It merges the newest `v*-nightly.*` tag in a scratch worktree, `~/workspace/t3code-fork-build/sync-worktree`.
 2. It accepts the merge only if the result differs from the tag in fork-owned paths alone, the tests of both patches pass, and both packages typecheck.
-3. On a conflict or a failed check, a model gets one attempt to repair the merge (`scripts/fork/merge-prompt.md`, run through `pi --print` with the model in `config.sh`). Its result has to pass step 2 like any other merge. The list of fork-owned paths is read before the merge, so the repair cannot widen it.
+3. On a conflict or a failed check, a model gets one attempt to repair the merge (`scripts/fork/merge-prompt.md`, run through `pi --print` with `cpa/cpa-worker-plus`, or `FORK_MERGE_MODEL` if set). Its result has to pass step 2 like any other merge. The list of fork-owned paths is read before the merge, so the repair cannot widen it.
 4. Only then does `pi-prompt-suggestions` move forward, and the script pushes it to `origin`. A push that fails is retried by the next run.
 
 When a sync fails, the branch and the installed app stay as they were, and the attempt stays in the scratch worktree with `sync-report.txt` beside it until the next run. To finish it by hand, merge the tag on `pi-prompt-suggestions`, keep the behavior described under [Patches](#patches), run the commands from `sync-upstream.sh`, and push.
