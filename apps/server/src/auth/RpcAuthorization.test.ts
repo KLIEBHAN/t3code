@@ -17,6 +17,7 @@ import {
   AuthTerminalOperateScope,
   WS_METHODS,
   WsRpcGroup,
+  clientRpcRequiredScopes,
 } from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -50,6 +51,16 @@ describe("RPC authorization scopes", () => {
     expect(requiredScopeForRpcMethod(WS_METHODS.serverPrepareTriage)).toBe(
       AuthOrchestrationOperateScope,
     );
+  });
+
+  // Fork: draft completion.
+  it("keeps draft completion, which spends model requests, behind operate scope on server and client", () => {
+    expect(requiredScopeForRpcMethod(WS_METHODS.serverCompleteDraft)).toBe(
+      AuthOrchestrationOperateScope,
+    );
+    expect(clientRpcRequiredScopes(WS_METHODS.serverCompleteDraft, { draft: "Run" })).toEqual([
+      AuthOrchestrationOperateScope,
+    ]);
   });
 
   it("separates passive terminal observation from operations that can change a shell", () => {

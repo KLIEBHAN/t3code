@@ -23,3 +23,5 @@ apps/server/src/ws.ts
 apps/server/src/ws.test.ts
 apps/server/src/auth/RpcAuthorization.ts
 apps/server/src/observability/RpcInstrumentation.ts
+packages/contracts/src/clientRpcPermissions.ts
+apps/server/src/auth/RpcAuthorization.test.ts
