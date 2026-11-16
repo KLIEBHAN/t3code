@@ -26,7 +26,7 @@ FORK_BUILD_HOST="${FORK_BUILD_HOST:-$(git config --get fork.buildHost || true)}"
 # Pi arguments for the model that repairs a failed merge.
 FORK_MERGE_PI_ARGS=(
   --no-extensions -e "$HOME/.pi/agent/extensions/cpa.ts"
-  --model "${FORK_MERGE_MODEL:-cpa/claude-opus-5-5}" --thinking high
+  --model "${FORK_MERGE_MODEL:-cpa/cpa-worker-plus}" --thinking high
 )
 FORK_MERGE_TIMEOUT_SECONDS=1800
 
