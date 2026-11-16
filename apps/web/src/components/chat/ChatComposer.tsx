@@ -286,6 +286,7 @@ import { composerCommandKeyHandler } from "./composerCommandKey";
 import { usePromptSuggestion } from "./usePromptSuggestion";
 // Fork: completion of the draft as the user types.
 import { useDraftCompletion } from "./useDraftCompletion";
+import { DRAFT_COMPLETION_MAX_CONTEXT_CHARS } from "@t3tools/contracts";
 import { useServerConfigs } from "../../state/entities";
 import { useFreshSessionArmed } from "./freshSessionArms";
 
@@ -2333,10 +2334,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     for (let index = promptHistoryEntries.length - 1; index >= 0; index -= 1) {
       const entry = promptHistoryEntries[index];
       if (entry?.kind !== "message" || entry.message.streaming) continue;
-      if (lastUser === undefined && entry.message.role === "user") lastUser = entry.message.text;
-      if (lastAssistant === undefined && entry.message.role === "assistant") {
-        lastAssistant = entry.message.text;
-      }
+      // The end of a long message is the part the next prompt follows.
+      const text = entry.message.text.slice(-DRAFT_COMPLETION_MAX_CONTEXT_CHARS);
+      if (lastUser === undefined && entry.message.role === "user") lastUser = text;
+      if (lastAssistant === undefined && entry.message.role === "assistant") lastAssistant = text;
       if (lastUser !== undefined && lastAssistant !== undefined) break;
     }
     return {
@@ -2350,6 +2351,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       : null;
   const draftCompletion = useDraftCompletion({
     environmentId,
+    targetKey: composerDraftTargetKey,
     draft: prompt,
     enabled: promptSuggestionsEnabled && composerOffersSuggestions && nextPromptGhost === null,
     readContext: readDraftCompletionContext,
