@@ -93,6 +93,15 @@ describe("composer ghost text", () => {
     await vi.waitFor(() => expect(ghost()).toBeNull());
   });
 
+  it("compares the draft with its Markdown, as Tab accepts it", async () => {
+    await using screen = await mount("Run **all** tests again");
+    const { ghost, editor } = screen;
+    await userEvent.keyboard("Run **all** ");
+    await vi.waitFor(() => expect(ghost()).toBe("tests again"));
+    // The asterisks became bold, so the plain text lacks them.
+    expect(editor.state.doc.textContent).toBe("Run all ");
+  });
+
   it("shows nothing without a suggestion", async () => {
     await using screen = await mount(null);
     const { ghost } = screen;

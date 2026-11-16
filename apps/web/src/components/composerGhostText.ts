@@ -2,6 +2,8 @@ import { Extension } from "@tiptap/core";
 import { type EditorState, Plugin, PluginKey, TextSelection } from "@tiptap/pm/state";
 import { Decoration, DecorationSet, type EditorView } from "@tiptap/pm/view";
 
+import { serializeEditorDoc } from "~/composer-rich-text-doc";
+
 /**
  * The part of `suggestion` still to type when `draft` is its start, or null.
  * An empty draft gets null: the composer then shows the whole suggestion as its placeholder.
@@ -19,11 +21,14 @@ export function nextComposerGhostWord(remainder: string): string {
 const ghostTextKey = new PluginKey<string | null>("composer-ghost-text");
 
 function ghostDecorations(state: EditorState, suggestion: string | null): DecorationSet {
+  if (suggestion === null) return DecorationSet.empty;
   const { doc, selection } = state;
   const end = TextSelection.atEnd(doc).to;
   if (!selection.empty || selection.head !== end) return DecorationSet.empty;
-  // Read from the document, not the prompt prop: the prop lags a keystroke behind.
-  const remainder = composerGhostRemainder(doc.textBetween(0, doc.content.size, "\n"), suggestion);
+  // The draft as the composer serializes it, Markdown included, so the ghost
+  // matches what Tab accepts. Read from the document, not the prompt prop,
+  // which lags a keystroke behind.
+  const remainder = composerGhostRemainder(serializeEditorDoc(doc).value, suggestion);
   if (remainder === null) return DecorationSet.empty;
   const widget = Decoration.widget(
     end,
