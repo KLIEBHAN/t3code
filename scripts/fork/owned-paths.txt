@@ -6,3 +6,9 @@ packages/provider-pi/src/server/adapter.ts
 packages/provider-pi/src/server/adapter.test.ts
 apps/desktop/src/app/DesktopUserData.ts
 apps/desktop/src/app/DesktopUserData.test.ts
+apps/web/src/components/composerGhostText.ts
+apps/web/src/components/composerGhostText.test.ts
+apps/web/src/components/composerGhostText.browser.test.tsx
+apps/web/src/components/ComposerPromptEditorTiptap.tsx
+apps/web/src/components/chat/composerCommandKey.ts
+apps/web/src/components/chat/ChatComposer.tsx
