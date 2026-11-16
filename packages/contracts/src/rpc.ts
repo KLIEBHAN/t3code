@@ -344,6 +344,7 @@ import {
   ServerUpsertKeybindingInput,
   ServerUpsertKeybindingResult,
 } from "./server.ts";
+import { DraftCompletionInput, DraftCompletionResult } from "./draftCompletion.ts";
 import {
   HostResourcesSnapshot,
   ResourceTelemetryHistory,
@@ -543,6 +544,8 @@ export const WS_METHODS = {
   serverGetHostResources: "server.getHostResources",
   serverGetProcessResourceHistory: "server.getProcessResourceHistory",
   serverGetResourceTelemetryHistory: "server.getResourceTelemetryHistory",
+  // Fork: completes the composer draft as the user types.
+  serverCompleteDraft: "server.completeDraft",
   serverRetryResourceTelemetry: "server.retryResourceTelemetry",
   serverCheckOtlpEndpoint: "server.checkOtlpEndpoint",
   serverListTextGeneratorModels: "server.listTextGeneratorModels",
@@ -1001,6 +1004,13 @@ const WsServerGetResourceTelemetryHistoryRpc = Rpc.make(
 const WsServerRetryResourceTelemetryRpc = Rpc.make(WS_METHODS.serverRetryResourceTelemetry, {
   payload: Schema.Struct({}),
   success: ResourceTelemetryRetryResult,
+  error: EnvironmentAuthorizationError,
+});
+
+// Fork: completes the composer draft as the user types.
+const WsServerCompleteDraftRpc = Rpc.make(WS_METHODS.serverCompleteDraft, {
+  payload: DraftCompletionInput,
+  success: DraftCompletionResult,
   error: EnvironmentAuthorizationError,
 });
 
@@ -2165,6 +2175,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerGetHostResourcesRpc,
   WsServerGetProcessResourceHistoryRpc,
   WsServerGetResourceTelemetryHistoryRpc,
+  WsServerCompleteDraftRpc,
   WsServerRetryResourceTelemetryRpc,
   WsServerCheckOtlpEndpointRpc,
   WsServerListTextGeneratorModelsRpc,

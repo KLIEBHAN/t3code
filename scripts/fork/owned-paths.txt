@@ -12,3 +12,14 @@ apps/web/src/components/composerGhostText.browser.test.tsx
 apps/web/src/components/ComposerPromptEditorTiptap.tsx
 apps/web/src/components/chat/composerCommandKey.ts
 apps/web/src/components/chat/ChatComposer.tsx
+packages/provider-pi/src/server/draftCompletion.ts
+packages/provider-pi/src/server/draftCompletion.test.ts
+packages/provider-pi/package.json
+packages/contracts/src/draftCompletion.ts
+packages/contracts/src/index.ts
+packages/contracts/src/rpc.ts
+apps/server/src/draftCompletion/
+apps/server/src/ws.ts
+apps/server/src/ws.test.ts
+apps/server/src/auth/RpcAuthorization.ts
+apps/server/src/observability/RpcInstrumentation.ts
