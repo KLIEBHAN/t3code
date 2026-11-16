@@ -94,25 +94,39 @@ notify() {
   osascript -e 'on run argv' -e 'display notification (item 1 of argv) with title "T3 Code (Fork)"' -e 'end run' "$1" >/dev/null 2>&1 || true
 }
 
-# A failure: the banner, and in a scheduled run, which nobody watches, also a
-# push to the phone through the senders setup.sh copied. A push that fails
-# leaves a line in the log.
-alert() {
-  notify "$1"
+# Sends $3 with the Mac's name to the phone through the senders setup.sh
+# copied: Bark with event $1, ntfy with priority $2. Only scheduled runs push;
+# nobody watches them. A push that fails leaves a line in the log.
+push() {
   [ "$scheduled" = 1 ] || return 0
   if [ ! -x "$FORK_PUSH_DIR/python3" ]; then
     echo "update: no Python for phone pushes; run scripts/fork/setup.sh" >&2
     return 0
   fi
   local message
-  message="$(scutil --get ComputerName 2>/dev/null || hostname -s): $1"
+  message="$(scutil --get ComputerName 2>/dev/null || hostname -s): $3"
   if [ -f "$FORK_PUSH_DIR/bark/scripts/send.py" ]; then
-    "$FORK_PUSH_DIR/python3" "$FORK_PUSH_DIR/bark/scripts/send.py" --event fehler --title "$FORK_APP_NAME" --message "$message" >/dev/null 2>&1 ||
+    "$FORK_PUSH_DIR/python3" "$FORK_PUSH_DIR/bark/scripts/send.py" --event "$1" --title "$FORK_APP_NAME" --message "$message" >/dev/null 2>&1 ||
       echo "update: the Bark push failed" >&2
   fi
   if [ -f "$FORK_PUSH_DIR/ntfy/scripts/publish.py" ]; then
-    "$FORK_PUSH_DIR/python3" "$FORK_PUSH_DIR/ntfy/scripts/publish.py" --priority 4 --title "$FORK_APP_NAME" --message "$message" >/dev/null 2>&1 ||
+    "$FORK_PUSH_DIR/python3" "$FORK_PUSH_DIR/ntfy/scripts/publish.py" --priority "$2" --title "$FORK_APP_NAME" --message "$message" >/dev/null 2>&1 ||
       echo "update: the ntfy push failed" >&2
+  fi
+}
+
+# A failure: the banner, and in a scheduled run also a push.
+alert() {
+  notify "$1"
+  push fehler 4 "$1"
+}
+
+# "Nightly 4774 vom 16.11.2026" for "0.1.10-nightly.20261116.4774"; other versions unchanged.
+version_label() {
+  if [[ "$1" =~ -nightly\.([0-9]{4})([0-9]{2})([0-9]{2})\.([0-9]+)$ ]]; then
+    echo "Nightly ${BASH_REMATCH[4]} vom ${BASH_REMATCH[3]}.${BASH_REMATCH[2]}.${BASH_REMATCH[1]}"
+  else
+    echo "$1"
   fi
 }
 
@@ -161,7 +175,12 @@ elif [ "$full" = 1 ]; then
   fi
   head="$(git rev-parse HEAD)"
   if [ "$(fork_app_commit "$FORK_STAGED_APP")" != "$head" ] && [ "$(fork_app_commit "$FORK_APP_PATH")" != "$head" ]; then
-    if ! scripts/fork/build-app.sh; then
+    if scripts/fork/build-app.sh; then
+      # One push per build reaches the phone for every Mac: only this Mac
+      # builds, at most once a day, and the others fetch from it.
+      built="$(plutil -extract CFBundleShortVersionString raw "$FORK_STAGED_APP/Contents/Info.plist" 2>/dev/null || true)"
+      push info 3 "Neuer Build${built:+: $(version_label "$built")}. Installieren mit „T3 Code Fork Update“, sonst nachts, sobald kein Thread läuft."
+    else
       status=1
       alert "Der Build ist fehlgeschlagen. Log: $FORK_STATE_DIR/logs"
     fi
