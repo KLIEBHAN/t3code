@@ -4,6 +4,8 @@ import {
   type ComposerDispatchMode,
   resolveComposerDispatchMode,
 } from "@t3tools/client-runtime/state/composer-dispatch";
+// Fork: partial and in-draft acceptance of the prompt suggestion.
+import { composerGhostRemainder, nextComposerGhostWord } from "../composerGhostText";
 import { type ComposerPromptEditorHandle } from "../ComposerPromptEditorTiptap";
 import {
   type ComposerPromptHistoryMentions,
@@ -96,7 +98,11 @@ export function composerCommandKeyHandler(input: {
     dispatchMode: ComposerDispatchMode,
     submissionIntent: ComposerSubmissionIntent,
   ) => void;
-  /** Predicted next prompt that Tab fills into an empty composer; Escape dismisses it. */
+  /**
+   * Predicted next prompt. In an empty composer, or while the draft is its start
+   * and the caret at the draft's end, Tab fills in the rest, Alt+Right the next
+   * word, and Escape dismisses it.
+   */
   readonly promptSuggestion: string | null;
   readonly dismissPromptSuggestion: () => void;
 }) {
@@ -221,6 +227,23 @@ export function composerCommandKeyHandler(input: {
     );
   };
 
+  // Fork: what Tab would add to the draft: the whole suggestion in an empty composer,
+  // its rest while the draft is its start and the caret at the end, else null.
+  const pendingPromptSuggestion = (): string | null => {
+    if (promptSuggestion === null) return null;
+    const prompt = promptRef.current;
+    if (prompt.length === 0) return promptSuggestion;
+    const remainder = composerGhostRemainder(prompt, promptSuggestion);
+    if (remainder === null) return null;
+    const selection = composerEditorRef.current?.readSelectionRange();
+    const atEnd =
+      selection !== undefined &&
+      selection.start === selection.end &&
+      selection.end === prompt.length &&
+      readComposerSnapshot().value === prompt;
+    return atEnd ? remainder : null;
+  };
+
   const onComposerCommandKey = (key: string, event: KeyboardEvent, isTaskItem = false) => {
     const submissionIntent = composerSubmissionIntentForKey({
       event,
@@ -240,7 +263,7 @@ export function composerCommandKeyHandler(input: {
       !isLiteralPendingAnswer && (composerMenuOpenRef.current || trigger !== null);
     if (key === "Escape") {
       if (event.isComposing || event.keyCode === 229) return false;
-      if (!menuIsActive && promptSuggestion !== null && promptRef.current.length === 0) {
+      if (!menuIsActive && pendingPromptSuggestion() !== null) {
         dismissPromptSuggestion();
         return true;
       }
@@ -265,20 +288,25 @@ export function composerCommandKeyHandler(input: {
         return true;
       }
     }
-    if (
-      key === "Tab" &&
-      promptSuggestion !== null &&
-      promptRef.current.length === 0 &&
+    // Fork: Tab accepts the pending suggestion, Alt+Right its next word.
+    const acceptsSuggestion =
+      (key === "Tab" || key === "ArrowRight") &&
       !menuIsActive &&
       !event.shiftKey &&
-      !event.altKey &&
+      (key === "Tab" ? !event.altKey : event.altKey) &&
       !event.metaKey &&
       !event.ctrlKey &&
       !event.isComposing &&
-      event.keyCode !== 229
-    ) {
+      event.keyCode !== 229;
+    const pending = acceptsSuggestion ? pendingPromptSuggestion() : null;
+    if (pending !== null) {
+      const end = promptRef.current.length;
       // The typing guard must see this draft, so an approval that lands next is not answered with it.
-      return applyPromptReplacement(0, 0, promptSuggestion);
+      return applyPromptReplacement(
+        end,
+        end,
+        key === "Tab" ? pending : nextComposerGhostWord(pending),
+      );
     }
     if ((key === "ArrowUp" || key === "ArrowDown") && submissionIntent === null) {
       return navigatePromptHistory(key === "ArrowUp" ? "backward" : "forward", event);

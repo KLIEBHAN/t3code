@@ -1,12 +1,13 @@
 # Fork: Pi prompt suggestions
 
-This fork of [pingdotgg/t3code](https://github.com/pingdotgg/t3code) adds one feature: **Suggest next prompt** (Settings > Labs) works for Pi threads as well as Claude and Codex threads. Branch `pi-prompt-suggestions` follows the upstream nightly tags. It builds a macOS app, **T3 Code (Fork)**, that takes the official app's place on a Mac and uses the same data.
+This fork of [pingdotgg/t3code](https://github.com/pingdotgg/t3code) extends **Suggest next prompt** (Settings > Labs): it works for Pi threads as well as Claude and Codex threads, and a suggestion can be accepted in parts while typing. Branch `pi-prompt-suggestions` follows the upstream nightly tags. It builds a macOS app, **T3 Code (Fork)**, that takes the official app's place on a Mac and uses the same data.
 
 ## Patches
 
 The fork differs from upstream only in the paths listed in `scripts/fork/owned-paths.txt`. Each change to upstream code is marked `Fork:` or covered by a test named below.
 
 - **Pi suggestions** (`packages/provider-pi/src/server/adapter.ts`): upstream's Pi adapter ignores the `set_editor_text` call that Pi extensions use to prefill the input. After a completed turn the fork turns that call into the `prompt_suggestion.updated` event Claude and Codex emit, under the same rules: the Labs setting is on, no turn is running, and the thread is not delegated. Test: `offers extension editor text after a completed turn as the next prompt`.
+- **Suggestion while typing** (`apps/web/src/components/composerGhostText.ts`, wired into `ComposerPromptEditorTiptap.tsx`, `chat/composerCommandKey.ts`, and `chat/ChatComposer.tsx`): upstream shows a suggestion only as the placeholder of an empty composer. In the fork its rest stays in grey after the caret while the draft is its start and the caret at the end. **Tab** fills in the rest, **Alt+Right** the next word, and **Escape** dismisses it, in an empty composer as before and now also mid-draft. Tests: `composerGhostText.test.ts`, `composerGhostText.browser.test.tsx`.
 - **Own browser profile for another T3 home** (`apps/desktop/src/app/DesktopUserData.ts`): on macOS, an app started with `T3CODE_HOME` set to something other than `~/.t3` keeps its Chromium profile in `<T3 home>/desktop-profile`. Upstream uses one fixed profile, which also holds the single-instance lock. With the patch, a build can be tried on a copy of the data while the daily app runs; see [Try a build on a copy of the data](#try-a-build-on-a-copy-of-the-data). Test: `keeps a separate profile on macOS for a T3 home other than ~/.t3`.
 
 The suggestion text comes from the Pi extension [`@kliebhan/pi-prompt-autocomplete`](https://github.com/KLIEBHAN/pi-extensions/tree/main/extensions/prompt-autocomplete) with `--prompt-autocomplete-next-prompt`. After each settled turn it requests one predicted prompt and sends it with `set_editor_text`.

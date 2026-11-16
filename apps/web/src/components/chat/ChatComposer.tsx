@@ -3657,6 +3657,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                               ? "Enable a provider in Settings to send a message"
                               : (offeredPromptSuggestion ?? DEFAULT_COMPOSER_PLACEHOLDER)
                     }
+                    // Fork: the rest of the suggestion stays visible while the draft is its start.
+                    ghostSuggestion={offeredPromptSuggestion}
                     placeholderSuffix={
                       offeredPromptSuggestion !== null ? (
                         <span className="ml-2 inline-flex align-[1px]">

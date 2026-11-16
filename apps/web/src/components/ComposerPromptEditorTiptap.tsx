@@ -119,6 +119,8 @@ import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { primaryServerKeybindingsAtom } from "~/state/server";
 import { hasCommandForKeyDown } from "~/shortcuts/dispatcher";
 import { basenameOfPath } from "~/pierre-icons";
+// Fork: ghost text for the rest of a prompt suggestion.
+import { ComposerGhostTextExtension, setComposerGhostSuggestion } from "./composerGhostText";
 import { WorkspaceEntryTooltip } from "./chat/WorkspaceEntryIcon";
 import { FileTagChipContent } from "./chat/FileTagChip";
 import { SkillChipPopover, skillPopoverDescription } from "./chat/SkillInlineText";
@@ -178,6 +180,8 @@ export interface ComposerPromptEditorProps {
   placeholder: string;
   /** Rendered after the placeholder text, such as a key hint. */
   placeholderSuffix?: ReactNode;
+  /** Fork: prompt suggestion whose rest shows in grey after the caret while the draft is its start. */
+  ghostSuggestion?: string | null;
   ariaLabel?: string | undefined;
   suggestionListId?: string | undefined;
   activeSuggestionId?: string | undefined;
@@ -842,6 +846,8 @@ function createComposerExtensions(richText: boolean) {
     ComposerCitationExtension,
     ComposerContextReferenceExtension,
     ComposerChipSelectionExtension,
+    // Fork: ghost text for the rest of a prompt suggestion.
+    ComposerGhostTextExtension,
     ...(richText
       ? [
           ComposerMarkdownSourceExtension,
@@ -946,6 +952,7 @@ function ComposerPromptEditorTiptapInner(
     className,
     placeholderClassName,
     placeholderSuffix,
+    ghostSuggestion = null,
     onChange,
     onVisibleSelectionChange,
     onCommandKeyDown,
@@ -1520,6 +1527,21 @@ function ComposerPromptEditorTiptapInner(
   useEffect(() => {
     editor?.setEditable(!disabled);
   }, [disabled, editor]);
+
+  // Fork: a suggestion that arrives before the editor's view exists waits for its creation.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- pushes the ghost suggestion into the ProseMirror plugin state before paint
+  useLayoutEffect(() => {
+    if (!editor) return;
+    const push = () => setComposerGhostSuggestion(editor.view, ghostSuggestion);
+    if (editor.isInitialized) {
+      push();
+      return;
+    }
+    editor.on("create", push);
+    return () => {
+      editor.off("create", push);
+    };
+  }, [editor, ghostSuggestion]);
 
   // Push attributes before layout measurements; Tiptap updates them later in a passive effect.
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- pushes DOM attributes into the ProseMirror view before layout measurements read them
