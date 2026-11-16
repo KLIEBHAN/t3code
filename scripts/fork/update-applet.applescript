@@ -11,6 +11,7 @@ property maxWaitSeconds : 3600
 property totalSteps : 4
 -- Seconds an unanswered dialog stays open; see showDialog().
 property dialogTimeout : 600
+property upstreamReleases : "https://github.com/pingdotgg/t3code/releases/tag/v"
 
 on run
 	set summary to runInBackground("")
@@ -78,17 +79,27 @@ on confirmRestart(currentVersion, newVersion, runs)
 	set headline to "Update bereit" & return & versionLabel(currentVersion) & "  →  " & versionLabel(newVersion) & return & return
 	if runs is "0" then
 		set question to headline & "Die App wird dafür kurz beendet und wieder gestartet. Gerade läuft kein Thread."
-		set preferred to "Jetzt neu starten"
 	else if runs is "" then
 		-- manual-update.sh leaves the count empty when it cannot read it.
 		set question to headline & "Ob gerade Threads laufen, lässt sich nicht feststellen; ein Neustart würde sie unterbrechen." & return & return & "Ohne Neustart installiert der nächtliche Lauf das Update, sobald kein Thread mehr läuft."
-		set preferred to "Später"
 	else
 		set question to headline & threadsText(runs) & " gerade; ein Neustart unterbricht sie. Unterstützte Threads laufen danach weiter." & return & return & "Ohne Neustart installiert der nächtliche Lauf das Update, sobald kein Thread mehr läuft."
-		set preferred to "Später"
 	end if
-	-- No answer counts as "Später": the nightly run installs the build.
-	return showDialog(question, {"Später", "Jetzt neu starten"}, preferred, dialogIcon()) is "Jetzt neu starten"
+	-- "Später" is preselected because the dialog comes to the front while the
+	-- user may be typing elsewhere, and Return must not restart the app. No
+	-- answer counts as "Später" too: the nightly run installs the build.
+	-- "Was ist neu?" opens upstream's release notes and asks again.
+	if newVersion is "" then
+		set choices to {"Später", "Jetzt neu starten"}
+	else
+		set choices to {"Was ist neu?", "Später", "Jetzt neu starten"}
+	end if
+	repeat
+		set answer to showDialog(question, choices, "Später", dialogIcon())
+		if answer is not "Was ist neu?" then exit repeat
+		open location upstreamReleases & newVersion
+	end repeat
+	return answer is "Jetzt neu starten"
 end confirmRestart
 
 -- Shows a dialog in front of the other apps and returns the clicked button, or
