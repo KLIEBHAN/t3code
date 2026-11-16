@@ -9,6 +9,8 @@ property stateDir : "@STATE@"
 property appTitle : "T3 Code (Fork)"
 property maxWaitSeconds : 3600
 property totalSteps : 4
+-- Seconds an unanswered dialog stays open; see showDialog().
+property dialogTimeout : 600
 
 on run
 	set summary to runInBackground("")
@@ -85,9 +87,21 @@ on confirmRestart(currentVersion, newVersion, runs)
 		set question to headline & threadsText(runs) & " gerade; ein Neustart unterbricht sie. Unterstützte Threads laufen danach weiter." & return & return & "Ohne Neustart installiert der nächtliche Lauf das Update, sobald kein Thread mehr läuft."
 		set preferred to "Später"
 	end if
-	set answer to button returned of (display dialog question with title appTitle buttons {"Später", "Jetzt neu starten"} default button preferred with icon dialogIcon())
-	return answer is "Jetzt neu starten"
+	-- No answer counts as "Später": the nightly run installs the build.
+	return showDialog(question, {"Später", "Jetzt neu starten"}, preferred, dialogIcon()) is "Jetzt neu starten"
 end confirmRestart
+
+-- Shows a dialog in front of the other apps and returns the clicked button, or
+-- "" when nobody answers within dialogTimeout seconds. The applet runs in the
+-- background while the update works, and macOS holds back a background app's
+-- dialog until that app comes to the front, so it activates itself first. The
+-- time limit ends the applet even if macOS refuses that.
+on showDialog(message, buttonList, preferred, iconSpec)
+	activate
+	set answer to display dialog message with title appTitle buttons buttonList default button preferred with icon iconSpec giving up after dialogTimeout
+	if gave up of answer then return ""
+	return button returned of answer
+end showDialog
 
 on threadsText(runs)
 	if runs is "1" then return "1 Thread läuft"
@@ -146,17 +160,18 @@ end valueOf
 
 on report(state, versionText)
 	if state is "installed" then
-		display dialog "Aktualisiert" & return & versionLabel(versionText) & return & return & "Die neue Version ist installiert." with title appTitle buttons {"OK"} default button "OK" with icon dialogIcon()
+		showDialog("Aktualisiert" & return & versionLabel(versionText) & return & return & "Die neue Version ist installiert.", {"OK"}, "OK", dialogIcon())
 	else if state is "current" then
-		display dialog "Alles aktuell" & return & versionLabel(versionText) & return & return & "Es gibt keine neuere Upstream-Version." with title appTitle buttons {"OK"} default button "OK" with icon dialogIcon()
+		showDialog("Alles aktuell" & return & versionLabel(versionText) & return & return & "Es gibt keine neuere Upstream-Version.", {"OK"}, "OK", dialogIcon())
 	else if state is "waiting" then
-		display dialog "Update wartet" & return & versionLabel(versionText) & return & return & "Es wird installiert, sobald die App beendet ist oder nachts kein Thread läuft." with title appTitle buttons {"OK"} default button "OK" with icon dialogIcon()
+		showDialog("Update wartet" & return & versionLabel(versionText) & return & return & "Es wird installiert, sobald die App beendet ist oder nachts kein Thread läuft.", {"OK"}, "OK", dialogIcon())
 	else if state is "slow" then
-		display dialog "Update läuft noch" & return & return & "Es läuft seit über einer Stunde und wird im Hintergrund fortgesetzt. Ob es durchkam, steht im Log." with title appTitle buttons {"OK"} default button "OK" with icon dialogIcon()
+		showDialog("Update läuft noch" & return & return & "Es läuft seit über einer Stunde und wird im Hintergrund fortgesetzt. Ob es durchkam, steht im Log.", {"OK"}, "OK", dialogIcon())
 	else if state is "busy" then
-		display dialog "Update läuft bereits" & return & return & "Ein anderes Update ist gerade aktiv. Versuche es in ein paar Minuten noch einmal." with title appTitle buttons {"OK"} default button "OK" with icon dialogIcon()
+		showDialog("Update läuft bereits" & return & return & "Ein anderes Update ist gerade aktiv. Versuche es in ein paar Minuten noch einmal.", {"OK"}, "OK", dialogIcon())
 	else
-		set answer to button returned of (display dialog "Update fehlgeschlagen" & return & return & "Die installierte App bleibt unverändert. Details stehen im Log." with title appTitle buttons {"Log öffnen", "OK"} default button "OK" with icon caution)
-		if answer is "Log öffnen" then do shell script "open " & quoted form of (stateDir & "/logs/update.log")
+		if showDialog("Update fehlgeschlagen" & return & return & "Die installierte App bleibt unverändert. Details stehen im Log.", {"Log öffnen", "OK"}, "OK", caution) is "Log öffnen" then
+			do shell script "open " & quoted form of (stateDir & "/logs/update.log")
+		end if
 	end if
 end report
