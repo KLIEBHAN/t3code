@@ -284,6 +284,9 @@ import {
 import { ComposerControlsBar } from "./ComposerControlsBar";
 import { composerCommandKeyHandler } from "./composerCommandKey";
 import { usePromptSuggestion } from "./usePromptSuggestion";
+// Fork: completion of the draft as the user types.
+import { useDraftCompletion } from "./useDraftCompletion";
+import { useServerConfigs } from "../../state/entities";
 import { useFreshSessionArmed } from "./freshSessionArms";
 
 function consumePasteAsTextShortcut(deadline: { current: number }): boolean {
@@ -2309,7 +2312,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   // After /clear the next message starts a fresh session that cannot see what the suggestion refers to.
   const freshSessionArmed = useFreshSessionArmed(scopedThreadKey(routeThreadRef));
   // Offered only where the default placeholder would show, so it never hides a pending question.
-  const offeredPromptSuggestion =
+  const composerOffersSuggestions =
     phase !== "running" &&
     !isSendBusy &&
     !freshSessionArmed &&
@@ -2318,9 +2321,43 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     !isComposerApprovalState &&
     !activePendingProgress &&
     !projectSelectionRequired &&
-    !showProviderUnavailable
-      ? promptSuggestion
+    !showProviderUnavailable;
+  const offeredPromptSuggestion = composerOffersSuggestions ? promptSuggestion : null;
+  // Fork: while the draft does not start the next-prompt suggestion, the ghost
+  // text and its keys complete the draft instead.
+  const promptSuggestionsEnabled =
+    useServerConfigs().get(environmentId)?.settings.promptSuggestionsEnabled === true;
+  const readDraftCompletionContext = () => {
+    let lastUser: string | undefined;
+    let lastAssistant: string | undefined;
+    for (let index = promptHistoryEntries.length - 1; index >= 0; index -= 1) {
+      const entry = promptHistoryEntries[index];
+      if (entry?.kind !== "message" || entry.message.streaming) continue;
+      if (lastUser === undefined && entry.message.role === "user") lastUser = entry.message.text;
+      if (lastAssistant === undefined && entry.message.role === "assistant") {
+        lastAssistant = entry.message.text;
+      }
+      if (lastUser !== undefined && lastAssistant !== undefined) break;
+    }
+    return {
+      ...(lastUser === undefined ? {} : { lastUser }),
+      ...(lastAssistant === undefined ? {} : { lastAssistant }),
+    };
+  };
+  const nextPromptGhost =
+    offeredPromptSuggestion !== null && offeredPromptSuggestion.startsWith(prompt)
+      ? offeredPromptSuggestion
       : null;
+  const draftCompletion = useDraftCompletion({
+    environmentId,
+    draft: prompt,
+    enabled: promptSuggestionsEnabled && composerOffersSuggestions && nextPromptGhost === null,
+    readContext: readDraftCompletionContext,
+  });
+  const composerSuggestion =
+    nextPromptGhost ?? (composerOffersSuggestions ? draftCompletion.suggestion : null);
+  const dismissComposerSuggestion =
+    nextPromptGhost !== null ? dismissPromptSuggestion : draftCompletion.dismiss;
 
   const onComposerCommandKey = (key: string, event: KeyboardEvent, isTaskItem?: boolean) =>
     composerCommandKeyHandler({
@@ -2360,8 +2397,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       readComposerSnapshot,
       applyPromptReplacement,
       submitComposer,
-      promptSuggestion: offeredPromptSuggestion,
-      dismissPromptSuggestion,
+      promptSuggestion: composerSuggestion,
+      dismissPromptSuggestion: dismissComposerSuggestion,
     })(key, event, isTaskItem);
 
   const {
@@ -3658,7 +3695,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                               : (offeredPromptSuggestion ?? DEFAULT_COMPOSER_PLACEHOLDER)
                     }
                     // Fork: the rest of the suggestion stays visible while the draft is its start.
-                    ghostSuggestion={offeredPromptSuggestion}
+                    ghostSuggestion={composerSuggestion}
                     placeholderSuffix={
                       offeredPromptSuggestion !== null ? (
                         <span className="ml-2 inline-flex align-[1px]">
