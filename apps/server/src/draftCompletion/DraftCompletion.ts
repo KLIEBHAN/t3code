@@ -1,6 +1,10 @@
 // Fork: completes the composer draft as the user types, through one Pi process
 // that runs @kliebhan/pi-prompt-autocomplete 0.5.0 or later.
-import type { DraftCompletionInput, DraftCompletionResult } from "@t3tools/contracts";
+import {
+  providerInstanceConfigEnabledFlag,
+  type DraftCompletionInput,
+  type DraftCompletionResult,
+} from "@t3tools/contracts";
 import { mergeProviderInstanceEnvironment } from "@t3tools/provider-core/server/instanceEnvironment";
 import { makePiDraftCompleter } from "@t3tools/provider-pi/server/draftCompletion";
 import { PiSettings } from "@t3tools/provider-pi/settings";
@@ -38,21 +42,45 @@ const make = Effect.gen(function* () {
   const random = yield* SecureRandom.SecureRandom;
   const scope = yield* Effect.scope;
   const buildLock = yield* Semaphore.make(1);
-  let completer: Effect.Success<ReturnType<typeof makePiDraftCompleter>> | null | undefined;
+  let completer:
+    | {
+        readonly instanceId: string;
+        readonly sidecar: Effect.Success<ReturnType<typeof makePiDraftCompleter>>;
+      }
+    | undefined;
 
-  // Built on first use from the first enabled Pi instance, then kept for the server's lifetime.
+  // The first Pi instance the provider registry would treat as enabled, rechecked on every
+  // request so disabling the provider stops completions at once.
+  const currentPiInstance = Effect.gen(function* () {
+    const settings = yield* settingsService.getSettings;
+    for (const [instanceId, entry] of Object.entries(settings.providerInstances)) {
+      if (String(entry.driver) !== "pi") continue;
+      const config = Option.getOrUndefined(decodePiSettings(entry.config ?? {}));
+      const rawEnabled = providerInstanceConfigEnabledFlag(entry.config);
+      const enabled =
+        entry.enabled !== false &&
+        rawEnabled !== false &&
+        (entry.enabled ?? providerInstanceConfigEnabledFlag(config) ?? true);
+      if (enabled) return { instanceId, entry, config };
+    }
+    return undefined;
+  });
+
+  // Built on first use and kept for the server's lifetime. An environment with secret
+  // references is not launched: resolving them belongs to the provider registry, and Pi
+  // would otherwise run on inherited credentials.
   const getCompleter = buildLock.withPermits(1)(
     Effect.gen(function* () {
-      if (completer !== undefined) return completer;
-      const settings = yield* settingsService.getSettings;
-      const instance = Object.values(settings.providerInstances).find(
-        (candidate) => String(candidate.driver) === "pi" && candidate.enabled !== false,
-      );
+      const instance = yield* currentPiInstance;
       if (instance === undefined) return null;
-      const piSettings = Option.getOrUndefined(decodePiSettings(instance.config ?? {}));
-      const environment = yield* mergeProviderInstanceEnvironment(instance.environment);
-      completer = yield* makePiDraftCompleter({
-        command: piSettings?.binaryPath || "pi",
+      if (completer !== undefined && completer.instanceId === instance.instanceId) {
+        return completer.sidecar;
+      }
+      const variables = instance.entry.environment ?? [];
+      if (variables.some((variable) => typeof variable.value !== "string")) return null;
+      const environment = yield* mergeProviderInstanceEnvironment(variables);
+      const sidecar = yield* makePiDraftCompleter({
+        command: instance.config?.binaryPath || "pi",
         environment,
         cwd: config.stateDir,
         model: DRAFT_COMPLETION_MODEL,
@@ -61,7 +89,8 @@ const make = Effect.gen(function* () {
         Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
         Effect.provideService(SecureRandom.SecureRandom, random),
       );
-      return completer;
+      completer = { instanceId: instance.instanceId, sidecar };
+      return sidecar;
     }),
   );
 
