@@ -146,6 +146,19 @@ describe("useSuggestionAlternatives", () => {
     expect(api().suggestion).toBe("Run the build");
   });
 
+  it("hides stale suggestions only in the thread and draft the refresh runs for", async () => {
+    const { mount, api, element } = setup();
+    await using screen = await mount("a", "Run the");
+    await act(async () => api().refresh(null));
+    expect(api().refreshing).toBe(true);
+    await screen.rerender(element("b", "Run the"));
+    expect(api().refreshing).toBe(false);
+    await screen.rerender(element("a", "Run the te"));
+    expect(api().refreshing).toBe(false);
+    await screen.rerender(element("a", "Run the"));
+    expect(api().refreshing).toBe(true);
+  });
+
   it("shows nothing in another thread", async () => {
     const { mount, api, element } = setup();
     await using screen = await mount("a", "Run the");

@@ -56,7 +56,12 @@ export function useSuggestionAlternatives(input: {
   });
   const [alternatives, setAlternatives] = useState<Alternatives | null>(null);
   const [pending, setPending] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
+  // The context a refresh runs for; another thread, model, or draft is not hidden by it.
+  const [refreshFor, setRefreshFor] = useState<{
+    readonly targetKey: string;
+    readonly modelKey: string;
+    readonly base: string;
+  } | null>(null);
   const latestRequest = useRef(0);
 
   const modelKey = draftCompletionModelKey(input.model);
@@ -96,7 +101,7 @@ export function useSuggestionAlternatives(input: {
       // A newer request or a dismissal owns the alternatives now.
       if (request !== latestRequest.current) return;
       setPending(false);
-      setRefreshing(false);
+      setRefreshFor(null);
       if (result._tag !== "Success") return;
       const prompts = [
         ...new Set([
@@ -135,7 +140,7 @@ export function useSuggestionAlternatives(input: {
     if (!enabled || environmentId === null) return;
     const stale = suggestion ?? current;
     setAlternatives(null);
-    setRefreshing(true);
+    setRefreshFor({ targetKey, modelKey, base: draft });
     fetchAlternatives(null, 1, true, stale);
   });
 
@@ -143,7 +148,12 @@ export function useSuggestionAlternatives(input: {
     latestRequest.current += 1;
     setAlternatives(null);
     setPending(false);
-    setRefreshing(false);
+    setRefreshFor(null);
   };
+  const refreshing =
+    refreshFor !== null &&
+    refreshFor.targetKey === targetKey &&
+    refreshFor.modelKey === modelKey &&
+    draft === refreshFor.base;
   return { suggestion, pending, refreshing, cycle, refresh, clear };
 }
