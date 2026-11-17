@@ -1478,6 +1478,10 @@ export const ServerSettings = Schema.Struct({
   linkedEnvironmentsEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   /** Beta: Claude and Codex predict the next prompt after completed turns. Codex follows a change at once; open Claude threads after they restart. */
   promptSuggestionsEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  /** Fork: Pi model for completions while typing; absent uses the chat's Pi model. */
+  draftCompletionModel: Schema.optionalKey(Schema.String),
+  /** Fork: the Pi provider instance draftCompletionModel belongs to. */
+  draftCompletionInstanceId: Schema.optionalKey(Schema.String),
   sidebarAutoSettleKeepPullRequests: Schema.Boolean.pipe(
     Schema.withDecodingDefault(Effect.succeed(false)),
   ),
@@ -1908,6 +1912,9 @@ export const ServerSettingsPatch = Schema.Struct({
   guestSharingEnabled: Schema.optionalKey(Schema.Boolean),
   linkedEnvironmentsEnabled: Schema.optionalKey(Schema.Boolean),
   promptSuggestionsEnabled: Schema.optionalKey(Schema.Boolean),
+  // Fork: see ServerSettings.draftCompletionModel; an empty string clears it.
+  draftCompletionModel: Schema.optionalKey(Schema.String),
+  draftCompletionInstanceId: Schema.optionalKey(Schema.String),
   backgroundActivity: Schema.optionalKey(
     Schema.Struct({
       schemaVersion: Schema.optionalKey(Schema.Literal(1)),

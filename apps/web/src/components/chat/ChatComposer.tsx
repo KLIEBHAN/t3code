@@ -2382,8 +2382,17 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const offeredPromptSuggestion = composerOffersSuggestions ? promptSuggestion : null;
   // Fork: while the draft does not start the next-prompt suggestion, the ghost
   // text and its keys complete the draft instead.
-  const promptSuggestionsEnabled =
-    useServerConfigs().get(environmentId)?.settings.promptSuggestionsEnabled === true;
+  const serverSettings = useServerConfigs().get(environmentId)?.settings;
+  const promptSuggestionsEnabled = serverSettings?.promptSuggestionsEnabled === true;
+  // The Labs setting, else the chat's model when it is a Pi model, else the server's default.
+  const configuredDraftModel = serverSettings?.draftCompletionModel?.trim() ?? "";
+  const configuredDraftInstance = serverSettings?.draftCompletionInstanceId?.trim() ?? "";
+  const draftCompletionModel =
+    configuredDraftModel !== "" && configuredDraftInstance !== ""
+      ? { instanceId: configuredDraftInstance, model: configuredDraftModel }
+      : String(selectedProvider) === "pi" && selectedModel.includes("/")
+        ? { instanceId: String(selectedInstanceId), model: selectedModel }
+        : undefined;
   const readDraftCompletionContext = () => {
     let lastUser: string | undefined;
     let lastAssistant: string | undefined;
@@ -2410,6 +2419,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     targetKey: composerDraftTargetKey,
     draft: prompt,
     enabled: promptSuggestionsEnabled && composerOffersSuggestions && nextPromptGhost === null,
+    model: draftCompletionModel,
     readContext: readDraftCompletionContext,
   });
   // Fork: Ctrl+. and Ctrl+, replace the suggestion with one of its alternatives.
@@ -2418,6 +2428,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     targetKey: composerDraftTargetKey,
     draft: prompt,
     enabled: promptSuggestionsEnabled && composerAllowsSuggestions,
+    model: draftCompletionModel,
     readContext: readDraftCompletionContext,
   });
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- hands the latest clear to submitComposer, declared above the hook

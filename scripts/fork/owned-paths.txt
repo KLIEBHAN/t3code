@@ -30,3 +30,5 @@ packages/client-runtime/src/state/server.ts
 apps/web/src/components/chat/useDraftCompletion.browser.test.tsx
 apps/web/src/components/chat/useSuggestionAlternatives.ts
 apps/web/src/components/chat/useSuggestionAlternatives.browser.test.tsx
+packages/contracts/src/settings.ts
+apps/web/src/components/settings/LabsSettingsPanel.tsx
