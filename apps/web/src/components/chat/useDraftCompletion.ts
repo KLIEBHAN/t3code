@@ -38,6 +38,31 @@ const keepStartAndEnd = (text: string, maxChars: number) => {
   return `${text.slice(0, head)}${separator}${text.slice(-tail)}`;
 };
 
+/**
+ * The latest finished assistant message and the latest user message of its run, oldest first in
+ * `messages`. A run a subagent or scheduled task started has no user message; an older one would
+ * point the model at a question already settled, so none is returned then.
+ */
+export const latestExchange = (
+  messages: ReadonlyArray<{
+    readonly role: string;
+    readonly text: string;
+    readonly runId: string | null;
+    readonly streaming: boolean;
+  }>,
+) => {
+  const assistant = messages.findLast(
+    (message) => message.role === "assistant" && !message.streaming,
+  );
+  const user =
+    assistant?.runId == null
+      ? undefined
+      : messages.findLast(
+          (message) => message.role === "user" && message.runId === assistant.runId,
+        );
+  return { lastUser: user?.text, lastAssistant: assistant?.text };
+};
+
 /** Context for a request from the latest user and assistant message, cut as the extension uses it. */
 export const draftCompletionContext = (
   lastUser: string | undefined,

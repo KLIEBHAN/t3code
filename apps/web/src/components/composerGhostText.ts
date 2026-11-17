@@ -51,7 +51,7 @@ function ghostDecorations(state: EditorState, ghost: GhostState): DecorationSet 
       if (loading) {
         // Pulses only while a request the user made is on its way, then disappears.
         const dots = document.createElement("span");
-        dots.className = "ms-1 animate-pulse";
+        dots.className = "ms-1";
         dots.dataset.composerGhostLoading = "true";
         dots.textContent = "…";
         span.append(dots);
@@ -66,7 +66,7 @@ function ghostDecorations(state: EditorState, ghost: GhostState): DecorationSet 
 /**
  * Shows the rest of the composer's prompt suggestion in grey after the caret
  * while the draft is the suggestion's start and the caret is at its end, and
- * pulsing dots while a requested suggestion loads. Set both with
+ * dots while a requested suggestion loads. Set both with
  * setComposerGhostSuggestion; the composer's key handler accepts the suggestion.
  */
 export const ComposerGhostTextExtension = Extension.create({
@@ -91,7 +91,7 @@ export const ComposerGhostTextExtension = Extension.create({
   },
 });
 
-/** Puts `suggestion` into the editor's ghost text, null hides it; `loading` adds pulsing dots. */
+/** Puts `suggestion` into the editor's ghost text, null hides it; `loading` adds dots after the caret. */
 export function setComposerGhostSuggestion(
   view: EditorView,
   suggestion: string | null,

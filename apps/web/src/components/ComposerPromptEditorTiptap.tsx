@@ -189,7 +189,7 @@ export interface ComposerPromptEditorProps {
   placeholderSuffix?: ReactNode;
   /** Fork: prompt suggestion whose rest shows in grey after the caret while the draft is its start. */
   ghostSuggestion?: string | null;
-  /** Fork: a suggestion the user asked for is loading; shows pulsing dots after the caret. */
+  /** Fork: a suggestion the user asked for is loading; shows dots after the caret. */
   ghostLoading?: boolean;
   ariaLabel?: string | undefined;
   suggestionListId?: string | undefined;

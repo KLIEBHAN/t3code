@@ -38,12 +38,43 @@ describe("nextComposerGhostWord", () => {
 describe("draftCompletionContext", () => {
   it("keeps the start and the end of a long message, within the extension's limits", async () => {
     const { draftCompletionContext } = await import("./chat/useDraftCompletion");
-    const assistant = `RESULT ${"x".repeat(5_000)} LAST`;
+    const assistant = `RESULT ${"x".repeat(2_000)}${"y".repeat(3_000)} LAST`;
     const context = draftCompletionContext("short question", assistant);
     expect(context.lastUser).toBe("short question");
-    expect(context.lastAssistant?.length).toBe(3_000);
-    expect(context.lastAssistant?.startsWith("RESULT ")).toBe(true);
-    expect(context.lastAssistant?.endsWith(" LAST")).toBe(true);
+    expect(context.lastAssistant).toBe(`RESULT ${"x".repeat(1_492)}\n…\n${"y".repeat(1_493)} LAST`);
     expect(draftCompletionContext(undefined, undefined)).toEqual({});
+  });
+});
+
+describe("latestExchange", () => {
+  const message = (role: string, text: string, runId: string | null, streaming = false) => ({
+    role,
+    text,
+    runId,
+    streaming,
+  });
+
+  it("pairs the latest finished answer with the user message of its run", async () => {
+    const { latestExchange } = await import("./chat/useDraftCompletion");
+    expect(
+      latestExchange([
+        message("user", "first", "r1"),
+        message("assistant", "answer 1", "r1"),
+        message("user", "second", "r2"),
+        message("assistant", "answer 2", "r2"),
+        message("assistant", "still writing", "r3", true),
+      ]),
+    ).toEqual({ lastUser: "second", lastAssistant: "answer 2" });
+  });
+
+  it("sends no older user message when a subagent or scheduled task started the run", async () => {
+    const { latestExchange } = await import("./chat/useDraftCompletion");
+    expect(
+      latestExchange([
+        message("user", "I answer 48 to 50 later", "r96"),
+        message("assistant", "answer 96", "r96"),
+        message("assistant", "answer 99, decide 50 to 52", "r99"),
+      ]),
+    ).toEqual({ lastUser: undefined, lastAssistant: "answer 99, decide 50 to 52" });
   });
 });

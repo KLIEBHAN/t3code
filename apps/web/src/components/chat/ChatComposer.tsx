@@ -290,7 +290,7 @@ import { ComposerControlsBar } from "./ComposerControlsBar";
 import { composerCommandKeyHandler } from "./composerCommandKey";
 import { usePromptSuggestion } from "./usePromptSuggestion";
 // Fork: completion of the draft as the user types.
-import { draftCompletionContext, useDraftCompletion } from "./useDraftCompletion";
+import { draftCompletionContext, latestExchange, useDraftCompletion } from "./useDraftCompletion";
 import { useSuggestionAlternatives } from "./useSuggestionAlternatives";
 import { useServerConfigs } from "../../state/entities";
 import { useFreshSessionArmed } from "./freshSessionArms";
@@ -2393,17 +2393,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         ? { instanceId: String(selectedInstanceId), model: selectedModel }
         : undefined;
   const readDraftCompletionContext = () => {
-    let lastUser: string | undefined;
-    let lastAssistant: string | undefined;
-    for (let index = promptHistoryEntries.length - 1; index >= 0; index -= 1) {
-      const entry = promptHistoryEntries[index];
-      if (entry?.kind !== "message" || entry.message.streaming) continue;
-      if (lastUser === undefined && entry.message.role === "user") lastUser = entry.message.text;
-      if (lastAssistant === undefined && entry.message.role === "assistant") {
-        lastAssistant = entry.message.text;
-      }
-      if (lastUser !== undefined && lastAssistant !== undefined) break;
-    }
+    const { lastUser, lastAssistant } = latestExchange(
+      promptHistoryEntries.flatMap((entry) => (entry.kind === "message" ? [entry.message] : [])),
+    );
     // Start and end of each message, as the extension keeps them; the start often names the result.
     return draftCompletionContext(lastUser, lastAssistant);
   };

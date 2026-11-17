@@ -50,7 +50,11 @@ function Composer({
 }
 
 async function mount(ghostSuggestion: string | null, ghostLoading = false) {
-  const screen = await render(createElement(Composer, { ghostSuggestion, ghostLoading }));
+  // Disposes the screen if setup below fails; on success the caller owns it.
+  await using stack = new AsyncDisposableStack();
+  const screen = stack.use(
+    await render(createElement(Composer, { ghostSuggestion, ghostLoading })),
+  );
   const element = screen.container.querySelector<HTMLElement & { editor: Editor }>(".tiptap");
   if (!element) throw new Error("Composer did not mount");
   const editor = element.editor;
@@ -65,7 +69,12 @@ async function mount(ghostSuggestion: string | null, ghostLoading = false) {
   }
   const ghost = () =>
     screen.container.querySelector<HTMLElement>("[data-composer-ghost-text]")?.textContent ?? null;
-  return Object.assign(screen, { editor, ghost });
+  const environment = stack.move();
+  return Object.assign(screen, {
+    [Symbol.asyncDispose]: () => environment.disposeAsync(),
+    editor,
+    ghost,
+  });
 }
 
 describe("composer ghost text", () => {
@@ -109,13 +118,15 @@ describe("composer ghost text", () => {
     expect(editor.state.doc.textContent).toBe("Run all ");
   });
 
-  it("shows pulsing dots while a requested suggestion loads, after the typed draft only", async () => {
+  it("shows still dots while a requested suggestion loads, after the typed draft only", async () => {
     await using screen = await mount(null, true);
     const loading = () => screen.container.querySelector("[data-composer-ghost-loading]");
     await act(async () => {});
     expect(loading()).toBeNull();
     await userEvent.keyboard("Run");
     await vi.waitFor(() => expect(loading()?.textContent).toBe("…"));
+    // Still, not animated: an endless animation keeps repainting the page.
+    expect(loading()?.getAnimations()).toEqual([]);
   });
 
   it("shows nothing without a suggestion", async () => {
