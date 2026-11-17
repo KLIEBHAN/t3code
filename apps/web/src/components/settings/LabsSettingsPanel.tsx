@@ -5,7 +5,9 @@ import { managedCapabilityDenial } from "@t3tools/contracts";
 import { hasCloudPublicConfig } from "~/cloud/publicConfig";
 import { useT3ConnectAuthPrompt } from "../clerk/useT3ConnectAuthPrompt";
 import { Button } from "../ui/button";
+import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Switch } from "../ui/switch";
+import { useEnvironmentProviders } from "../../state/environments";
 import { ScopedSwitch } from "./ScopedSwitch";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
@@ -23,6 +25,8 @@ export function LabsSettingsPanel() {
         {hasCloudPublicConfig() ? <GuestLinksRowWithSignIn /> : <GuestLinksRow />}
         <LinkedEnvironmentsRow />
         <PromptSuggestionsRow />
+        {/* Fork: model for completions while typing and Ctrl+. alternatives. */}
+        <DraftCompletionModelRow />
         <SimlockHostsRow />
         <FastWorktreeCheckoutRow />
       </SettingsSection>
@@ -185,6 +189,76 @@ function PromptSuggestionsRow() {
           }
           aria-label="Suggest next prompt"
         />
+      }
+    />
+  );
+}
+
+// Fork: the Select value that stands for no fixed model.
+const CHAT_MODEL = "chat";
+
+/**
+ * Fork: picks the Pi model for completions while typing and for Ctrl+. alternatives.
+ * "Wie im Chat" uses the thread's model when it is a Pi model, else cpa/cpa-small.
+ */
+function DraftCompletionModelRow() {
+  const settings = useScopedSettings();
+  const updateSettings = useUpdateScopedSettings();
+  const { environment } = useSettingsScope();
+  const providersByEnvironment = useEnvironmentProviders();
+  const providers =
+    (environment ? providersByEnvironment.get(environment.environmentId) : null) ?? [];
+  // The models the composer's picker shows: not hidden, in the user's order.
+  const piModels = [
+    ...new Set(
+      providers
+        .filter((provider) => String(provider.driver) === "pi" && provider.enabled)
+        .flatMap((provider) => {
+          const preferences = settings.providerModelPreferences?.[provider.instanceId];
+          const hidden = new Set(preferences?.hiddenModels ?? []);
+          const order = preferences?.modelOrder ?? [];
+          const rank = (slug: string) => {
+            const index = order.indexOf(slug);
+            return index === -1 ? order.length : index;
+          };
+          return provider.models
+            .map((model) => model.slug)
+            .filter((slug) => slug.includes("/") && !hidden.has(slug))
+            .toSorted((a, b) => rank(a) - rank(b));
+        }),
+    ),
+  ];
+  const saved = settings.draftCompletionModel?.trim() ?? "";
+  const value = saved === "" ? CHAT_MODEL : saved;
+  const choices = saved !== "" && !piModels.includes(saved) ? [saved, ...piModels] : piModels;
+  return (
+    <SettingsRow
+      serverScoped
+      id="draft-completion-model"
+      title="Model for suggestions while typing"
+      settingKeys={["draftCompletionModel"]}
+      description="Pi model for ghost text while typing and Ctrl+. alternatives. Like the chat uses the thread's Pi model, else cpa/cpa-small. cpa-small and cpa-worker-plus take about 2 s, cpa-pro 4 s."
+      control={
+        <Select
+          value={value}
+          onValueChange={(next) =>
+            updateSettings({ draftCompletionModel: next === CHAT_MODEL ? "" : String(next) })
+          }
+        >
+          <SelectTrigger size="sm" className="w-full sm:w-56" aria-label="Model for suggestions">
+            <SelectValue>{value === CHAT_MODEL ? "Like the chat" : value}</SelectValue>
+          </SelectTrigger>
+          <SelectPopup align="end" alignItemWithTrigger={false}>
+            <SelectItem hideIndicator value={CHAT_MODEL}>
+              Like the chat
+            </SelectItem>
+            {choices.map((slug) => (
+              <SelectItem hideIndicator key={slug} value={slug}>
+                {slug}
+              </SelectItem>
+            ))}
+          </SelectPopup>
+        </Select>
       }
     />
   );

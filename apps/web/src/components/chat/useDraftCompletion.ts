@@ -24,9 +24,11 @@ export function useDraftCompletion(input: {
   readonly targetKey: string;
   readonly draft: string;
   readonly enabled: boolean;
+  /** Pi model as provider/id; undefined leaves it to the server. */
+  readonly model?: string | undefined;
   readonly readContext: () => DraftCompletionContext;
 }): { readonly suggestion: string | null; readonly dismiss: () => void } {
-  const { environmentId, targetKey, draft, enabled } = input;
+  const { environmentId, targetKey, draft, enabled, model } = input;
   const completeDraft = useAtomCommand(serverEnvironment.completeDraft, {
     reportFailure: false,
     reportDefect: false,
@@ -38,7 +40,10 @@ export function useDraftCompletion(input: {
   const latestRequest = useRef(0);
   const active = enabled && environmentId !== null && draft.trim().length > 0;
   const request = useStableCallback((target: EnvironmentId, text: string) =>
-    completeDraft({ environmentId: target, input: { draft: text, context: input.readContext() } }),
+    completeDraft({
+      environmentId: target,
+      input: { draft: text, context: input.readContext(), ...(model ? { model } : {}) },
+    }),
   );
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- debounces a network request for the typed draft

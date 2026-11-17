@@ -29,6 +29,8 @@ export function useSuggestionAlternatives(input: {
   readonly targetKey: string;
   readonly draft: string;
   readonly enabled: boolean;
+  /** Pi model as provider/id; undefined leaves it to the server. */
+  readonly model?: string | undefined;
   readonly readContext: () => DraftCompletionContext;
 }): {
   readonly suggestion: string | null;
@@ -71,6 +73,7 @@ export function useSuggestionAlternatives(input: {
         context: input.readContext(),
         alternatives: DRAFT_COMPLETION_MAX_ALTERNATIVES,
         manual: true,
+        ...(input.model ? { model: input.model } : {}),
       },
     }).then((result) => {
       // A newer request or a dismissal owns the alternatives now.
