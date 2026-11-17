@@ -5,10 +5,17 @@ import { useRef, useState } from "react";
 import { useStableCallback } from "../../hooks/useStableCallback";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
-import type { DraftCompletionContext } from "./useDraftCompletion";
+import {
+  type DraftCompletionContext,
+  type DraftCompletionModel,
+  draftCompletionModelFields,
+  draftCompletionModelKey,
+} from "./useDraftCompletion";
 
 interface Alternatives {
   readonly targetKey: string;
+  /** The model they came from; another model drops them. */
+  readonly modelKey: string;
   /** The draft they were asked for; a draft that no longer starts with it drops them. */
   readonly base: string;
   readonly prompts: ReadonlyArray<string>;
@@ -29,8 +36,8 @@ export function useSuggestionAlternatives(input: {
   readonly targetKey: string;
   readonly draft: string;
   readonly enabled: boolean;
-  /** Pi model as provider/id; undefined leaves it to the server. */
-  readonly model?: string | undefined;
+  /** Pi model to ask; undefined leaves it to the server. */
+  readonly model?: DraftCompletionModel | undefined;
   readonly readContext: () => DraftCompletionContext;
 }): {
   readonly suggestion: string | null;
@@ -47,8 +54,12 @@ export function useSuggestionAlternatives(input: {
   const [pending, setPending] = useState(false);
   const latestRequest = useRef(0);
 
+  const modelKey = draftCompletionModelKey(input.model);
   const visible =
-    enabled && alternatives?.targetKey === targetKey && draft.startsWith(alternatives.base)
+    enabled &&
+    alternatives?.targetKey === targetKey &&
+    alternatives.modelKey === modelKey &&
+    draft.startsWith(alternatives.base)
       ? continuing(alternatives.prompts, draft)
       : [];
   const suggestion =
@@ -73,7 +84,7 @@ export function useSuggestionAlternatives(input: {
         context: input.readContext(),
         alternatives: DRAFT_COMPLETION_MAX_ALTERNATIVES,
         manual: true,
-        ...(input.model ? { model: input.model } : {}),
+        ...draftCompletionModelFields(input.model),
       },
     }).then((result) => {
       // A newer request or a dismissal owns the alternatives now.
@@ -93,7 +104,9 @@ export function useSuggestionAlternatives(input: {
         shown !== null && choices.length > 1
           ? (choices[direction === 1 ? 1 : choices.length - 1] ?? choices[0])
           : choices[0];
-      if (selected !== undefined) setAlternatives({ targetKey, base: asked, prompts, selected });
+      if (selected !== undefined) {
+        setAlternatives({ targetKey, modelKey, base: asked, prompts, selected });
+      }
     });
   });
 

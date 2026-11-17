@@ -2385,9 +2385,14 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const serverSettings = useServerConfigs().get(environmentId)?.settings;
   const promptSuggestionsEnabled = serverSettings?.promptSuggestionsEnabled === true;
   // The Labs setting, else the chat's model when it is a Pi model, else the server's default.
+  const configuredDraftModel = serverSettings?.draftCompletionModel?.trim() ?? "";
+  const configuredDraftInstance = serverSettings?.draftCompletionInstanceId?.trim() ?? "";
   const draftCompletionModel =
-    serverSettings?.draftCompletionModel?.trim() ||
-    (String(selectedProvider) === "pi" && selectedModel.includes("/") ? selectedModel : undefined);
+    configuredDraftModel !== "" && configuredDraftInstance !== ""
+      ? { instanceId: configuredDraftInstance, model: configuredDraftModel }
+      : String(selectedProvider) === "pi" && selectedModel.includes("/")
+        ? { instanceId: String(selectedInstanceId), model: selectedModel }
+        : undefined;
   const readDraftCompletionContext = () => {
     let lastUser: string | undefined;
     let lastAssistant: string | undefined;

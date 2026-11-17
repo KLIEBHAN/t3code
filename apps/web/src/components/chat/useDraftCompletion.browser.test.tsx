@@ -29,12 +29,13 @@ const { useDraftCompletion } = await import("./useDraftCompletion");
 
 const environmentId = "environment-1" as EnvironmentId;
 
-function Probe({ targetKey, draft }: { targetKey: string; draft: string }) {
+function Probe({ targetKey, draft, model }: { targetKey: string; draft: string; model?: string }) {
   const { suggestion } = useDraftCompletion({
     environmentId,
     targetKey,
     draft,
     enabled: true,
+    model: model === undefined ? undefined : { instanceId: "pi", model },
     readContext: () => ({}),
   });
   return createElement("output", null, suggestion ?? "none");
@@ -61,5 +62,22 @@ describe("useDraftCompletion", () => {
     await vi.waitFor(() => expect(calls).toHaveLength(2));
     await act(async () => calls[1]!.resolve(" tests from thread b"));
     expect(shown(screen.container)).toBe("Run the tests from thread b");
+  });
+
+  it("drops the answer of a model the user switched away from and asks the new one", async () => {
+    calls.length = 0;
+    await using screen = await render(
+      createElement(Probe, { targetKey: "a", draft: "Run the", model: "cpa/cpa-small" }),
+    );
+    await vi.waitFor(() => expect(calls).toHaveLength(1));
+    await act(async () => calls[0]!.resolve(" tests"));
+    expect(shown(screen.container)).toBe("Run the tests");
+    await screen.rerender(
+      createElement(Probe, { targetKey: "a", draft: "Run the", model: "cpa/cpa-pro" }),
+    );
+    expect(shown(screen.container)).toBe("none");
+    await vi.waitFor(() => expect(calls).toHaveLength(2));
+    await act(async () => calls[1]!.resolve(" whole suite"));
+    expect(shown(screen.container)).toBe("Run the whole suite");
   });
 });

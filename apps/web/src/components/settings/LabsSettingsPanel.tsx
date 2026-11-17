@@ -196,10 +196,11 @@ function PromptSuggestionsRow() {
 
 // Fork: the Select value that stands for no fixed model.
 const CHAT_MODEL = "chat";
+const choiceValue = (instanceId: string, model: string) => JSON.stringify([instanceId, model]);
 
 /**
- * Fork: picks the Pi model for completions while typing and for Ctrl+. alternatives.
- * "Wie im Chat" uses the thread's model when it is a Pi model, else cpa/cpa-small.
+ * Fork: picks the Pi model, with its provider instance, for completions while typing and
+ * for Ctrl+. alternatives. "Like the chat" uses the thread's Pi model, else cpa/cpa-small.
  */
 function DraftCompletionModelRow() {
   const settings = useScopedSettings();
@@ -208,53 +209,69 @@ function DraftCompletionModelRow() {
   const providersByEnvironment = useEnvironmentProviders();
   const providers =
     (environment ? providersByEnvironment.get(environment.environmentId) : null) ?? [];
+  const piProviders = providers.filter(
+    (provider) => String(provider.driver) === "pi" && provider.enabled,
+  );
   // The models the composer's picker shows: not hidden, in the user's order.
-  const piModels = [
-    ...new Set(
-      providers
-        .filter((provider) => String(provider.driver) === "pi" && provider.enabled)
-        .flatMap((provider) => {
-          const preferences = settings.providerModelPreferences?.[provider.instanceId];
-          const hidden = new Set(preferences?.hiddenModels ?? []);
-          const order = preferences?.modelOrder ?? [];
-          const rank = (slug: string) => {
-            const index = order.indexOf(slug);
-            return index === -1 ? order.length : index;
-          };
-          return provider.models
-            .map((model) => model.slug)
-            .filter((slug) => slug.includes("/") && !hidden.has(slug))
-            .toSorted((a, b) => rank(a) - rank(b));
-        }),
-    ),
-  ];
-  const saved = settings.draftCompletionModel?.trim() ?? "";
-  const value = saved === "" ? CHAT_MODEL : saved;
-  const choices = saved !== "" && !piModels.includes(saved) ? [saved, ...piModels] : piModels;
+  const choices = piProviders.flatMap((provider) => {
+    const preferences = settings.providerModelPreferences?.[provider.instanceId];
+    const hidden = new Set(preferences?.hiddenModels ?? []);
+    const order = preferences?.modelOrder ?? [];
+    const rank = (slug: string) => {
+      const index = order.indexOf(slug);
+      return index === -1 ? order.length : index;
+    };
+    const suffix =
+      piProviders.length > 1 ? ` (${provider.displayName ?? provider.instanceId})` : "";
+    return provider.models
+      .map((model) => model.slug)
+      .filter((slug) => slug.includes("/") && !hidden.has(slug))
+      .toSorted((a, b) => rank(a) - rank(b))
+      .map((slug) => ({
+        value: choiceValue(provider.instanceId, slug),
+        instanceId: String(provider.instanceId),
+        model: slug,
+        label: `${slug}${suffix}`,
+      }));
+  });
+  const savedModel = settings.draftCompletionModel?.trim() ?? "";
+  const savedInstance = settings.draftCompletionInstanceId?.trim() ?? "";
+  const saved = savedModel !== "" && savedInstance !== "";
+  const value = saved ? choiceValue(savedInstance, savedModel) : CHAT_MODEL;
+  // A saved model that is no longer listed stays selectable.
+  const options =
+    saved && !choices.some((choice) => choice.value === value)
+      ? [{ value, instanceId: savedInstance, model: savedModel, label: savedModel }, ...choices]
+      : choices;
+  const label = options.find((option) => option.value === value)?.label ?? "Like the chat";
   return (
     <SettingsRow
       serverScoped
       id="draft-completion-model"
       title="Model for suggestions while typing"
-      settingKeys={["draftCompletionModel"]}
+      settingKeys={["draftCompletionModel", "draftCompletionInstanceId"]}
       description="Pi model for ghost text while typing and Ctrl+. alternatives. Like the chat uses the thread's Pi model, else cpa/cpa-small. cpa-small and cpa-worker-plus take about 2 s, cpa-pro 4 s."
       control={
         <Select
           value={value}
-          onValueChange={(next) =>
-            updateSettings({ draftCompletionModel: next === CHAT_MODEL ? "" : String(next) })
-          }
+          onValueChange={(next) => {
+            const option = options.find((candidate) => candidate.value === next);
+            updateSettings({
+              draftCompletionModel: option?.model ?? "",
+              draftCompletionInstanceId: option?.instanceId ?? "",
+            });
+          }}
         >
           <SelectTrigger size="sm" className="w-full sm:w-56" aria-label="Model for suggestions">
-            <SelectValue>{value === CHAT_MODEL ? "Like the chat" : value}</SelectValue>
+            <SelectValue>{label}</SelectValue>
           </SelectTrigger>
           <SelectPopup align="end" alignItemWithTrigger={false}>
             <SelectItem hideIndicator value={CHAT_MODEL}>
               Like the chat
             </SelectItem>
-            {choices.map((slug) => (
-              <SelectItem hideIndicator key={slug} value={slug}>
-                {slug}
+            {options.map((option) => (
+              <SelectItem hideIndicator key={option.value} value={option.value}>
+                {option.label}
               </SelectItem>
             ))}
           </SelectPopup>

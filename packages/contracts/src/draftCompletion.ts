@@ -21,6 +21,8 @@ export const DraftCompletionInput = Schema.Struct({
     Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: DRAFT_COMPLETION_MAX_ALTERNATIVES })),
   ),
   manual: Schema.optionalKey(Schema.Boolean),
+  /** Pi provider instance to run the model with; absent uses the first enabled one. */
+  instanceId: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(200))),
   /** Pi model as provider/id; absent uses the server's default. */
   model: Schema.optionalKey(
     Schema.String.check(Schema.isMaxLength(200), Schema.isPattern(/^[^\s/]+\/\S+$/)),

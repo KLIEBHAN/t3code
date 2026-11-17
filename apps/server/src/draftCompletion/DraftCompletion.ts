@@ -45,21 +45,26 @@ const make = Effect.gen(function* () {
   const random = yield* SecureRandom.SecureRandom;
   const scope = yield* Effect.scope;
   const buildLock = yield* Semaphore.make(1);
-  // One Pi per model in use, most recently used last; the oldest goes beyond MAX_SIDECARS.
+  // One Pi per instance and model in use, most recently used last; the oldest goes beyond
+  // MAX_SIDECARS.
   const completers = new Map<
     string,
     {
-      readonly instanceId: string;
       readonly scope: Scope.Closeable;
       readonly sidecar: Effect.Success<ReturnType<typeof makePiDraftCompleter>>;
     }
   >();
 
-  // The first Pi instance the provider registry would treat as enabled, rechecked on every
-  // request so disabling the provider stops completions at once.
-  const currentPiInstance = Effect.gen(function* () {
+  // The requested Pi instance, else the first one, that the provider registry would treat as
+  // enabled; rechecked on every request so disabling the provider stops completions at once.
+  const currentPiInstance = Effect.fn("DraftCompletion.currentPiInstance")(function* (
+    preferred: string | undefined,
+  ) {
     const settings = yield* settingsService.getSettings;
-    for (const [instanceId, entry] of Object.entries(settings.providerInstances)) {
+    const entries = Object.entries(settings.providerInstances).toSorted(
+      ([a], [b]) => Number(b === preferred) - Number(a === preferred),
+    );
+    for (const [instanceId, entry] of entries) {
       if (String(entry.driver) !== "pi") continue;
       const config = Option.getOrUndefined(decodePiSettings(entry.config ?? {}));
       const rawEnabled = providerInstanceConfigEnabledFlag(entry.config);
@@ -72,28 +77,28 @@ const make = Effect.gen(function* () {
     return undefined;
   });
 
-  const forget = (model: string) =>
+  const forget = (key: string) =>
     Effect.suspend(() => {
-      const known = completers.get(model);
-      completers.delete(model);
+      const known = completers.get(key);
+      completers.delete(key);
       return known === undefined ? Effect.void : Scope.close(known.scope, Exit.void);
     });
 
   // Started on first use per model. An environment with secret references is not launched:
   // resolving them belongs to the provider registry, and Pi would otherwise run on
   // inherited credentials.
-  const getCompleter = (model: string) =>
+  const getCompleter = (model: string, preferredInstance: string | undefined) =>
     buildLock.withPermits(1)(
       Effect.gen(function* () {
-        const instance = yield* currentPiInstance;
+        const instance = yield* currentPiInstance(preferredInstance);
         if (instance === undefined) return null;
-        const known = completers.get(model);
-        if (known !== undefined && known.instanceId === instance.instanceId) {
-          completers.delete(model);
-          completers.set(model, known);
+        const key = `${instance.instanceId}\u0000${model}`;
+        const known = completers.get(key);
+        if (known !== undefined) {
+          completers.delete(key);
+          completers.set(key, known);
           return known.sidecar;
         }
-        yield* forget(model);
         const variables = instance.entry.environment ?? [];
         if (variables.some((variable) => typeof variable.value !== "string")) return null;
         const environment = yield* mergeProviderInstanceEnvironment(variables);
@@ -108,7 +113,7 @@ const make = Effect.gen(function* () {
           Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
           Effect.provideService(SecureRandom.SecureRandom, random),
         );
-        completers.set(model, { instanceId: instance.instanceId, scope: sidecarScope, sidecar });
+        completers.set(key, { scope: sidecarScope, sidecar });
         const oldest = completers.keys().next().value;
         if (completers.size > MAX_SIDECARS && oldest !== undefined) yield* forget(oldest);
         return sidecar;
@@ -121,7 +126,7 @@ const make = Effect.gen(function* () {
       if (!settings.promptSuggestionsEnabled) return nothing;
       // Only a request the user made completes an empty draft into a whole prompt.
       if (input.manual !== true && input.draft.trim().length === 0) return nothing;
-      const sidecar = yield* getCompleter(input.model ?? DRAFT_COMPLETION_MODEL);
+      const sidecar = yield* getCompleter(input.model ?? DRAFT_COMPLETION_MODEL, input.instanceId);
       if (sidecar === null) return nothing;
       const completions = yield* sidecar.complete(input);
       const result: DraftCompletionResult = { completion: completions[0] ?? null, completions };
