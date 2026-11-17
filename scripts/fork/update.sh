@@ -155,6 +155,27 @@ if [ "$scheduled" = 1 ]; then
   fi
 fi
 
+# Fast-forwards the checkout to fork commits merged on origin, before the daily
+# sync too, so upstream is never merged into a stale branch. A checkout that has
+# diverged from origin stays as it is and is announced once per origin commit.
+follow_origin() {
+  local diverged="$FORK_STATE_DIR/origin-diverged" remote
+  git fetch --quiet origin "$FORK_BRANCH" 2>/dev/null || return 0
+  remote="$(git rev-parse FETCH_HEAD)"
+  if git merge-base --is-ancestor "$remote" HEAD; then
+    rm -f "$diverged"
+  elif git merge-base --is-ancestor HEAD "$remote"; then
+    git merge --quiet --ff-only "$remote" || echo "update: could not fast-forward to origin" >&2
+    rm -f "$diverged"
+  else
+    echo "update: the checkout and origin/$FORK_BRANCH have diverged; merge them by hand" >&2
+    if [ "$(cat "$diverged" 2>/dev/null)" != "$remote" ]; then
+      echo "$remote" >"$diverged"
+      alert "Checkout und origin/$FORK_BRANCH sind auseinandergelaufen; neue Fork-Änderungen werden erst nach einem Merge gebaut."
+    fi
+  fi
+}
+
 # Builds HEAD unless it is staged or installed already, and announces the build:
 # one push per build reaches the phone for every Mac, because only this Mac
 # builds and the others fetch from it. With "once", a head whose build failed
@@ -191,20 +212,20 @@ if [ -n "$FORK_BUILD_HOST" ]; then
       alert "Das Update ließ sich nicht von $FORK_BUILD_HOST holen. Log: $FORK_STATE_DIR/logs"
     fi
   fi
-elif [ "$full" = 1 ]; then
-  date +%s >"$stamp"
-  echo "update: daily sync and build"
-  if ! scripts/fork/sync-upstream.sh; then
-    status=1
-    alert "Upstream ließ sich nicht einspielen. Log: $FORK_STATE_DIR/logs"
-  fi
-  build_head
 else
-  # Between daily syncs, fork changes merged on origin are built within the hour.
-  if git fetch --quiet origin "$FORK_BRANCH" 2>/dev/null; then
-    git merge --quiet --ff-only FETCH_HEAD 2>/dev/null || true
+  follow_origin
+  if [ "$full" = 1 ]; then
+    date +%s >"$stamp"
+    echo "update: daily sync and build"
+    if ! scripts/fork/sync-upstream.sh; then
+      status=1
+      alert "Upstream ließ sich nicht einspielen. Log: $FORK_STATE_DIR/logs"
+    fi
+    build_head
+  else
+    # Between daily syncs, fork changes merged on origin are built within the hour.
+    build_head once
   fi
-  build_head once
 fi
 
 # Quits the app process $1 the way the Dock does. Upstream answers the first
