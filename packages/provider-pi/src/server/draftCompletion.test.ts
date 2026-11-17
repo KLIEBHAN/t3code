@@ -79,6 +79,9 @@ process.stdin.on("data", (chunk) => {
       const request = JSON.parse(record.message.replace("/prompt-autocomplete complete ", ""));
       if (request.draft === "exit") process.exit(0);
       if (request.draft === "slow") continue;
+      const completions = request.draft === "think"
+        ? [" " + (request.thinking ?? "unset")]
+        : [" world", " there", " again"].slice(0, request.alternatives ?? 1);
       write({
         type: "extension_ui_request",
         id: "ui",
@@ -87,8 +90,8 @@ process.stdin.on("data", (chunk) => {
         widgetLines: [
           JSON.stringify({
             id: request.id,
-            completion: " world",
-            completions: [" world", " there", " again"].slice(0, request.alternatives ?? 1),
+            completion: completions[0],
+            completions,
           }),
         ],
       });
@@ -144,6 +147,14 @@ describe.skipIf(HostProcess.Platform.defaultValue() === "win32")("makePiDraftCom
         " there",
         " again",
       ]);
+    }).pipe(Effect.scoped, Effect.provide(testLayer)),
+  );
+
+  it.live("passes the thinking level through only when one is set", () =>
+    Effect.gen(function* () {
+      const { completer } = yield* withFakePi();
+      assert.deepEqual(yield* completer.complete({ draft: "think", thinking: "low" }), [" low"]);
+      assert.deepEqual(yield* completer.complete({ draft: "think" }), [" unset"]);
     }).pipe(Effect.scoped, Effect.provide(testLayer)),
   );
 

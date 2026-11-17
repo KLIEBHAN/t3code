@@ -128,7 +128,11 @@ const make = Effect.gen(function* () {
       if (input.manual !== true && input.draft.trim().length === 0) return nothing;
       const sidecar = yield* getCompleter(input.model ?? DRAFT_COMPLETION_MODEL, input.instanceId);
       if (sidecar === null) return nothing;
-      const completions = yield* sidecar.complete(input);
+      const completions = yield* sidecar.complete(
+        settings.draftCompletionThinking === undefined
+          ? input
+          : { ...input, thinking: settings.draftCompletionThinking },
+      );
       const result: DraftCompletionResult = { completion: completions[0] ?? null, completions };
       return result;
     },

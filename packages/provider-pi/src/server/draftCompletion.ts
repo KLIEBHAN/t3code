@@ -36,6 +36,8 @@ export interface PiDraftCompletionRequest {
   readonly alternatives?: number;
   readonly manual?: boolean;
   readonly fresh?: boolean;
+  /** Thinking for this request; absent uses the sidecar's launch arguments. */
+  readonly thinking?: string;
   readonly context?: { readonly lastUser?: string; readonly lastAssistant?: string };
 }
 
@@ -193,6 +195,7 @@ export const makePiDraftCompleter = Effect.fn("makePiDraftCompleter")(function* 
           alternatives: request.alternatives,
           manual: request.manual,
           fresh: request.fresh,
+          thinking: request.thinking,
         });
         yield* sidecar.connection.send({
           type: "prompt",
