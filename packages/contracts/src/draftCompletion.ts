@@ -6,9 +6,20 @@ const MAX_DRAFT_CHARS = 8_000;
 export const DRAFT_COMPLETION_MAX_CONTEXT_CHARS = 8_000;
 const MAX_CONTEXT_CHARS = DRAFT_COMPLETION_MAX_CONTEXT_CHARS;
 
-/** The draft to complete, with the thread's latest messages as context. */
+/** Most alternatives one request may ask for. */
+export const DRAFT_COMPLETION_MAX_ALTERNATIVES = 3;
+
+/**
+ * The draft to complete, with the thread's latest messages as context.
+ * `alternatives` asks for several distinct completions; `manual` marks a request
+ * the user made, which also completes an empty draft into a whole prompt.
+ */
 export const DraftCompletionInput = Schema.Struct({
   draft: Schema.String.check(Schema.isMaxLength(MAX_DRAFT_CHARS)),
+  alternatives: Schema.optionalKey(
+    Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: DRAFT_COMPLETION_MAX_ALTERNATIVES })),
+  ),
+  manual: Schema.optionalKey(Schema.Boolean),
   context: Schema.optionalKey(
     Schema.Struct({
       lastUser: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(MAX_CONTEXT_CHARS))),
@@ -18,8 +29,9 @@ export const DraftCompletionInput = Schema.Struct({
 });
 export type DraftCompletionInput = typeof DraftCompletionInput.Type;
 
-/** Text to append to the draft, or null when there is nothing to suggest. */
+/** Texts to append to the draft, best first; `completion` is the first or null. */
 export const DraftCompletionResult = Schema.Struct({
   completion: Schema.NullOr(Schema.String),
+  completions: Schema.Array(Schema.String),
 });
 export type DraftCompletionResult = typeof DraftCompletionResult.Type;

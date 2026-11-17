@@ -291,6 +291,7 @@ import { composerCommandKeyHandler } from "./composerCommandKey";
 import { usePromptSuggestion } from "./usePromptSuggestion";
 // Fork: completion of the draft as the user types.
 import { useDraftCompletion } from "./useDraftCompletion";
+import { useSuggestionAlternatives } from "./useSuggestionAlternatives";
 import { DRAFT_COMPLETION_MAX_CONTEXT_CHARS } from "@t3tools/contracts";
 import { useServerConfigs } from "../../state/entities";
 import { useFreshSessionArmed } from "./freshSessionArms";
@@ -2174,6 +2175,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const submitComposerRef = useRef<
     (dispatchMode?: ComposerDispatchMode, submissionIntent?: ComposerSubmissionIntent) => void
   >(() => {});
+  // Fork: set once useSuggestionAlternatives below has run.
+  const clearSuggestionAlternativesRef = useRef<() => void>(() => undefined);
   const submitComposer = (
     event?: { preventDefault: () => void },
     dispatchMode?: ComposerDispatchMode,
@@ -2222,6 +2225,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       event,
       onSend: (sendEvent) => {
         providerInputRejectedRef.current = false;
+        // Fork: a sent prompt ends its alternatives; an empty draft would match them again.
+        clearSuggestionAlternativesRef.current();
         onSend(
           sendEvent,
           dispatchMode ??
@@ -2406,10 +2411,35 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     enabled: promptSuggestionsEnabled && composerOffersSuggestions && nextPromptGhost === null,
     readContext: readDraftCompletionContext,
   });
+  // Fork: Ctrl+. and Ctrl+, replace the suggestion with one of its alternatives.
+  const suggestionAlternatives = useSuggestionAlternatives({
+    environmentId,
+    targetKey: composerDraftTargetKey,
+    draft: prompt,
+    enabled: promptSuggestionsEnabled && composerOffersSuggestions,
+    readContext: readDraftCompletionContext,
+  });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- hands the latest clear to submitComposer, declared above the hook
+  useEffect(() => {
+    clearSuggestionAlternativesRef.current = suggestionAlternatives.clear;
+  });
   const composerSuggestion =
-    nextPromptGhost ?? (composerOffersSuggestions ? draftCompletion.suggestion : null);
-  const dismissComposerSuggestion =
-    nextPromptGhost !== null ? dismissPromptSuggestion : draftCompletion.dismiss;
+    suggestionAlternatives.suggestion ??
+    nextPromptGhost ??
+    (composerOffersSuggestions ? draftCompletion.suggestion : null);
+  const dismissComposerSuggestion = () => {
+    suggestionAlternatives.clear();
+    if (nextPromptGhost !== null) dismissPromptSuggestion();
+    else draftCompletion.dismiss();
+  };
+  const cycleComposerSuggestion = (direction: 1 | -1) => {
+    if (!promptSuggestionsEnabled || !composerOffersSuggestions) return false;
+    suggestionAlternatives.cycle(direction, composerSuggestion);
+    return true;
+  };
+  // An empty composer shows its suggestion as the placeholder.
+  const placeholderSuggestion =
+    (prompt.length === 0 ? composerSuggestion : null) ?? offeredPromptSuggestion;
 
   const onComposerCommandKey = (key: string, event: KeyboardEvent, isTaskItem?: boolean) =>
     composerCommandKeyHandler({
@@ -2451,6 +2481,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       submitComposer,
       promptSuggestion: composerSuggestion,
       dismissPromptSuggestion: dismissComposerSuggestion,
+      cycleSuggestion: cycleComposerSuggestion,
+      suggestionPending: suggestionAlternatives.pending,
     })(key, event, isTaskItem);
 
   const {
@@ -3750,12 +3782,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                             ? "Choose a project above to start a thread"
                             : showProviderUnavailable
                               ? "Enable a provider in Settings to send a message"
-                              : (offeredPromptSuggestion ?? DEFAULT_COMPOSER_PLACEHOLDER)
+                              : (placeholderSuggestion ?? DEFAULT_COMPOSER_PLACEHOLDER)
                     }
                     // Fork: the rest of the suggestion stays visible while the draft is its start.
                     ghostSuggestion={composerSuggestion}
                     placeholderSuffix={
-                      offeredPromptSuggestion !== null ? (
+                      placeholderSuggestion !== null ? (
                         <span className="ml-2 inline-flex align-[1px]">
                           <Kbd variant="outline">⇥ Tab</Kbd>
                         </span>

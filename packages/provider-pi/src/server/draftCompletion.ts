@@ -25,18 +25,23 @@ export const DRAFT_COMPLETION_WIDGET_KEY = "prompt-autocomplete-completion";
 const COMMAND_NAME = "prompt-autocomplete";
 // The extension needs about 1.5 s on cpa-small; a later reply belongs to a draft the user changed.
 const DEFAULT_REPLY_TIMEOUT_MS = 6_000;
+// Several alternatives take the model longer, and the user waits for them on purpose.
+const MANUAL_REPLY_TIMEOUT_MS = 15_000;
 const DEFAULT_START_TIMEOUT_MS = 10_000;
 const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
 const decodeJson = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown));
 
 export interface PiDraftCompletionRequest {
   readonly draft: string;
+  readonly alternatives?: number;
+  readonly manual?: boolean;
   readonly context?: { readonly lastUser?: string; readonly lastAssistant?: string };
 }
 
 export interface PiDraftCompletionReply {
   readonly id: string;
-  readonly completion: string | null;
+  /** Distinct texts to append to the draft, best first; empty when there is none. */
+  readonly completions: ReadonlyArray<string>;
 }
 
 /** The extension's reply in a Pi RPC record, or undefined for any other record. */
@@ -50,11 +55,17 @@ export function parseDraftCompletionReply(record: PiRpcRecord): PiDraftCompletio
   const payload = Option.getOrUndefined(decodeJson(line));
   const id = piRecordString(payload, "id");
   if (id === undefined) return undefined;
-  const completion = piRecordField(payload, "completion");
-  return {
-    id,
-    completion: typeof completion === "string" && completion.length > 0 ? completion : null,
-  };
+  // 0.5.0 answers only `completion`; 0.6.0 adds the list of alternatives.
+  const listed = piRecordField(payload, "completions");
+  const single = piRecordField(payload, "completion");
+  const candidates = Array.isArray(listed) ? listed : [single];
+  const completions = candidates.filter(
+    (candidate, index): candidate is string =>
+      typeof candidate === "string" &&
+      candidate.length > 0 &&
+      candidates.indexOf(candidate) === index,
+  );
+  return { id, completions };
 }
 
 interface LiveSidecar {
@@ -66,8 +77,8 @@ interface LiveSidecar {
 
 /**
  * Starts Pi on the first request and keeps it for later ones; a Pi that exits
- * is started again by the next request. Every request resolves to the text to
- * append to the draft, or null. Needs a Scope for the process's lifetime.
+ * is started again by the next request. Every request resolves to the texts to
+ * append to the draft, best first, or an empty list. Needs a Scope for the process's lifetime.
  */
 export const makePiDraftCompleter = Effect.fn("makePiDraftCompleter")(function* (input: {
   readonly command: string;
@@ -81,13 +92,13 @@ export const makePiDraftCompleter = Effect.fn("makePiDraftCompleter")(function* 
   const random = yield* SecureRandom.SecureRandom;
   const parentScope = yield* Effect.scope;
   const startLock = yield* Semaphore.make(1);
-  const pending = new Map<string, Deferred.Deferred<string | null>>();
+  const pending = new Map<string, Deferred.Deferred<ReadonlyArray<string>>>();
   let live: LiveSidecar | undefined;
 
   const settleAll = Effect.suspend(() => {
     const waiting = [...pending.values()];
     pending.clear();
-    return Effect.forEach(waiting, (deferred) => Deferred.succeed(deferred, null), {
+    return Effect.forEach(waiting, (deferred) => Deferred.succeed(deferred, []), {
       discard: true,
     });
   });
@@ -102,7 +113,7 @@ export const makePiDraftCompleter = Effect.fn("makePiDraftCompleter")(function* 
         const deferred = pending.get(reply.id);
         if (deferred === undefined) continue;
         pending.delete(reply.id);
-        yield* Deferred.succeed(deferred, reply.completion);
+        yield* Deferred.succeed(deferred, reply.completions);
       }
     },
     (effect, sidecar) =>
@@ -169,20 +180,29 @@ export const makePiDraftCompleter = Effect.fn("makePiDraftCompleter")(function* 
   const complete = Effect.fn("PiDraftCompleter.complete")(
     function* (request: PiDraftCompletionRequest) {
       const sidecar = yield* ensureLive;
-      if (!sidecar.available) return null;
+      if (!sidecar.available) return [];
       const id = yield* random.uuidV4();
-      const deferred = yield* Deferred.make<string | null>();
+      const deferred = yield* Deferred.make<ReadonlyArray<string>>();
       pending.set(id, deferred);
       return yield* Effect.gen(function* () {
-        const payload = yield* encodeJson({ id, draft: request.draft, context: request.context });
+        const payload = yield* encodeJson({
+          id,
+          draft: request.draft,
+          context: request.context,
+          alternatives: request.alternatives,
+          manual: request.manual,
+        });
         yield* sidecar.connection.send({
           type: "prompt",
           message: `/${COMMAND_NAME} complete ${payload}`,
         });
         const reply = yield* Deferred.await(deferred).pipe(
-          Effect.timeoutOption(input.replyTimeoutMs ?? DEFAULT_REPLY_TIMEOUT_MS),
+          Effect.timeoutOption(
+            input.replyTimeoutMs ??
+              (request.manual === true ? MANUAL_REPLY_TIMEOUT_MS : DEFAULT_REPLY_TIMEOUT_MS),
+          ),
         );
-        return Option.getOrNull(reply);
+        return Option.getOrElse(reply, (): ReadonlyArray<string> => []);
       }).pipe(
         Effect.ensuring(
           Effect.sync(() => {
@@ -191,7 +211,8 @@ export const makePiDraftCompleter = Effect.fn("makePiDraftCompleter")(function* 
         ),
       );
     },
-    (effect): Effect.Effect<string | null> => effect.pipe(Effect.orElseSucceed(() => null)),
+    (effect): Effect.Effect<ReadonlyArray<string>> =>
+      effect.pipe(Effect.orElseSucceed((): ReadonlyArray<string> => [])),
   );
 
   return { complete };
