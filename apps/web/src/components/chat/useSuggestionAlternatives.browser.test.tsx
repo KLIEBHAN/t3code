@@ -124,6 +124,21 @@ describe("useSuggestionAlternatives", () => {
     expect(api().suggestion).toBeNull();
   });
 
+  it("shows a request as pending only where the draft continues the one asked for", async () => {
+    const { mount, api, element } = setup();
+    await using screen = await mount("a", "Run");
+    await act(async () => api().cycle(1, null));
+    expect(api().pending).toBe(true);
+    await screen.rerender(element("a", "Run the"));
+    expect(api().pending).toBe(true);
+    await screen.rerender(element("a", ""));
+    expect(api().pending).toBe(false);
+    await screen.rerender(element("b", "Run"));
+    expect(api().pending).toBe(false);
+    await screen.rerender(element("a", "Run"));
+    expect(api().pending).toBe(true);
+  });
+
   it("refreshes past the cache and shows nothing stale while it loads", async () => {
     const { mount, api } = setup();
     await using _screen = await mount("a", "Run the");

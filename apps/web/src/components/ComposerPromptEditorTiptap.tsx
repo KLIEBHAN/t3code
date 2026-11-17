@@ -189,6 +189,8 @@ export interface ComposerPromptEditorProps {
   placeholderSuffix?: ReactNode;
   /** Fork: prompt suggestion whose rest shows in grey after the caret while the draft is its start. */
   ghostSuggestion?: string | null;
+  /** Fork: a suggestion the user asked for is loading; shows dots after the caret. */
+  ghostLoading?: boolean;
   ariaLabel?: string | undefined;
   suggestionListId?: string | undefined;
   activeSuggestionId?: string | undefined;
@@ -964,6 +966,7 @@ function ComposerPromptEditorTiptapInner(
     placeholderClassName,
     placeholderSuffix,
     ghostSuggestion = null,
+    ghostLoading = false,
     onChange,
     onVisibleSelectionChange,
     onCommandKeyDown,
@@ -1548,7 +1551,7 @@ function ComposerPromptEditorTiptapInner(
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- pushes the ghost suggestion into the ProseMirror plugin state before paint
   useLayoutEffect(() => {
     if (!editor) return;
-    const push = () => setComposerGhostSuggestion(editor.view, ghostSuggestion);
+    const push = () => setComposerGhostSuggestion(editor.view, ghostSuggestion, ghostLoading);
     if (editor.isInitialized) {
       push();
       return;
@@ -1557,7 +1560,7 @@ function ComposerPromptEditorTiptapInner(
     return () => {
       editor.off("create", push);
     };
-  }, [editor, ghostSuggestion]);
+  }, [editor, ghostSuggestion, ghostLoading]);
 
   // Push attributes before layout measurements; Tiptap updates them later in a passive effect.
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- pushes DOM attributes into the ProseMirror view before layout measurements read them

@@ -18,18 +18,28 @@ export function nextComposerGhostWord(remainder: string): string {
   return /^\s*\S+/.exec(remainder)?.[0] ?? remainder;
 }
 
-const ghostTextKey = new PluginKey<string | null>("composer-ghost-text");
+/** The suggestion to show and whether a requested one is still loading. */
+interface GhostState {
+  readonly suggestion: string | null;
+  readonly loading: boolean;
+}
 
-function ghostDecorations(state: EditorState, suggestion: string | null): DecorationSet {
-  if (suggestion === null) return DecorationSet.empty;
+const EMPTY_GHOST: GhostState = { suggestion: null, loading: false };
+const ghostTextKey = new PluginKey<GhostState>("composer-ghost-text");
+
+function ghostDecorations(state: EditorState, ghost: GhostState): DecorationSet {
+  if (ghost.suggestion === null && !ghost.loading) return DecorationSet.empty;
   const { doc, selection } = state;
   const end = TextSelection.atEnd(doc).to;
   if (!selection.empty || selection.head !== end) return DecorationSet.empty;
   // The draft as the composer serializes it, Markdown included, so the ghost
   // matches what Tab accepts. Read from the document, not the prompt prop,
   // which lags a keystroke behind.
-  const remainder = composerGhostRemainder(serializeEditorDoc(doc).value, suggestion);
-  if (remainder === null) return DecorationSet.empty;
+  const draft = serializeEditorDoc(doc).value;
+  const remainder = composerGhostRemainder(draft, ghost.suggestion);
+  // An empty composer shows loading in its placeholder instead.
+  const loading = ghost.loading && draft.length > 0;
+  if (remainder === null && !loading) return DecorationSet.empty;
   const widget = Decoration.widget(
     end,
     () => {
@@ -37,43 +47,59 @@ function ghostDecorations(state: EditorState, suggestion: string | null): Decora
       span.className = "pointer-events-none select-none whitespace-pre-wrap text-placeholder";
       span.dataset.composerGhostText = "true";
       span.setAttribute("aria-hidden", "true");
-      span.textContent = remainder;
+      span.textContent = remainder ?? "";
+      if (loading) {
+        // Pulses only while a request the user made is on its way, then disappears.
+        const dots = document.createElement("span");
+        dots.className = "ms-1";
+        dots.dataset.composerGhostLoading = "true";
+        dots.textContent = "…";
+        span.append(dots);
+      }
       return span;
     },
-    { side: 1, key: `ghost:${remainder}`, ignoreSelection: true },
+    { side: 1, key: `ghost:${loading ? "loading:" : ""}${remainder ?? ""}`, ignoreSelection: true },
   );
   return DecorationSet.create(doc, [widget]);
 }
 
 /**
  * Shows the rest of the composer's prompt suggestion in grey after the caret
- * while the draft is the suggestion's start and the caret is at its end. Set
- * the suggestion with setComposerGhostSuggestion; the composer's key handler
- * accepts it.
+ * while the draft is the suggestion's start and the caret is at its end, and
+ * dots while a requested suggestion loads. Set both with
+ * setComposerGhostSuggestion; the composer's key handler accepts the suggestion.
  */
 export const ComposerGhostTextExtension = Extension.create({
   name: "composerGhostText",
   addProseMirrorPlugins() {
     return [
-      new Plugin<string | null>({
+      new Plugin<GhostState>({
         key: ghostTextKey,
         state: {
-          init: () => null,
+          init: () => EMPTY_GHOST,
           apply: (tr, value) => {
-            const next: string | null | undefined = tr.getMeta(ghostTextKey);
+            const next: GhostState | undefined = tr.getMeta(ghostTextKey);
             return next === undefined ? value : next;
           },
         },
         props: {
-          decorations: (state) => ghostDecorations(state, ghostTextKey.getState(state) ?? null),
+          decorations: (state) =>
+            ghostDecorations(state, ghostTextKey.getState(state) ?? EMPTY_GHOST),
         },
       }),
     ];
   },
 });
 
-/** Puts `suggestion` into the editor's ghost text; null hides it. */
-export function setComposerGhostSuggestion(view: EditorView, suggestion: string | null): void {
-  if ((ghostTextKey.getState(view.state) ?? null) === suggestion) return;
-  view.dispatch(view.state.tr.setMeta(ghostTextKey, suggestion).setMeta("addToHistory", false));
+/** Puts `suggestion` into the editor's ghost text, null hides it; `loading` adds dots after the caret. */
+export function setComposerGhostSuggestion(
+  view: EditorView,
+  suggestion: string | null,
+  loading = false,
+): void {
+  const current = ghostTextKey.getState(view.state) ?? EMPTY_GHOST;
+  if (current.suggestion === suggestion && current.loading === loading) return;
+  view.dispatch(
+    view.state.tr.setMeta(ghostTextKey, { suggestion, loading }).setMeta("addToHistory", false),
+  );
 }

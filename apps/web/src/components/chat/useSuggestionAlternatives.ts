@@ -22,15 +22,21 @@ interface Alternatives {
   readonly selected: string;
 }
 
+/** The composer, model, and draft a request or refresh runs for. */
+interface RequestScope {
+  readonly targetKey: string;
+  readonly modelKey: string;
+  readonly base: string;
+}
+
 /** The prompts in `prompts` that `draft` starts and that add to it. */
 const continuing = (prompts: ReadonlyArray<string>, draft: string) =>
   prompts.filter((prompt) => prompt.length > draft.length && prompt.startsWith(draft));
 
 /**
- * The first `cycle` asks for alternatives and lists them after `current`, the suggestion on
- * screen; later calls step through them while the draft continues the text they were asked
- * for. `refresh` drops them and asks the model anew, past its cache. `pending` tells whether
- * a request runs; `clear` drops both.
+ * `cycle` first asks for alternatives to `current`, then steps through them while the draft
+ * continues the text asked for. `refresh` asks anew, past the cache. `pending`: a request runs
+ * for this composer, model, and a draft continuing the one asked for. `clear` drops both.
  */
 export function useSuggestionAlternatives(input: {
   readonly environmentId: EnvironmentId | null;
@@ -55,13 +61,10 @@ export function useSuggestionAlternatives(input: {
     reportDefect: false,
   });
   const [alternatives, setAlternatives] = useState<Alternatives | null>(null);
-  const [pending, setPending] = useState(false);
+  // What the running request was asked for; another thread, model, or draft shows no loading.
+  const [pendingFor, setPendingFor] = useState<RequestScope | null>(null);
   // The context a refresh runs for; another thread, model, or draft is not hidden by it.
-  const [refreshFor, setRefreshFor] = useState<{
-    readonly targetKey: string;
-    readonly modelKey: string;
-    readonly base: string;
-  } | null>(null);
+  const [refreshFor, setRefreshFor] = useState<RequestScope | null>(null);
   const latestRequest = useRef(0);
 
   const modelKey = draftCompletionModelKey(input.model);
@@ -86,7 +89,7 @@ export function useSuggestionAlternatives(input: {
     if (environmentId === null) return;
     const request = ++latestRequest.current;
     const asked = draft;
-    setPending(true);
+    setPendingFor({ targetKey, modelKey, base: asked });
     void completeDraft({
       environmentId,
       input: {
@@ -100,7 +103,7 @@ export function useSuggestionAlternatives(input: {
     }).then((result) => {
       // A newer request or a dismissal owns the alternatives now.
       if (request !== latestRequest.current) return;
-      setPending(false);
+      setPendingFor(null);
       setRefreshFor(null);
       if (result._tag !== "Success") return;
       const prompts = [
@@ -147,9 +150,15 @@ export function useSuggestionAlternatives(input: {
   const clear = () => {
     latestRequest.current += 1;
     setAlternatives(null);
-    setPending(false);
+    setPendingFor(null);
     setRefreshFor(null);
   };
+  const pending =
+    enabled &&
+    pendingFor !== null &&
+    pendingFor.targetKey === targetKey &&
+    pendingFor.modelKey === modelKey &&
+    draft.startsWith(pendingFor.base);
   const refreshing =
     refreshFor !== null &&
     refreshFor.targetKey === targetKey &&
