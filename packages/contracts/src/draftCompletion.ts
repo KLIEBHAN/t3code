@@ -5,6 +5,9 @@ const MAX_DRAFT_CHARS = 8_000;
 /** Longest context message the server accepts; clients cut longer ones first. */
 const MAX_CONTEXT_CHARS = 8_000;
 
+/** Most earlier messages one request may carry. */
+const MAX_EARLIER_MESSAGES = 6;
+
 /** Most alternatives one request may ask for. */
 export const DRAFT_COMPLETION_MAX_ALTERNATIVES = 3;
 
@@ -32,6 +35,15 @@ export const DraftCompletionInput = Schema.Struct({
     Schema.Struct({
       lastUser: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(MAX_CONTEXT_CHARS))),
       lastAssistant: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(MAX_CONTEXT_CHARS))),
+      /** Messages before those two, oldest first (extension 0.9.0). */
+      recent: Schema.optionalKey(
+        Schema.Array(
+          Schema.Struct({
+            role: Schema.Literals(["user", "assistant"]),
+            text: Schema.String.check(Schema.isMaxLength(MAX_CONTEXT_CHARS)),
+          }),
+        ).check(Schema.isMaxLength(MAX_EARLIER_MESSAGES)),
+      ),
     }),
   ),
 });

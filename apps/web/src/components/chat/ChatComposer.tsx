@@ -2398,9 +2398,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         ? { instanceId: String(selectedInstanceId), model: selectedModel }
         : undefined;
   const readDraftCompletionContext = () => {
-    const { lastUser, lastAssistant } = latestExchange(readThreadMessages(routeThreadRef));
-    // Start and end of each message, as the extension keeps them; the start often names the result.
-    return draftCompletionContext(lastUser, lastAssistant);
+    // Cut as the extension keeps it; the start of a message often names the result.
+    return draftCompletionContext(latestExchange(readThreadMessages(routeThreadRef)));
   };
   const nextPromptGhost =
     offeredPromptSuggestion !== null && offeredPromptSuggestion.startsWith(prompt)
