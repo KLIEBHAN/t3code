@@ -11,6 +11,8 @@ import * as Semaphore from "effect/Semaphore";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 
+import type { DraftCompletionThinking } from "@t3tools/contracts";
+
 import { buildPiRpcLaunch } from "./mcpInjection.ts";
 import {
   makePiRpcConnection,
@@ -28,7 +30,9 @@ const DEFAULT_REPLY_TIMEOUT_MS = 6_000;
 // Several alternatives take the model longer, and the user waits for them on purpose.
 const MANUAL_REPLY_TIMEOUT_MS = 15_000;
 // Extra time the extension (0.8.0) allows a request for its thinking; the reply may take as long.
-const THINKING_EXTRA_TIMEOUT_MS: Partial<Record<string, number>> = {
+const THINKING_EXTRA_TIMEOUT_MS: Record<DraftCompletionThinking, number> = {
+  off: 0,
+  minimal: 0,
   low: 7_000,
   medium: 22_000,
   high: 52_000,
@@ -43,7 +47,7 @@ export interface PiDraftCompletionRequest {
   readonly manual?: boolean;
   readonly fresh?: boolean;
   /** Thinking for this request; absent uses the sidecar's launch arguments. */
-  readonly thinking?: string;
+  readonly thinking?: DraftCompletionThinking;
   readonly context?: { readonly lastUser?: string; readonly lastAssistant?: string };
 }
 
@@ -211,7 +215,7 @@ export const makePiDraftCompleter = Effect.fn("makePiDraftCompleter")(function* 
           Effect.timeoutOption(
             (input.replyTimeoutMs ??
               (request.manual === true ? MANUAL_REPLY_TIMEOUT_MS : DEFAULT_REPLY_TIMEOUT_MS)) +
-              (THINKING_EXTRA_TIMEOUT_MS[request.thinking ?? "off"] ?? 0),
+              THINKING_EXTRA_TIMEOUT_MS[request.thinking ?? "off"],
           ),
         );
         return Option.getOrElse(reply, (): ReadonlyArray<string> => []);

@@ -80,7 +80,7 @@ process.stdin.on("data", (chunk) => {
       if (request.draft === "exit") process.exit(0);
       if (request.draft === "slow") continue;
       const completions = request.draft === "think"
-        ? [" " + (request.thinking ?? "unset")]
+        ? [" " + ("thinking" in request ? String(request.thinking) : "unset")]
         : [" world", " there", " again"].slice(0, request.alternatives ?? 1);
       write({
         type: "extension_ui_request",
