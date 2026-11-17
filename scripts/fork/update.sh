@@ -9,8 +9,9 @@
 # builds: every run fetches the build host's newest app (fetch-app.sh).
 #
 # Usage: scripts/fork/update.sh [--scheduled] [--restart]
-#   --scheduled  launchd mode, started every hour: sync and build at most once
-#                a day, from 04:00; every run installs a waiting build.
+#   --scheduled  launchd mode, started every hour: sync with upstream at most
+#                once a day, from 04:00; every run builds fork commits merged on
+#                origin and installs a waiting build.
 #   --restart    restart a running app for a waiting build now, whatever the
 #                hour and whether threads run; the Dock applet asks first.
 # Exit codes: 0 done, 1 sync, build, fetch, or install failed, 2 wrong checkout state.
@@ -154,6 +155,30 @@ if [ "$scheduled" = 1 ]; then
   fi
 fi
 
+# Builds HEAD unless it is staged or installed already, and announces the build:
+# one push per build reaches the phone for every Mac, because only this Mac
+# builds and the others fetch from it. With "once", a head whose build failed
+# is not tried again until it changes, so an hourly run alerts once.
+build_head() {
+  local head failed="$FORK_STATE_DIR/build-failed" built
+  head="$(git rev-parse HEAD)"
+  if [ "$(fork_app_commit "$FORK_STAGED_APP")" = "$head" ] || [ "$(fork_app_commit "$FORK_APP_PATH")" = "$head" ]; then
+    return 0
+  fi
+  if [ "${1:-}" = once ] && [ "$(cat "$failed" 2>/dev/null)" = "$head" ]; then
+    return 0
+  fi
+  if scripts/fork/build-app.sh; then
+    rm -f "$failed"
+    built="$(plutil -extract CFBundleShortVersionString raw "$FORK_STAGED_APP/Contents/Info.plist" 2>/dev/null || true)"
+    push info 3 "Neuer Build${built:+: $(version_label "$built")}. Installieren mit „T3 Code Fork Update“, sonst nachts, sobald kein Thread läuft."
+  else
+    echo "$head" >"$failed"
+    status=1
+    alert "Der Build ist fehlgeschlagen. Log: $FORK_STATE_DIR/logs"
+  fi
+}
+
 if [ -n "$FORK_BUILD_HOST" ]; then
   # Runs every hour, so a lasting failure is announced once, as for the branch above.
   failed="$FORK_STATE_DIR/fetch-failed"
@@ -173,18 +198,13 @@ elif [ "$full" = 1 ]; then
     status=1
     alert "Upstream ließ sich nicht einspielen. Log: $FORK_STATE_DIR/logs"
   fi
-  head="$(git rev-parse HEAD)"
-  if [ "$(fork_app_commit "$FORK_STAGED_APP")" != "$head" ] && [ "$(fork_app_commit "$FORK_APP_PATH")" != "$head" ]; then
-    if scripts/fork/build-app.sh; then
-      # One push per build reaches the phone for every Mac: only this Mac
-      # builds, at most once a day, and the others fetch from it.
-      built="$(plutil -extract CFBundleShortVersionString raw "$FORK_STAGED_APP/Contents/Info.plist" 2>/dev/null || true)"
-      push info 3 "Neuer Build${built:+: $(version_label "$built")}. Installieren mit „T3 Code Fork Update“, sonst nachts, sobald kein Thread läuft."
-    else
-      status=1
-      alert "Der Build ist fehlgeschlagen. Log: $FORK_STATE_DIR/logs"
-    fi
+  build_head
+else
+  # Between daily syncs, fork changes merged on origin are built within the hour.
+  if git fetch --quiet origin "$FORK_BRANCH" 2>/dev/null; then
+    git merge --quiet --ff-only FETCH_HEAD 2>/dev/null || true
   fi
+  build_head once
 fi
 
 # Quits the app process $1 the way the Dock does. Upstream answers the first

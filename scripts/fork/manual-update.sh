@@ -8,11 +8,12 @@
 # $FORK_STATE_DIR/manual-result.<run> holds the summary. <run> is MANUAL_RUN_ID,
 # which the applet picks for each run, so a run it stopped watching cannot
 # answer for a later one:
-#   status=<installed|waiting|current|busy|failed> version=<version> current=<version> runs=<n>
+#   status=<installed|waiting|current|busy|failed> version=<version> current=<version> runs=<n> host=<build host>
 # `version` is the new build for `waiting`, otherwise the installed app;
 # `current` is the app that was installed before the run. `waiting` means a
 # build is ready but the app runs; `runs` counts its unfinished runs, which a
-# restart would interrupt, and is empty when unknown.
+# restart would interrupt, and is empty when unknown. `host` is the build Mac
+# this Mac fetches from, empty on the build Mac itself.
 #
 # Usage: scripts/fork/manual-update.sh [--restart]
 set -uo pipefail
@@ -84,7 +85,7 @@ if [ "$status" = waiting ]; then
 else
   version="$(version_of "$FORK_APP_PATH")"
 fi
-summary="status=$status version=$version current=$current runs=$runs"
+summary="status=$status version=$version current=$current runs=$runs host=$FORK_BUILD_HOST"
 # Written in one step, so the applet never reads half a line.
 printf '%s\n' "$summary" >"$result.tmp" && mv "$result.tmp" "$result"
 rm -f "$progress"

@@ -23,7 +23,7 @@ on run
 		if summary is "" then return
 		set state to valueOf(summary, "status")
 	end if
-	report(state, valueOf(summary, "version"))
+	report(state, valueOf(summary, "version"), valueOf(summary, "host"))
 end run
 
 -- Starts manual-update.sh detached from this applet and waits for its result.
@@ -169,11 +169,17 @@ on valueOf(summary, key)
 	return ""
 end valueOf
 
-on report(state, versionText)
+on report(state, versionText, buildHost)
 	if state is "installed" then
 		showDialog("Aktualisiert" & return & versionLabel(versionText) & return & return & "Die neue Version ist installiert.", {"OK"}, "OK", dialogIcon())
 	else if state is "current" then
-		showDialog("Alles aktuell" & return & versionLabel(versionText) & return & return & "Es gibt keine neuere Upstream-Version.", {"OK"}, "OK", dialogIcon())
+		-- A Mac that fetches its builds only knows what the build Mac offers.
+		if buildHost is "" then
+			set reason to "Es gibt keine neuere Upstream-Version, und alle Fork-Änderungen sind gebaut."
+		else
+			set reason to "„" & buildHost & "“ bietet keinen neueren Build an. Neue Fork-Änderungen baut er innerhalb einer Stunde."
+		end if
+		showDialog("Alles aktuell" & return & versionLabel(versionText) & return & return & reason, {"OK"}, "OK", dialogIcon())
 	else if state is "waiting" then
 		showDialog("Update wartet" & return & versionLabel(versionText) & return & return & "Es wird installiert, sobald die App beendet ist oder nachts kein Thread läuft.", {"OK"}, "OK", dialogIcon())
 	else if state is "slow" then
