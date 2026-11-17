@@ -69,6 +69,9 @@ export type TimestampFormat = typeof TimestampFormat.Type;
 const DEFAULT_TIMESTAMP_FORMAT: TimestampFormat = "locale";
 
 export const DiffLayout = Schema.Literals(["stacked", "split"]);
+/** Fork: thinking a suggestion request asks for, as pi-prompt-autocomplete 0.8.0 accepts it. */
+export const DraftCompletionThinking = Schema.Literals(["off", "minimal", "low", "medium", "high"]);
+export type DraftCompletionThinking = typeof DraftCompletionThinking.Type;
 export type DiffLayout = typeof DiffLayout.Type;
 const DEFAULT_DIFF_LAYOUT: DiffLayout = "stacked";
 
@@ -1488,6 +1491,8 @@ export const ServerSettings = Schema.Struct({
   draftCompletionModel: Schema.optionalKey(Schema.String),
   /** Fork: the Pi provider instance draftCompletionModel belongs to. */
   draftCompletionInstanceId: Schema.optionalKey(Schema.String),
+  /** Fork: thinking for those completions; absent leaves it to Pi's launch arguments, off by default. */
+  draftCompletionThinking: Schema.optionalKey(DraftCompletionThinking),
   sidebarAutoSettleKeepPullRequests: Schema.Boolean.pipe(
     Schema.withDecodingDefault(Effect.succeed(false)),
   ),
@@ -1925,6 +1930,7 @@ export const ServerSettingsPatch = Schema.Struct({
   // Fork: see ServerSettings.draftCompletionModel; an empty string clears it.
   draftCompletionModel: Schema.optionalKey(Schema.String),
   draftCompletionInstanceId: Schema.optionalKey(Schema.String),
+  draftCompletionThinking: Schema.optionalKey(DraftCompletionThinking),
   backgroundActivity: Schema.optionalKey(
     Schema.Struct({
       schemaVersion: Schema.optionalKey(Schema.Literal(1)),

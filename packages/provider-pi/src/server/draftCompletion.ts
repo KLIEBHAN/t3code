@@ -11,6 +11,8 @@ import * as Semaphore from "effect/Semaphore";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 
+import type { DraftCompletionThinking } from "@t3tools/contracts";
+
 import { buildPiRpcLaunch } from "./mcpInjection.ts";
 import {
   makePiRpcConnection,
@@ -27,6 +29,14 @@ const COMMAND_NAME = "prompt-autocomplete";
 const DEFAULT_REPLY_TIMEOUT_MS = 6_000;
 // Several alternatives take the model longer, and the user waits for them on purpose.
 const MANUAL_REPLY_TIMEOUT_MS = 15_000;
+// Extra time the extension (0.8.0) allows a request for its thinking; the reply may take as long.
+const THINKING_EXTRA_TIMEOUT_MS: Record<DraftCompletionThinking, number> = {
+  off: 0,
+  minimal: 0,
+  low: 7_000,
+  medium: 22_000,
+  high: 52_000,
+};
 const DEFAULT_START_TIMEOUT_MS = 10_000;
 const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
 const decodeJson = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown));
@@ -36,6 +46,8 @@ export interface PiDraftCompletionRequest {
   readonly alternatives?: number;
   readonly manual?: boolean;
   readonly fresh?: boolean;
+  /** Thinking for this request; absent uses the sidecar's launch arguments. */
+  readonly thinking?: DraftCompletionThinking;
   readonly context?: { readonly lastUser?: string; readonly lastAssistant?: string };
 }
 
@@ -193,6 +205,7 @@ export const makePiDraftCompleter = Effect.fn("makePiDraftCompleter")(function* 
           alternatives: request.alternatives,
           manual: request.manual,
           fresh: request.fresh,
+          thinking: request.thinking,
         });
         yield* sidecar.connection.send({
           type: "prompt",
@@ -200,8 +213,9 @@ export const makePiDraftCompleter = Effect.fn("makePiDraftCompleter")(function* 
         });
         const reply = yield* Deferred.await(deferred).pipe(
           Effect.timeoutOption(
-            input.replyTimeoutMs ??
-              (request.manual === true ? MANUAL_REPLY_TIMEOUT_MS : DEFAULT_REPLY_TIMEOUT_MS),
+            (input.replyTimeoutMs ??
+              (request.manual === true ? MANUAL_REPLY_TIMEOUT_MS : DEFAULT_REPLY_TIMEOUT_MS)) +
+              THINKING_EXTRA_TIMEOUT_MS[request.thinking ?? "off"],
           ),
         );
         return Option.getOrElse(reply, (): ReadonlyArray<string> => []);

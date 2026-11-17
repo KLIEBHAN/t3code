@@ -1,6 +1,6 @@
 import { useAuth } from "@clerk/react";
 import { Link } from "@tanstack/react-router";
-import { managedCapabilityDenial } from "@t3tools/contracts";
+import { DraftCompletionThinking, managedCapabilityDenial } from "@t3tools/contracts";
 
 import { hasCloudPublicConfig } from "~/cloud/publicConfig";
 import { useT3ConnectAuthPrompt } from "../clerk/useT3ConnectAuthPrompt";
@@ -28,6 +28,8 @@ export function LabsSettingsPanel() {
         <PromptSuggestionsRow />
         {/* Fork: model for completions while typing and Ctrl+. alternatives. */}
         <DraftCompletionModelRow />
+        {/* Fork: thinking for those completions. */}
+        <DraftCompletionThinkingRow />
         {/* Fork: the composer keys for suggestions. */}
         <SuggestionKeysRow />
         <SimlockHostsRow />
@@ -253,7 +255,7 @@ function DraftCompletionModelRow() {
       id="draft-completion-model"
       title="Model for suggestions while typing"
       settingKeys={["draftCompletionModel", "draftCompletionInstanceId"]}
-      description="Pi model for ghost text while typing and Ctrl+. alternatives. Like the chat uses the thread's Pi model, else cpa/cpa-small. cpa-small and cpa-worker-plus take about 2 s, cpa-pro 4 s."
+      description="Pi model for ghost text and Ctrl+. alternatives. Like the chat uses the thread's Pi model, else cpa/cpa-small. claude-haiku-5-5 takes about 1.5 s, cpa-small and cpa-worker-plus 2.5 s."
       control={
         <Select
           value={value}
@@ -275,6 +277,53 @@ function DraftCompletionModelRow() {
             {options.map((option) => (
               <SelectItem hideIndicator key={option.value} value={option.value}>
                 {option.label}
+              </SelectItem>
+            ))}
+          </SelectPopup>
+        </Select>
+      }
+    />
+  );
+}
+
+const THINKING_LABELS: Record<DraftCompletionThinking, string> = {
+  off: "Off",
+  minimal: "Minimal",
+  low: "Low",
+  medium: "Medium",
+  high: "High",
+};
+
+/**
+ * Fork: picks the thinking for completions while typing and Ctrl+. alternatives. Unset shows
+ * Off, Pi's default; a model that cannot switch thinking off thinks briefly anyway.
+ */
+function DraftCompletionThinkingRow() {
+  const settings = useScopedSettings();
+  const updateSettings = useUpdateScopedSettings();
+  const value = settings.draftCompletionThinking ?? "off";
+  return (
+    <SettingsRow
+      serverScoped
+      id="draft-completion-thinking"
+      title="Thinking for suggestions while typing"
+      settingKeys={["draftCompletionThinking"]}
+      description="Thinking adds latency, often more than it improves a short suggestion. Off is fastest; a model that always thinks still answers. Needs pi-prompt-autocomplete 0.8.0."
+      control={
+        <Select
+          value={value}
+          onValueChange={(next) => {
+            const level = DraftCompletionThinking.literals.find((candidate) => candidate === next);
+            if (level !== undefined) updateSettings({ draftCompletionThinking: level });
+          }}
+        >
+          <SelectTrigger size="sm" className="w-full sm:w-56" aria-label="Thinking for suggestions">
+            <SelectValue>{THINKING_LABELS[value]}</SelectValue>
+          </SelectTrigger>
+          <SelectPopup align="end" alignItemWithTrigger={false}>
+            {DraftCompletionThinking.literals.map((level) => (
+              <SelectItem hideIndicator key={level} value={level}>
+                {THINKING_LABELS[level]}
               </SelectItem>
             ))}
           </SelectPopup>
