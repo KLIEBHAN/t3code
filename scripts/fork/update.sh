@@ -176,7 +176,8 @@ follow_origin() {
   fi
 }
 
-# Builds HEAD unless it is staged or installed already, and announces the build:
+# Builds HEAD unless it is staged or installed already, or differs from that
+# build only in scripts/fork/ and Markdown, and announces the build:
 # one push per build reaches the phone for every Mac, because only this Mac
 # builds and the others fetch from it. With "once", a head whose build failed
 # is not tried again until it changes, so an hourly run alerts once.
@@ -184,6 +185,14 @@ build_head() {
   local head failed="$FORK_STATE_DIR/build-failed" built
   head="$(git rev-parse HEAD)"
   if [ "$(fork_app_commit "$FORK_STAGED_APP")" = "$head" ] || [ "$(fork_app_commit "$FORK_APP_PATH")" = "$head" ]; then
+    return 0
+  fi
+  # Updater scripts and docs are not part of the app: such a change needs no build.
+  local built_from changed
+  built_from="$(fork_app_commit "$FORK_STAGED_APP")"
+  [ -n "$built_from" ] || built_from="$(fork_app_commit "$FORK_APP_PATH")"
+  if [ -n "$built_from" ] && changed="$(git diff --name-only "$built_from" "$head" 2>/dev/null)" &&
+    [ -n "$changed" ] && ! grep -qvE '^scripts/fork/|\.md$' <<<"$changed"; then
     return 0
   fi
   if [ "${1:-}" = once ] && [ "$(cat "$failed" 2>/dev/null)" = "$head" ]; then
