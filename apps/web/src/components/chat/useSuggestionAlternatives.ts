@@ -20,10 +20,9 @@ const continuing = (prompts: ReadonlyArray<string>, draft: string) =>
   prompts.filter((prompt) => prompt.length > draft.length && prompt.startsWith(draft));
 
 /**
- * Alternatives to the composer's suggestion. The first `cycle` asks the server
- * for several completed prompts of the draft and lists them after `current`,
- * the suggestion on screen; later calls step through the list while the draft
- * still starts the prompts. `suggestion` is the selected prompt; `clear` drops it.
+ * The first `cycle` asks for alternatives and lists them after `current`, the suggestion on
+ * screen; later calls step through them while the draft continues the text they were asked
+ * for. `pending` tells whether a request runs; `clear` drops both.
  */
 export function useSuggestionAlternatives(input: {
   readonly environmentId: EnvironmentId | null;
@@ -33,6 +32,7 @@ export function useSuggestionAlternatives(input: {
   readonly readContext: () => DraftCompletionContext;
 }): {
   readonly suggestion: string | null;
+  readonly pending: boolean;
   readonly cycle: (direction: 1 | -1, current: string | null) => void;
   readonly clear: () => void;
 } {
@@ -42,6 +42,7 @@ export function useSuggestionAlternatives(input: {
     reportDefect: false,
   });
   const [alternatives, setAlternatives] = useState<Alternatives | null>(null);
+  const [pending, setPending] = useState(false);
   const latestRequest = useRef(0);
 
   const visible =
@@ -62,6 +63,7 @@ export function useSuggestionAlternatives(input: {
     }
     const request = ++latestRequest.current;
     const asked = draft;
+    setPending(true);
     void completeDraft({
       environmentId,
       input: {
@@ -72,7 +74,9 @@ export function useSuggestionAlternatives(input: {
       },
     }).then((result) => {
       // A newer request or a dismissal owns the alternatives now.
-      if (request !== latestRequest.current || result._tag !== "Success") return;
+      if (request !== latestRequest.current) return;
+      setPending(false);
+      if (result._tag !== "Success") return;
       const prompts = [
         ...new Set([
           ...(shown === null ? [] : [shown]),
@@ -93,6 +97,7 @@ export function useSuggestionAlternatives(input: {
   const clear = () => {
     latestRequest.current += 1;
     setAlternatives(null);
+    setPending(false);
   };
-  return { suggestion, cycle, clear };
+  return { suggestion, pending, cycle, clear };
 }

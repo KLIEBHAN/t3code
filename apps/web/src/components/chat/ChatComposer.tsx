@@ -2175,6 +2175,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const submitComposerRef = useRef<
     (dispatchMode?: ComposerDispatchMode, submissionIntent?: ComposerSubmissionIntent) => void
   >(() => {});
+  // Fork: set once useSuggestionAlternatives below has run.
+  const clearSuggestionAlternativesRef = useRef<() => void>(() => undefined);
   const submitComposer = (
     event?: { preventDefault: () => void },
     dispatchMode?: ComposerDispatchMode,
@@ -2223,6 +2225,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       event,
       onSend: (sendEvent) => {
         providerInputRejectedRef.current = false;
+        // Fork: a sent prompt ends its alternatives; an empty draft would match them again.
+        clearSuggestionAlternativesRef.current();
         onSend(
           sendEvent,
           dispatchMode ??
@@ -2415,6 +2419,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     enabled: promptSuggestionsEnabled && composerOffersSuggestions,
     readContext: readDraftCompletionContext,
   });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- hands the latest clear to submitComposer, declared above the hook
+  useEffect(() => {
+    clearSuggestionAlternativesRef.current = suggestionAlternatives.clear;
+  });
   const composerSuggestion =
     suggestionAlternatives.suggestion ??
     nextPromptGhost ??
@@ -2474,6 +2482,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       promptSuggestion: composerSuggestion,
       dismissPromptSuggestion: dismissComposerSuggestion,
       cycleSuggestion: cycleComposerSuggestion,
+      suggestionPending: suggestionAlternatives.pending,
     })(key, event, isTaskItem);
 
   const {

@@ -107,6 +107,8 @@ export function composerCommandKeyHandler(input: {
   readonly dismissPromptSuggestion: () => void;
   /** Fork: Ctrl+. (1) and Ctrl+, (-1) switch to another suggestion; false leaves the key alone. */
   readonly cycleSuggestion: (direction: 1 | -1) => boolean;
+  /** Fork: alternatives are on their way, so Escape dismisses them too. */
+  readonly suggestionPending: boolean;
 }) {
   const {
     keybindings,
@@ -148,6 +150,7 @@ export function composerCommandKeyHandler(input: {
     promptSuggestion,
     dismissPromptSuggestion,
     cycleSuggestion,
+    suggestionPending,
   } = input;
 
   // The composer persists across threads. A recall from thread A must not
@@ -278,7 +281,7 @@ export function composerCommandKeyHandler(input: {
     }
     if (key === "Escape") {
       if (event.isComposing || event.keyCode === 229) return false;
-      if (!menuIsActive && pendingPromptSuggestion() !== null) {
+      if (!menuIsActive && (pendingPromptSuggestion() !== null || suggestionPending)) {
         dismissPromptSuggestion();
         return true;
       }
