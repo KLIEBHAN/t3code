@@ -73,3 +73,5 @@ export * from "./secretRequest.ts";
 export * from "./secretReference.ts";
 export * from "./settingsSecretValue.ts";
 export * from "./clientRpcPermissions.ts";
+// Fork: draft completion.
+export * from "./draftCompletion.ts";

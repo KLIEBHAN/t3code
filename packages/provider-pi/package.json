@@ -18,6 +18,10 @@
     "./server/usage": {
       "types": "./src/server/usage.ts",
       "import": "./src/server/usage.ts"
+    },
+    "./server/draftCompletion": {
+      "types": "./src/server/draftCompletion.ts",
+      "import": "./src/server/draftCompletion.ts"
     }
   },
   "scripts": {
