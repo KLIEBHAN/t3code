@@ -105,6 +105,8 @@ export function composerCommandKeyHandler(input: {
    */
   readonly promptSuggestion: string | null;
   readonly dismissPromptSuggestion: () => void;
+  /** Fork: Ctrl+. (1) and Ctrl+, (-1) switch to another suggestion; false leaves the key alone. */
+  readonly cycleSuggestion: (direction: 1 | -1) => boolean;
 }) {
   const {
     keybindings,
@@ -145,6 +147,7 @@ export function composerCommandKeyHandler(input: {
     submitComposer,
     promptSuggestion,
     dismissPromptSuggestion,
+    cycleSuggestion,
   } = input;
 
   // The composer persists across threads. A recall from thread A must not
@@ -261,6 +264,18 @@ export function composerCommandKeyHandler(input: {
     const { trigger } = resolveActiveComposerTrigger();
     const menuIsActive =
       !isLiteralPendingAnswer && (composerMenuOpenRef.current || trigger !== null);
+    // Fork: Ctrl+. and Ctrl+, as in Pi's prompt autocomplete.
+    if (
+      (key === "." || key === ",") &&
+      event.ctrlKey &&
+      !event.metaKey &&
+      !event.altKey &&
+      !event.shiftKey &&
+      !event.isComposing &&
+      !menuIsActive
+    ) {
+      return cycleSuggestion(key === "." ? 1 : -1);
+    }
     if (key === "Escape") {
       if (event.isComposing || event.keyCode === 229) return false;
       if (!menuIsActive && pendingPromptSuggestion() !== null) {

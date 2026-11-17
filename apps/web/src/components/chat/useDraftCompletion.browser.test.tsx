@@ -9,17 +9,21 @@ const calls: Array<{
   readonly draft: string;
   readonly resolve: (completion: string | null) => void;
 }> = [];
-vi.mock(import("../../state/use-atom-command"), async (original) => ({
-  ...(await original()),
-  useAtomCommand: () => (value: unknown) =>
+vi.mock(import("../../state/use-atom-command"), async (original) => {
+  const run = (value: unknown) =>
     new Promise((resolve) => {
       const { input } = value as { input: { draft: string } };
       calls.push({
         draft: input.draft,
-        resolve: (completion) => resolve({ _tag: "Success", value: { completion } }),
+        resolve: (completion) =>
+          resolve({
+            _tag: "Success",
+            value: { completion, completions: completion === null ? [] : [completion] },
+          }),
       });
-    }),
-}));
+    });
+  return { ...(await original()), useAtomCommand: (() => run) as never };
+});
 
 const { useDraftCompletion } = await import("./useDraftCompletion");
 

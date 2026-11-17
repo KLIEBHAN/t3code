@@ -24,18 +24,26 @@ describe("parseDraftCompletionReply", () => {
   it("reads the completion for its request id", () => {
     assert.deepEqual(parseDraftCompletionReply(reply({ id: "a", completion: " world" })), {
       id: "a",
-      completion: " world",
+      completions: [" world"],
     });
   });
 
-  it("turns a null or empty completion into null", () => {
+  it("turns a null or empty completion into none", () => {
     assert.deepEqual(parseDraftCompletionReply(reply({ id: "a", completion: null })), {
       id: "a",
-      completion: null,
+      completions: [],
     });
     assert.deepEqual(parseDraftCompletionReply(reply({ id: "a", completion: "" })), {
       id: "a",
-      completion: null,
+      completions: [],
+    });
+  });
+
+  it("reads the alternatives in order, without blanks or repeats", () => {
+    const listed = { id: "a", completion: " one", completions: [" one", "", " two", " one"] };
+    assert.deepEqual(parseDraftCompletionReply(reply(listed)), {
+      id: "a",
+      completions: [" one", " two"],
     });
   });
 
@@ -76,7 +84,13 @@ process.stdin.on("data", (chunk) => {
         id: "ui",
         method: "setWidget",
         widgetKey: "${DRAFT_COMPLETION_WIDGET_KEY}",
-        widgetLines: [JSON.stringify({ id: request.id, completion: " world" })],
+        widgetLines: [
+          JSON.stringify({
+            id: request.id,
+            completion: " world",
+            completions: [" world", " there", " again"].slice(0, request.alternatives ?? 1),
+          }),
+        ],
       });
     }
   }
@@ -116,17 +130,28 @@ describe.skipIf(HostProcess.Platform.defaultValue() === "win32")("makePiDraftCom
         [completer.complete({ draft: "hello" }), completer.complete({ draft: "hi" })],
         { concurrency: "unbounded" },
       );
-      assert.equal(first, " world");
-      assert.equal(second, " world");
+      assert.deepEqual(first, [" world"]);
+      assert.deepEqual(second, [" world"]);
       assert.equal(yield* starts, 1);
+    }).pipe(Effect.scoped, Effect.provide(testLayer)),
+  );
+
+  it.live("passes a request for alternatives through and returns them in order", () =>
+    Effect.gen(function* () {
+      const { completer } = yield* withFakePi();
+      assert.deepEqual(yield* completer.complete({ draft: "hi", alternatives: 3, manual: true }), [
+        " world",
+        " there",
+        " again",
+      ]);
     }).pipe(Effect.scoped, Effect.provide(testLayer)),
   );
 
   it.live("starts Pi again after it exits", () =>
     Effect.gen(function* () {
       const { completer, starts } = yield* withFakePi();
-      assert.isNull(yield* completer.complete({ draft: "exit" }));
-      assert.equal(yield* completer.complete({ draft: "hello" }), " world");
+      assert.deepEqual(yield* completer.complete({ draft: "exit" }), []);
+      assert.deepEqual(yield* completer.complete({ draft: "hello" }), [" world"]);
       assert.equal(yield* starts, 2);
     }).pipe(Effect.scoped, Effect.provide(testLayer)),
   );
@@ -134,8 +159,8 @@ describe.skipIf(HostProcess.Platform.defaultValue() === "win32")("makePiDraftCom
   it.live("starts Pi again when it did not list its commands in time", () =>
     Effect.gen(function* () {
       const { completer, starts } = yield* withFakePi({ SILENT_FIRST_START: "1" });
-      assert.isNull(yield* completer.complete({ draft: "hello" }));
-      assert.equal(yield* completer.complete({ draft: "hello" }), " world");
+      assert.deepEqual(yield* completer.complete({ draft: "hello" }), []);
+      assert.deepEqual(yield* completer.complete({ draft: "hello" }), [" world"]);
       assert.equal(yield* starts, 2);
     }).pipe(Effect.scoped, Effect.provide(testLayer)),
   );
@@ -143,14 +168,14 @@ describe.skipIf(HostProcess.Platform.defaultValue() === "win32")("makePiDraftCom
   it.live("asks nothing when Pi lacks the prompt-autocomplete command", () =>
     Effect.gen(function* () {
       const { completer } = yield* withFakePi({ NO_COMMAND: "1" });
-      assert.isNull(yield* completer.complete({ draft: "hello" }));
+      assert.deepEqual(yield* completer.complete({ draft: "hello" }), []);
     }).pipe(Effect.scoped, Effect.provide(testLayer)),
   );
 
   it.live("gives up on a reply that does not come", () =>
     Effect.gen(function* () {
       const { completer } = yield* withFakePi();
-      assert.isNull(yield* completer.complete({ draft: "slow" }));
+      assert.deepEqual(yield* completer.complete({ draft: "slow" }), []);
     }).pipe(Effect.scoped, Effect.provide(testLayer)),
   );
 });

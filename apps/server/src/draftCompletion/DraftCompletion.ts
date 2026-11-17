@@ -25,12 +25,12 @@ import * as ServerSettings from "../serverSettings.ts";
 const DRAFT_COMPLETION_MODEL = process.env.T3CODE_DRAFT_COMPLETION_MODEL?.trim() || "cpa/cpa-small";
 
 const decodePiSettings = Schema.decodeUnknownOption(PiSettings);
-const nothing: DraftCompletionResult = { completion: null };
+const nothing: DraftCompletionResult = { completion: null, completions: [] };
 
 export class DraftCompletion extends Context.Service<
   DraftCompletion,
   {
-    /** Text to append to the draft; null while Suggest next prompt is off or Pi has nothing. */
+    /** Texts to append to the draft; none while Suggest next prompt is off or Pi has nothing. */
     readonly complete: (input: DraftCompletionInput) => Effect.Effect<DraftCompletionResult>;
   }
 >()("t3/draftCompletion/DraftCompletion") {}
@@ -97,10 +97,13 @@ const make = Effect.gen(function* () {
   const complete = Effect.fn("DraftCompletion.complete")(
     function* (input: DraftCompletionInput) {
       const settings = yield* settingsService.getSettings;
-      if (!settings.promptSuggestionsEnabled || input.draft.trim().length === 0) return nothing;
+      if (!settings.promptSuggestionsEnabled) return nothing;
+      // Only a request the user made completes an empty draft into a whole prompt.
+      if (input.manual !== true && input.draft.trim().length === 0) return nothing;
       const sidecar = yield* getCompleter;
       if (sidecar === null) return nothing;
-      const result: DraftCompletionResult = { completion: yield* sidecar.complete(input) };
+      const completions = yield* sidecar.complete(input);
+      const result: DraftCompletionResult = { completion: completions[0] ?? null, completions };
       return result;
     },
     (effect): Effect.Effect<DraftCompletionResult> =>
