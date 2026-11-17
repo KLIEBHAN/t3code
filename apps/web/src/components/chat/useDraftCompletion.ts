@@ -1,8 +1,14 @@
 // Fork: completion of the composer draft as the user types (server.completeDraft).
-import type { EnvironmentId } from "@t3tools/contracts";
+import type {
+  EnvironmentId,
+  OrchestrationV2ProjectedTurnItem,
+  ScopedThreadRef,
+} from "@t3tools/contracts";
 import { useEffect, useRef, useState } from "react";
 
 import { useStableCallback } from "../../hooks/useStableCallback";
+import { appAtomRegistry } from "../../rpc/atomRegistry";
+import { environmentThreadDetails } from "../../state/threads";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 
@@ -37,6 +43,23 @@ const keepStartAndEnd = (text: string, maxChars: number) => {
   const tail = Math.floor((maxChars - separator.length) / 2);
   return `${text.slice(0, head)}${separator}${text.slice(-tail)}`;
 };
+
+/** The user and assistant messages among a thread's turn items, oldest first. */
+export const turnItemMessages = (items: ReadonlyArray<OrchestrationV2ProjectedTurnItem>) =>
+  items.flatMap(({ item }) =>
+    item.type === "user_message"
+      ? [{ role: "user", text: item.text, runId: item.runId, streaming: false }]
+      : item.type === "assistant_message"
+        ? [{ role: "assistant", text: item.text, runId: item.runId, streaming: item.streaming }]
+        : [],
+  );
+
+/**
+ * The thread's messages with their text, read once per request. The composer's timeline
+ * entries leave assistant text out, so they cannot supply it.
+ */
+export const readThreadMessages = (ref: ScopedThreadRef) =>
+  turnItemMessages(appAtomRegistry.get(environmentThreadDetails.visibleTurnItemsAtom(ref)));
 
 /**
  * The latest finished assistant message and the latest user message of its run, oldest first in
