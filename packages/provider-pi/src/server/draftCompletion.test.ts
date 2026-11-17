@@ -49,10 +49,12 @@ describe("parseDraftCompletionReply", () => {
 
 // A stand-in for `pi --mode rpc` with the prompt-autocomplete extension. It
 // counts its starts in STARTS_FILE, answers drafts with " world", never answers
-// "slow", exits on "exit", and lacks the command when NO_COMMAND is set.
+// "slow", exits on "exit", lacks the command when NO_COMMAND is set, and stays
+// silent on its first start's command list when SILENT_FIRST_START is set.
 const fakePi = `
 const fs = require("node:fs");
 fs.appendFileSync(process.env.STARTS_FILE, "start\\n");
+const start = fs.readFileSync(process.env.STARTS_FILE, "utf8").split("\\n").filter(Boolean).length;
 const write = (record) => process.stdout.write(JSON.stringify(record) + "\\n");
 let buffer = "";
 process.stdin.on("data", (chunk) => {
@@ -62,6 +64,7 @@ process.stdin.on("data", (chunk) => {
     const record = JSON.parse(buffer.slice(0, newline));
     buffer = buffer.slice(newline + 1);
     if (record.type === "get_commands") {
+      if (process.env.SILENT_FIRST_START && start === 1) continue;
       const commands = process.env.NO_COMMAND ? [] : [{ name: "prompt-autocomplete" }];
       write({ type: "response", id: record.id, command: "get_commands", success: true, data: { commands } });
     } else if (record.type === "prompt") {
@@ -97,6 +100,7 @@ const withFakePi = (environment: Record<string, string> = {}) =>
       cwd: directory,
       model: "test/model",
       replyTimeoutMs: 500,
+      startTimeoutMs: 500,
     });
     const starts = fileSystem
       .readFileString(startsFile)
@@ -122,6 +126,15 @@ describe.skipIf(HostProcess.Platform.defaultValue() === "win32")("makePiDraftCom
     Effect.gen(function* () {
       const { completer, starts } = yield* withFakePi();
       assert.isNull(yield* completer.complete({ draft: "exit" }));
+      assert.equal(yield* completer.complete({ draft: "hello" }), " world");
+      assert.equal(yield* starts, 2);
+    }).pipe(Effect.scoped, Effect.provide(testLayer)),
+  );
+
+  it.live("starts Pi again when it did not list its commands in time", () =>
+    Effect.gen(function* () {
+      const { completer, starts } = yield* withFakePi({ SILENT_FIRST_START: "1" });
+      assert.isNull(yield* completer.complete({ draft: "hello" }));
       assert.equal(yield* completer.complete({ draft: "hello" }), " world");
       assert.equal(yield* starts, 2);
     }).pipe(Effect.scoped, Effect.provide(testLayer)),

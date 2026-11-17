@@ -25,6 +25,7 @@ export const DRAFT_COMPLETION_WIDGET_KEY = "prompt-autocomplete-completion";
 const COMMAND_NAME = "prompt-autocomplete";
 // The extension needs about 1.5 s on cpa-small; a later reply belongs to a draft the user changed.
 const DEFAULT_REPLY_TIMEOUT_MS = 6_000;
+const DEFAULT_START_TIMEOUT_MS = 10_000;
 const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
 const decodeJson = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown));
 
@@ -74,6 +75,7 @@ export const makePiDraftCompleter = Effect.fn("makePiDraftCompleter")(function* 
   readonly cwd: string;
   readonly model: string;
   readonly replyTimeoutMs?: number;
+  readonly startTimeoutMs?: number;
 }) {
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const random = yield* SecureRandom.SecureRandom;
@@ -135,8 +137,8 @@ export const makePiDraftCompleter = Effect.fn("makePiDraftCompleter")(function* 
       });
       // Without the command, `/prompt-autocomplete …` would reach the model as a prompt.
       const commands = yield* connection
-        .request({ type: "get_commands" }, 10_000)
-        .pipe(Effect.orElseSucceed(() => undefined));
+        // A Pi that does not answer fails this start, so the next request starts it again.
+        .request({ type: "get_commands" }, input.startTimeoutMs ?? DEFAULT_START_TIMEOUT_MS);
       const list = piRecordField(commands, "commands");
       const available =
         Array.isArray(list) && list.some((entry) => piRecordString(entry, "name") === COMMAND_NAME);
