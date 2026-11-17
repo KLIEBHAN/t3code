@@ -29,7 +29,8 @@ const continuing = (prompts: ReadonlyArray<string>, draft: string) =>
 /**
  * The first `cycle` asks for alternatives and lists them after `current`, the suggestion on
  * screen; later calls step through them while the draft continues the text they were asked
- * for. `pending` tells whether a request runs; `clear` drops both.
+ * for. `refresh` drops them and asks the model anew, past its cache. `pending` tells whether
+ * a request runs; `clear` drops both.
  */
 export function useSuggestionAlternatives(input: {
   readonly environmentId: EnvironmentId | null;
@@ -42,7 +43,10 @@ export function useSuggestionAlternatives(input: {
 }): {
   readonly suggestion: string | null;
   readonly pending: boolean;
+  /** A refresh runs; the stale suggestion should not show meanwhile. */
+  readonly refreshing: boolean;
   readonly cycle: (direction: 1 | -1, current: string | null) => void;
+  readonly refresh: (current: string | null) => void;
   readonly clear: () => void;
 } {
   const { environmentId, targetKey, draft, enabled } = input;
@@ -52,6 +56,12 @@ export function useSuggestionAlternatives(input: {
   });
   const [alternatives, setAlternatives] = useState<Alternatives | null>(null);
   const [pending, setPending] = useState(false);
+  // The context a refresh runs for; another thread, model, or draft is not hidden by it.
+  const [refreshFor, setRefreshFor] = useState<{
+    readonly targetKey: string;
+    readonly modelKey: string;
+    readonly base: string;
+  } | null>(null);
   const latestRequest = useRef(0);
 
   const modelKey = draftCompletionModelKey(input.model);
@@ -65,15 +75,15 @@ export function useSuggestionAlternatives(input: {
   const suggestion =
     alternatives !== null && visible.includes(alternatives.selected) ? alternatives.selected : null;
 
-  const cycle = useStableCallback((direction: 1 | -1, current: string | null) => {
-    if (!enabled || environmentId === null) return;
-    const shown = suggestion ?? current;
-    if (alternatives !== null && visible.length > 1) {
-      const position = shown === null ? -1 : visible.indexOf(shown);
-      const next = visible[(position + direction + visible.length) % visible.length];
-      if (next !== undefined) setAlternatives({ ...alternatives, selected: next });
-      return;
-    }
+  // Asks for alternatives of the draft and lists them after `shown`, the prompt on screen.
+  // With `stale`, a refresh shows the first alternative that differs from it.
+  const fetchAlternatives = (
+    shown: string | null,
+    direction: 1 | -1,
+    fresh: boolean,
+    stale: string | null = null,
+  ) => {
+    if (environmentId === null) return;
     const request = ++latestRequest.current;
     const asked = draft;
     setPending(true);
@@ -84,12 +94,14 @@ export function useSuggestionAlternatives(input: {
         context: input.readContext(),
         alternatives: DRAFT_COMPLETION_MAX_ALTERNATIVES,
         manual: true,
+        ...(fresh ? { fresh: true } : {}),
         ...draftCompletionModelFields(input.model),
       },
     }).then((result) => {
       // A newer request or a dismissal owns the alternatives now.
       if (request !== latestRequest.current) return;
       setPending(false);
+      setRefreshFor(null);
       if (result._tag !== "Success") return;
       const prompts = [
         ...new Set([
@@ -103,17 +115,45 @@ export function useSuggestionAlternatives(input: {
       const selected =
         shown !== null && choices.length > 1
           ? (choices[direction === 1 ? 1 : choices.length - 1] ?? choices[0])
-          : choices[0];
+          : (choices.find((choice) => choice !== stale) ?? choices[0]);
       if (selected !== undefined) {
         setAlternatives({ targetKey, modelKey, base: asked, prompts, selected });
       }
     });
+  };
+
+  const cycle = useStableCallback((direction: 1 | -1, current: string | null) => {
+    if (!enabled || environmentId === null) return;
+    const shown = suggestion ?? current;
+    if (alternatives !== null && visible.length > 1) {
+      const position = shown === null ? -1 : visible.indexOf(shown);
+      const next = visible[(position + direction + visible.length) % visible.length];
+      if (next !== undefined) setAlternatives({ ...alternatives, selected: next });
+      return;
+    }
+    fetchAlternatives(shown, direction, false);
+  });
+
+  // Drops what is shown and asks the model anew, past its cache; `current` is the stale
+  // suggestion on screen, which the result avoids when it can.
+  const refresh = useStableCallback((current: string | null) => {
+    if (!enabled || environmentId === null) return;
+    const stale = suggestion ?? current;
+    setAlternatives(null);
+    setRefreshFor({ targetKey, modelKey, base: draft });
+    fetchAlternatives(null, 1, true, stale);
   });
 
   const clear = () => {
     latestRequest.current += 1;
     setAlternatives(null);
     setPending(false);
+    setRefreshFor(null);
   };
-  return { suggestion, pending, cycle, clear };
+  const refreshing =
+    refreshFor !== null &&
+    refreshFor.targetKey === targetKey &&
+    refreshFor.modelKey === modelKey &&
+    draft === refreshFor.base;
+  return { suggestion, pending, refreshing, cycle, refresh, clear };
 }

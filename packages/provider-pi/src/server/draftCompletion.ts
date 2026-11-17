@@ -35,6 +35,7 @@ export interface PiDraftCompletionRequest {
   readonly draft: string;
   readonly alternatives?: number;
   readonly manual?: boolean;
+  readonly fresh?: boolean;
   readonly context?: { readonly lastUser?: string; readonly lastAssistant?: string };
 }
 
@@ -191,6 +192,7 @@ export const makePiDraftCompleter = Effect.fn("makePiDraftCompleter")(function* 
           context: request.context,
           alternatives: request.alternatives,
           manual: request.manual,
+          fresh: request.fresh,
         });
         yield* sidecar.connection.send({
           type: "prompt",

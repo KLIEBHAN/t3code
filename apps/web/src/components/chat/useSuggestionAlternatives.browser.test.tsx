@@ -124,6 +124,41 @@ describe("useSuggestionAlternatives", () => {
     expect(api().suggestion).toBeNull();
   });
 
+  it("refreshes past the cache and shows nothing stale while it loads", async () => {
+    const { mount, api } = setup();
+    await using _screen = await mount("a", "Run the");
+    await act(async () => api().cycle(1, null));
+    await act(async () => calls[0]!.resolve([" tests"]));
+    expect(api().suggestion).toBe("Run the tests");
+    await act(async () => api().refresh("Run the tests"));
+    expect(calls[1]!.input).toEqual({
+      draft: "Run the",
+      context: {},
+      alternatives: 3,
+      manual: true,
+      fresh: true,
+    });
+    expect(api().refreshing).toBe(true);
+    expect(api().suggestion).toBeNull();
+    // The model repeats the stale suggestion first; the refresh shows the next one.
+    await act(async () => calls[1]!.resolve([" tests", " build", " lint"]));
+    expect(api().refreshing).toBe(false);
+    expect(api().suggestion).toBe("Run the build");
+  });
+
+  it("hides stale suggestions only in the thread and draft the refresh runs for", async () => {
+    const { mount, api, element } = setup();
+    await using screen = await mount("a", "Run the");
+    await act(async () => api().refresh(null));
+    expect(api().refreshing).toBe(true);
+    await screen.rerender(element("b", "Run the"));
+    expect(api().refreshing).toBe(false);
+    await screen.rerender(element("a", "Run the te"));
+    expect(api().refreshing).toBe(false);
+    await screen.rerender(element("a", "Run the"));
+    expect(api().refreshing).toBe(true);
+  });
+
   it("shows nothing in another thread", async () => {
     const { mount, api, element } = setup();
     await using screen = await mount("a", "Run the");
