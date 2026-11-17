@@ -48,7 +48,11 @@ export interface PiDraftCompletionRequest {
   readonly fresh?: boolean;
   /** Thinking for this request; absent uses the sidecar's launch arguments. */
   readonly thinking?: DraftCompletionThinking;
-  readonly context?: { readonly lastUser?: string; readonly lastAssistant?: string };
+  readonly context?: {
+    readonly lastUser?: string;
+    readonly lastAssistant?: string;
+    readonly recent?: ReadonlyArray<{ readonly role: "user" | "assistant"; readonly text: string }>;
+  };
 }
 
 export interface PiDraftCompletionReply {

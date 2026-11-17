@@ -39,10 +39,19 @@ describe("draftCompletionContext", () => {
   it("keeps the start and the end of a long message, within the extension's limits", async () => {
     const { draftCompletionContext } = await import("./chat/useDraftCompletion");
     const assistant = `RESULT ${"x".repeat(2_000)}${"y".repeat(3_000)} LAST`;
-    const context = draftCompletionContext("short question", assistant);
+    const context = draftCompletionContext({
+      lastUser: "short question",
+      lastAssistant: assistant,
+      earlier: [
+        { role: "assistant", text: `  ${"e".repeat(2_000)}`, runId: "r0", streaming: false },
+      ],
+    });
     expect(context.lastUser).toBe("short question");
     expect(context.lastAssistant).toBe(`RESULT ${"x".repeat(1_492)}\n…\n${"y".repeat(1_493)} LAST`);
-    expect(draftCompletionContext(undefined, undefined)).toEqual({});
+    expect(context.recent).toEqual([{ role: "assistant", text: "e".repeat(1_200) }]);
+    expect(
+      draftCompletionContext({ lastUser: undefined, lastAssistant: undefined, earlier: [] }),
+    ).toEqual({});
   });
 });
 
@@ -54,20 +63,25 @@ describe("latestExchange", () => {
     streaming,
   });
 
-  it("pairs the latest finished answer with the user message of its run", async () => {
+  it("pairs the latest finished answer with its run's user message, after the earlier final answers", async () => {
     const { latestExchange } = await import("./chat/useDraftCompletion");
     expect(
       latestExchange([
         message("user", "first", "r1"),
+        message("assistant", "checking files", "r1"),
         message("assistant", "answer 1", "r1"),
         message("user", "second", "r2"),
         message("assistant", "answer 2", "r2"),
         message("assistant", "still writing", "r3", true),
       ]),
-    ).toEqual({ lastUser: "second", lastAssistant: "answer 2" });
+    ).toEqual({
+      lastUser: "second",
+      lastAssistant: "answer 2",
+      earlier: [message("user", "first", "r1"), message("assistant", "answer 1", "r1")],
+    });
   });
 
-  it("sends no older user message when a subagent or scheduled task started the run", async () => {
+  it("keeps an older user message among the earlier ones when a subagent started the run", async () => {
     const { latestExchange } = await import("./chat/useDraftCompletion");
     expect(
       latestExchange([
@@ -75,7 +89,31 @@ describe("latestExchange", () => {
         message("assistant", "answer 96", "r96"),
         message("assistant", "answer 99, decide 50 to 52", "r99"),
       ]),
-    ).toEqual({ lastUser: undefined, lastAssistant: "answer 99, decide 50 to 52" });
+    ).toEqual({
+      lastUser: undefined,
+      lastAssistant: "answer 99, decide 50 to 52",
+      earlier: [
+        message("user", "I answer 48 to 50 later", "r96"),
+        message("assistant", "answer 96", "r96"),
+      ],
+    });
+  });
+
+  it("keeps the newest six earlier messages and none before the first answer", async () => {
+    const { latestExchange } = await import("./chat/useDraftCompletion");
+    const runs = Array.from({ length: 5 }, (_, index) => [
+      message("user", `q${index}`, `r${index}`),
+      message("assistant", `a${index}`, `r${index}`),
+    ]).flat();
+    expect(latestExchange(runs).earlier.map(({ text }) => text)).toEqual([
+      "q1",
+      "a1",
+      "q2",
+      "a2",
+      "q3",
+      "a3",
+    ]);
+    expect(latestExchange([message("user", "only", "r1")]).earlier).toEqual([]);
   });
 });
 

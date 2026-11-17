@@ -61,47 +61,83 @@ export const turnItemMessages = (items: ReadonlyArray<OrchestrationV2ProjectedTu
 export const readThreadMessages = (ref: ScopedThreadRef) =>
   turnItemMessages(appAtomRegistry.get(environmentThreadDetails.visibleTurnItemsAtom(ref)));
 
+interface ThreadMessage {
+  readonly role: string;
+  readonly text: string;
+  readonly runId: string | null;
+  readonly streaming: boolean;
+}
+
+// The extension keeps the newest 6 earlier messages, each from its first 600 characters.
+const EARLIER_MESSAGES = 6;
+const EARLIER_MESSAGE_CHARS = 1_200;
+
 /**
- * The latest finished assistant message and the latest user message of its run, oldest first in
- * `messages`. A run a subagent or scheduled task started has no user message; an older one would
- * point the model at a question already settled, so none is returned then.
+ * The latest finished answer, its run's user message, and the earlier messages, oldest first.
+ * A run a subagent started has no user message; an older one goes only among the earlier ones,
+ * which hold user messages and each run's final answer, not the narration before it.
  */
-export const latestExchange = (
-  messages: ReadonlyArray<{
-    readonly role: string;
-    readonly text: string;
-    readonly runId: string | null;
-    readonly streaming: boolean;
-  }>,
-) => {
-  const assistant = messages.findLast(
+export const latestExchange = (messages: ReadonlyArray<ThreadMessage>) => {
+  const assistantIndex = messages.findLastIndex(
     (message) => message.role === "assistant" && !message.streaming,
   );
+  const assistant = messages[assistantIndex];
   const user =
     assistant?.runId == null
       ? undefined
       : messages.findLast(
           (message) => message.role === "user" && message.runId === assistant.runId,
         );
-  return { lastUser: user?.text, lastAssistant: assistant?.text };
+  const before = assistantIndex === -1 ? [] : messages.slice(0, assistantIndex);
+  const finalAnswer = new Map<string, ThreadMessage>();
+  for (const message of [...before, assistant]) {
+    if (message?.role === "assistant" && message.runId !== null) {
+      finalAnswer.set(message.runId, message);
+    }
+  }
+  const earlier = before.filter(
+    (message) =>
+      message !== user &&
+      !message.streaming &&
+      (message.role === "user" ||
+        message.runId === null ||
+        finalAnswer.get(message.runId) === message),
+  );
+  return {
+    lastUser: user?.text,
+    lastAssistant: assistant?.text,
+    earlier: earlier.slice(-EARLIER_MESSAGES),
+  };
 };
 
-/** Context for a request from the latest user and assistant message, cut as the extension uses it. */
-export const draftCompletionContext = (
-  lastUser: string | undefined,
-  lastAssistant: string | undefined,
-) => ({
-  ...(lastUser === undefined
-    ? {}
-    : { lastUser: keepStartAndEnd(lastUser.trim(), CONTEXT_USER_CHARS) }),
-  ...(lastAssistant === undefined
-    ? {}
-    : { lastAssistant: keepStartAndEnd(lastAssistant.trim(), CONTEXT_ASSISTANT_CHARS) }),
-});
+/** Context for a request from `latestExchange`, cut as the extension uses it. */
+export const draftCompletionContext = ({
+  lastUser,
+  lastAssistant,
+  earlier,
+}: ReturnType<typeof latestExchange>): DraftCompletionContext => {
+  const recent = earlier.flatMap((message): NonNullable<DraftCompletionContext["recent"]> => {
+    const role =
+      message.role === "user" ? "user" : message.role === "assistant" ? "assistant" : null;
+    const text = message.text.trim().slice(0, EARLIER_MESSAGE_CHARS);
+    return role === null || text === "" ? [] : [{ role, text }];
+  });
+  return {
+    ...(lastUser === undefined
+      ? {}
+      : { lastUser: keepStartAndEnd(lastUser.trim(), CONTEXT_USER_CHARS) }),
+    ...(lastAssistant === undefined
+      ? {}
+      : { lastAssistant: keepStartAndEnd(lastAssistant.trim(), CONTEXT_ASSISTANT_CHARS) }),
+    ...(recent.length === 0 ? {} : { recent }),
+  };
+};
 
 export interface DraftCompletionContext {
   readonly lastUser?: string;
   readonly lastAssistant?: string;
+  /** Earlier messages, oldest first; needs pi-prompt-autocomplete 0.9.0, older ones ignore it. */
+  readonly recent?: ReadonlyArray<{ readonly role: "user" | "assistant"; readonly text: string }>;
 }
 
 /**

@@ -255,7 +255,7 @@ function DraftCompletionModelRow() {
       id="draft-completion-model"
       title="Model for suggestions while typing"
       settingKeys={["draftCompletionModel", "draftCompletionInstanceId"]}
-      description="Pi model for ghost text and Ctrl+. alternatives. Like the chat uses the thread's Pi model, else cpa/cpa-small. claude-haiku-5-5 takes about 1.5 s, cpa-small and cpa-worker-plus 2.5 s."
+      description="Pi model for ghost text and Ctrl+. alternatives. Like the chat uses the chat's Pi model, else cpa/cpa-small. cpa-small and cpa-worker-plus take 2.5 s; claude-haiku-5-5 is faster but garbles drafts."
       control={
         <Select
           value={value}
