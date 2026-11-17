@@ -23,6 +23,34 @@ export const draftCompletionModelKey = (model: DraftCompletionModel | undefined)
 export const draftCompletionModelFields = (model: DraftCompletionModel | undefined) =>
   model === undefined ? {} : { instanceId: model.instanceId, model: model.model };
 
+// The extension keeps this much of the latest assistant and user message (its
+// MAX_LATEST_ASSISTANT_MESSAGE_CHARS and MAX_LATEST_USER_MESSAGE_CHARS); sending more
+// only costs transfer.
+const CONTEXT_ASSISTANT_CHARS = 3_000;
+const CONTEXT_USER_CHARS = 1_200;
+
+/** The start and end of `text` within `maxChars`, like the extension's own cut. */
+const keepStartAndEnd = (text: string, maxChars: number) => {
+  if (text.length <= maxChars) return text;
+  const separator = "\n…\n";
+  const head = Math.ceil((maxChars - separator.length) / 2);
+  const tail = Math.floor((maxChars - separator.length) / 2);
+  return `${text.slice(0, head)}${separator}${text.slice(-tail)}`;
+};
+
+/** Context for a request from the latest user and assistant message, cut as the extension uses it. */
+export const draftCompletionContext = (
+  lastUser: string | undefined,
+  lastAssistant: string | undefined,
+) => ({
+  ...(lastUser === undefined
+    ? {}
+    : { lastUser: keepStartAndEnd(lastUser.trim(), CONTEXT_USER_CHARS) }),
+  ...(lastAssistant === undefined
+    ? {}
+    : { lastAssistant: keepStartAndEnd(lastAssistant.trim(), CONTEXT_ASSISTANT_CHARS) }),
+});
+
 export interface DraftCompletionContext {
   readonly lastUser?: string;
   readonly lastAssistant?: string;

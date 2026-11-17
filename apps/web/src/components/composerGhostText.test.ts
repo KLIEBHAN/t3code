@@ -34,3 +34,16 @@ describe("nextComposerGhostWord", () => {
     expect(nextComposerGhostWord("  ")).toBe("  ");
   });
 });
+
+describe("draftCompletionContext", () => {
+  it("keeps the start and the end of a long message, within the extension's limits", async () => {
+    const { draftCompletionContext } = await import("./chat/useDraftCompletion");
+    const assistant = `RESULT ${"x".repeat(5_000)} LAST`;
+    const context = draftCompletionContext("short question", assistant);
+    expect(context.lastUser).toBe("short question");
+    expect(context.lastAssistant?.length).toBe(3_000);
+    expect(context.lastAssistant?.startsWith("RESULT ")).toBe(true);
+    expect(context.lastAssistant?.endsWith(" LAST")).toBe(true);
+    expect(draftCompletionContext(undefined, undefined)).toEqual({});
+  });
+});

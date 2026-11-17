@@ -290,9 +290,8 @@ import { ComposerControlsBar } from "./ComposerControlsBar";
 import { composerCommandKeyHandler } from "./composerCommandKey";
 import { usePromptSuggestion } from "./usePromptSuggestion";
 // Fork: completion of the draft as the user types.
-import { useDraftCompletion } from "./useDraftCompletion";
+import { draftCompletionContext, useDraftCompletion } from "./useDraftCompletion";
 import { useSuggestionAlternatives } from "./useSuggestionAlternatives";
-import { DRAFT_COMPLETION_MAX_CONTEXT_CHARS } from "@t3tools/contracts";
 import { useServerConfigs } from "../../state/entities";
 import { useFreshSessionArmed } from "./freshSessionArms";
 
@@ -2399,16 +2398,14 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     for (let index = promptHistoryEntries.length - 1; index >= 0; index -= 1) {
       const entry = promptHistoryEntries[index];
       if (entry?.kind !== "message" || entry.message.streaming) continue;
-      // The end of a long message is the part the next prompt follows.
-      const text = entry.message.text.slice(-DRAFT_COMPLETION_MAX_CONTEXT_CHARS);
-      if (lastUser === undefined && entry.message.role === "user") lastUser = text;
-      if (lastAssistant === undefined && entry.message.role === "assistant") lastAssistant = text;
+      if (lastUser === undefined && entry.message.role === "user") lastUser = entry.message.text;
+      if (lastAssistant === undefined && entry.message.role === "assistant") {
+        lastAssistant = entry.message.text;
+      }
       if (lastUser !== undefined && lastAssistant !== undefined) break;
     }
-    return {
-      ...(lastUser === undefined ? {} : { lastUser }),
-      ...(lastAssistant === undefined ? {} : { lastAssistant }),
-    };
+    // Start and end of each message, as the extension keeps them; the start often names the result.
+    return draftCompletionContext(lastUser, lastAssistant);
   };
   const nextPromptGhost =
     offeredPromptSuggestion !== null && offeredPromptSuggestion.startsWith(prompt)
@@ -3803,10 +3800,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                             ? "Choose a project above to start a thread"
                             : showProviderUnavailable
                               ? "Enable a provider in Settings to send a message"
-                              : (placeholderSuggestion ?? DEFAULT_COMPOSER_PLACEHOLDER)
+                              : suggestionAlternatives.pending && prompt.length === 0
+                                ? "Loading suggestions…"
+                                : (placeholderSuggestion ?? DEFAULT_COMPOSER_PLACEHOLDER)
                     }
                     // Fork: the rest of the suggestion stays visible while the draft is its start.
                     ghostSuggestion={composerSuggestion}
+                    ghostLoading={suggestionAlternatives.pending}
                     placeholderSuffix={
                       placeholderSuggestion !== null ? (
                         <span className="ml-2 inline-flex align-[1px]">

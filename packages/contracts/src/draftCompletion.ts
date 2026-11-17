@@ -2,9 +2,8 @@
 import * as Schema from "effect/Schema";
 
 const MAX_DRAFT_CHARS = 8_000;
-/** Longest context message the server accepts; clients send the end of a longer one. */
-export const DRAFT_COMPLETION_MAX_CONTEXT_CHARS = 8_000;
-const MAX_CONTEXT_CHARS = DRAFT_COMPLETION_MAX_CONTEXT_CHARS;
+/** Longest context message the server accepts; clients cut longer ones first. */
+const MAX_CONTEXT_CHARS = 8_000;
 
 /** Most alternatives one request may ask for. */
 export const DRAFT_COMPLETION_MAX_ALTERNATIVES = 3;

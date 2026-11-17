@@ -22,7 +22,13 @@ vi.mock(import("../state/server"), async (original) => {
 
 const suggestion = "Run the tests again";
 
-function Composer({ ghostSuggestion }: { ghostSuggestion: string | null }) {
+function Composer({
+  ghostSuggestion,
+  ghostLoading = false,
+}: {
+  ghostSuggestion: string | null;
+  ghostLoading?: boolean;
+}) {
   const [prompt, setPrompt] = useState({ value: "", cursor: 0 });
   return (
     <ComposerPromptEditor
@@ -35,6 +41,7 @@ function Composer({ ghostSuggestion }: { ghostSuggestion: string | null }) {
       disabled={false}
       placeholder={ghostSuggestion ?? ""}
       ghostSuggestion={ghostSuggestion}
+      ghostLoading={ghostLoading}
       onChange={(value, cursor) => setPrompt({ value, cursor })}
       onPaste={() => {}}
       onCommandKeyDown={() => false}
@@ -42,8 +49,8 @@ function Composer({ ghostSuggestion }: { ghostSuggestion: string | null }) {
   );
 }
 
-async function mount(ghostSuggestion: string | null) {
-  const screen = await render(createElement(Composer, { ghostSuggestion }));
+async function mount(ghostSuggestion: string | null, ghostLoading = false) {
+  const screen = await render(createElement(Composer, { ghostSuggestion, ghostLoading }));
   const element = screen.container.querySelector<HTMLElement & { editor: Editor }>(".tiptap");
   if (!element) throw new Error("Composer did not mount");
   const editor = element.editor;
@@ -100,6 +107,15 @@ describe("composer ghost text", () => {
     await vi.waitFor(() => expect(ghost()).toBe("tests again"));
     // The asterisks became bold, so the plain text lacks them.
     expect(editor.state.doc.textContent).toBe("Run all ");
+  });
+
+  it("shows pulsing dots while a requested suggestion loads, after the typed draft only", async () => {
+    await using screen = await mount(null, true);
+    const loading = () => screen.container.querySelector("[data-composer-ghost-loading]");
+    await act(async () => {});
+    expect(loading()).toBeNull();
+    await userEvent.keyboard("Run");
+    await vi.waitFor(() => expect(loading()?.textContent).toBe("…"));
   });
 
   it("shows nothing without a suggestion", async () => {
