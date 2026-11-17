@@ -33,12 +33,15 @@ on runInBackground(extraArgument)
 	set runId to do shell script "/usr/bin/uuidgen"
 	set resultPath to stateDir & "/manual-result." & runId
 	set progressPath to stateDir & "/manual-progress." & runId
-	-- The script reads its state directory from the environment; passing it keeps both sides on the same files.
-	do shell script "cd " & quoted form of repoPath & " && FORK_STATE_DIR=" & quoted form of stateDir & " MANUAL_RUN_ID=" & runId & " /usr/bin/nohup /bin/bash scripts/fork/manual-update.sh " & extraArgument & " >/dev/null 2>&1 &"
-	set progress total steps to totalSteps
+	-- The window shows at once, with an indeterminate bar until the first step is known.
+	set progress total steps to -1
 	set progress completed steps to 0
 	set progress description to appTitle & " wird aktualisiert"
 	set progress additional description to "Startet …"
+	-- `&` covers only the update command, whose input and output are redirected, so the shell
+	-- returns at once. Applied to `cd … && …`, it kept a subshell on this pipe for the whole run.
+	-- The script reads its state directory from the environment; passing it keeps both sides on the same files.
+	do shell script "cd " & quoted form of repoPath & " || exit 1; FORK_STATE_DIR=" & quoted form of stateDir & " MANUAL_RUN_ID=" & runId & " /usr/bin/nohup /bin/bash scripts/fork/manual-update.sh " & extraArgument & " </dev/null >/dev/null 2>&1 &"
 	set started to current date
 	try
 		repeat
@@ -71,6 +74,7 @@ on showProgress(progressLine, elapsed)
 	on error
 		return
 	end try
+	set progress total steps to totalSteps
 	set progress completed steps to step - 1
 	set progress additional description to "Schritt " & step & " von " & totalSteps & ": " & (item 2 of parts) & "   " & elapsedText(elapsed)
 end showProgress
