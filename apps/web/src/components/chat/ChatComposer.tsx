@@ -2368,8 +2368,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   // After /clear the next message starts a fresh session that cannot see what the suggestion refers to.
   const freshSessionArmed = useFreshSessionArmed(scopedThreadKey(routeThreadRef));
   // Offered only where the default placeholder would show, so it never hides a pending question.
-  const composerOffersSuggestions =
-    phase !== "running" &&
+  // Fork: Ctrl+. may ask while a turn runs, as in Pi; automatic suggestions wait for the turn.
+  const composerAllowsSuggestions =
     !isSendBusy &&
     !freshSessionArmed &&
     !speechInput.freezesEditor &&
@@ -2378,6 +2378,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     !activePendingProgress &&
     !projectSelectionRequired &&
     !showProviderUnavailable;
+  const composerOffersSuggestions = phase !== "running" && composerAllowsSuggestions;
   const offeredPromptSuggestion = composerOffersSuggestions ? promptSuggestion : null;
   // Fork: while the draft does not start the next-prompt suggestion, the ghost
   // text and its keys complete the draft instead.
@@ -2416,7 +2417,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     environmentId,
     targetKey: composerDraftTargetKey,
     draft: prompt,
-    enabled: promptSuggestionsEnabled && composerOffersSuggestions,
+    enabled: promptSuggestionsEnabled && composerAllowsSuggestions,
     readContext: readDraftCompletionContext,
   });
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- hands the latest clear to submitComposer, declared above the hook
@@ -2433,7 +2434,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     else draftCompletion.dismiss();
   };
   const cycleComposerSuggestion = (direction: 1 | -1) => {
-    if (!promptSuggestionsEnabled || !composerOffersSuggestions) return false;
+    if (!promptSuggestionsEnabled || !composerAllowsSuggestions) return false;
     suggestionAlternatives.cycle(direction, composerSuggestion);
     return true;
   };
