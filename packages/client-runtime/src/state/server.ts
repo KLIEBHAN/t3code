@@ -1823,6 +1823,11 @@ export function createServerEnvironmentAtoms<R, E>(
       label: "environment-data:server:check-otlp-endpoint",
       tag: WS_METHODS.serverCheckOtlpEndpoint,
     }),
+    // Fork: completes the composer draft as the user types.
+    completeDraft: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:complete-draft",
+      tag: WS_METHODS.serverCompleteDraft,
+    }),
     checkSecretSource: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:check-secret-source",
       tag: WS_METHODS.serverCheckSecretSource,

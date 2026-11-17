@@ -25,3 +25,6 @@ apps/server/src/auth/RpcAuthorization.ts
 apps/server/src/observability/RpcInstrumentation.ts
 packages/contracts/src/clientRpcPermissions.ts
 apps/server/src/auth/RpcAuthorization.test.ts
+apps/web/src/components/chat/useDraftCompletion.ts
+packages/client-runtime/src/state/server.ts
+apps/web/src/components/chat/useDraftCompletion.browser.test.tsx

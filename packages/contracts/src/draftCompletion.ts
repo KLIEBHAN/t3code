@@ -2,7 +2,9 @@
 import * as Schema from "effect/Schema";
 
 const MAX_DRAFT_CHARS = 8_000;
-const MAX_CONTEXT_CHARS = 8_000;
+/** Longest context message the server accepts; clients send the end of a longer one. */
+export const DRAFT_COMPLETION_MAX_CONTEXT_CHARS = 8_000;
+const MAX_CONTEXT_CHARS = DRAFT_COMPLETION_MAX_CONTEXT_CHARS;
 
 /** The draft to complete, with the thread's latest messages as context. */
 export const DraftCompletionInput = Schema.Struct({
