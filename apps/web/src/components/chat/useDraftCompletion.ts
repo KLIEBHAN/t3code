@@ -99,6 +99,7 @@ export const latestExchange = (messages: ReadonlyArray<ThreadMessage>) => {
     (message) =>
       message !== user &&
       !message.streaming &&
+      message.text.trim() !== "" &&
       (message.role === "user" ||
         message.runId === null ||
         finalAnswer.get(message.runId) === message),

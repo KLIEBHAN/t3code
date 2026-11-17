@@ -114,6 +114,16 @@ describe("latestExchange", () => {
       "a3",
     ]);
     expect(latestExchange([message("user", "only", "r1")]).earlier).toEqual([]);
+    // A message without text takes no slot.
+    const withBlank = [...runs.slice(0, -2), message("user", " ", "rb"), ...runs.slice(-2)];
+    expect(latestExchange(withBlank).earlier.map(({ text }) => text)).toEqual([
+      "q1",
+      "a1",
+      "q2",
+      "a2",
+      "q3",
+      "a3",
+    ]);
   });
 });
 
