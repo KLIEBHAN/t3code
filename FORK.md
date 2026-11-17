@@ -49,7 +49,7 @@ Every build is signed with the Apple Development certificate named in `scripts/f
 3. Open **T3 Code (Fork)**. The first time, macOS asks whether it may use `t3code Safe Storage`: enter the login password and choose **Always Allow**. That entry holds the key for the saved secrets and connections.
 4. Turn on **Settings > Labs > Suggest next prompt** and add `--prompt-autocomplete-next-prompt` to **Settings > Providers > Pi > Launch arguments**.
 
-The flag needs `@kliebhan/pi-prompt-autocomplete` 0.4.0 or later (`pi update npm:@kliebhan/pi-prompt-autocomplete`). Each suggestion is one extra model request; `--prompt-autocomplete-model <provider/model>` in the same launch arguments picks a fast model for it.
+The flag needs `@kliebhan/pi-prompt-autocomplete` 0.4.0 or later, draft completion 0.5.0. Install a new minor version with `npm_config_prefer_online=true pi install npm:@kliebhan/pi-prompt-autocomplete`: `pi update` stays within the recorded `^0.x` range, and the setting skips npm's stale cache. Each suggestion is one extra model request; `--prompt-autocomplete-model <provider/model>` in the same launch arguments picks a fast model for it.
 
 A suggestion belongs to a thread's latest completed turn and lives in the server's memory. A thread from before the switch shows one after its next turn, and quitting the app drops the suggestions it holds.
 
