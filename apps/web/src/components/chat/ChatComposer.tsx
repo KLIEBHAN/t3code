@@ -290,7 +290,12 @@ import { ComposerControlsBar } from "./ComposerControlsBar";
 import { composerCommandKeyHandler } from "./composerCommandKey";
 import { usePromptSuggestion } from "./usePromptSuggestion";
 // Fork: completion of the draft as the user types.
-import { draftCompletionContext, latestExchange, useDraftCompletion } from "./useDraftCompletion";
+import {
+  draftCompletionContext,
+  latestExchange,
+  readThreadMessages,
+  useDraftCompletion,
+} from "./useDraftCompletion";
 import { useSuggestionAlternatives } from "./useSuggestionAlternatives";
 import { useServerConfigs } from "../../state/entities";
 import { useFreshSessionArmed } from "./freshSessionArms";
@@ -2393,9 +2398,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         ? { instanceId: String(selectedInstanceId), model: selectedModel }
         : undefined;
   const readDraftCompletionContext = () => {
-    const { lastUser, lastAssistant } = latestExchange(
-      promptHistoryEntries.flatMap((entry) => (entry.kind === "message" ? [entry.message] : [])),
-    );
+    const { lastUser, lastAssistant } = latestExchange(readThreadMessages(routeThreadRef));
     // Start and end of each message, as the extension keeps them; the start often names the result.
     return draftCompletionContext(lastUser, lastAssistant);
   };

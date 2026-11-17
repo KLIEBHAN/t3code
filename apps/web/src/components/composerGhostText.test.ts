@@ -78,3 +78,22 @@ describe("latestExchange", () => {
     ).toEqual({ lastUser: undefined, lastAssistant: "answer 99, decide 50 to 52" });
   });
 });
+
+describe("turnItemMessages", () => {
+  it("keeps user and assistant messages with their text, run, and streaming state", async () => {
+    const { turnItemMessages } = await import("./chat/useDraftCompletion");
+    const projected = (item: Record<string, unknown>) => ({ item }) as never;
+    expect(
+      turnItemMessages([
+        projected({ type: "user_message", text: "question", runId: "r1" }),
+        projected({ type: "tool_call", runId: "r1" }),
+        projected({ type: "assistant_message", text: "answer", runId: "r1", streaming: false }),
+        projected({ type: "assistant_message", text: "still", runId: "r2", streaming: true }),
+      ]),
+    ).toEqual([
+      { role: "user", text: "question", runId: "r1", streaming: false },
+      { role: "assistant", text: "answer", runId: "r1", streaming: false },
+      { role: "assistant", text: "still", runId: "r2", streaming: true },
+    ]);
+  });
+});
