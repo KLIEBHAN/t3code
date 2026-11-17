@@ -27,6 +27,12 @@ const COMMAND_NAME = "prompt-autocomplete";
 const DEFAULT_REPLY_TIMEOUT_MS = 6_000;
 // Several alternatives take the model longer, and the user waits for them on purpose.
 const MANUAL_REPLY_TIMEOUT_MS = 15_000;
+// Extra time the extension (0.8.0) allows a request for its thinking; the reply may take as long.
+const THINKING_EXTRA_TIMEOUT_MS: Partial<Record<string, number>> = {
+  low: 7_000,
+  medium: 22_000,
+  high: 52_000,
+};
 const DEFAULT_START_TIMEOUT_MS = 10_000;
 const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
 const decodeJson = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown));
@@ -203,8 +209,9 @@ export const makePiDraftCompleter = Effect.fn("makePiDraftCompleter")(function* 
         });
         const reply = yield* Deferred.await(deferred).pipe(
           Effect.timeoutOption(
-            input.replyTimeoutMs ??
-              (request.manual === true ? MANUAL_REPLY_TIMEOUT_MS : DEFAULT_REPLY_TIMEOUT_MS),
+            (input.replyTimeoutMs ??
+              (request.manual === true ? MANUAL_REPLY_TIMEOUT_MS : DEFAULT_REPLY_TIMEOUT_MS)) +
+              (THINKING_EXTRA_TIMEOUT_MS[request.thinking ?? "off"] ?? 0),
           ),
         );
         return Option.getOrElse(reply, (): ReadonlyArray<string> => []);
