@@ -109,6 +109,8 @@ export function composerCommandKeyHandler(input: {
   readonly cycleSuggestion: (direction: 1 | -1) => boolean;
   /** Fork: alternatives are on their way, so Escape dismisses them too. */
   readonly suggestionPending: boolean;
+  /** Fork: Ctrl+Shift+. replaces a stale suggestion with fresh ones; false leaves the key alone. */
+  readonly regenerateSuggestion: () => boolean;
 }) {
   const {
     keybindings,
@@ -151,6 +153,7 @@ export function composerCommandKeyHandler(input: {
     dismissPromptSuggestion,
     cycleSuggestion,
     suggestionPending,
+    regenerateSuggestion,
   } = input;
 
   // The composer persists across threads. A recall from thread A must not
@@ -267,6 +270,18 @@ export function composerCommandKeyHandler(input: {
     const { trigger } = resolveActiveComposerTrigger();
     const menuIsActive =
       !isLiteralPendingAnswer && (composerMenuOpenRef.current || trigger !== null);
+    // Fork: Ctrl+Shift+. by the physical key, which Shift turns into ">" or ":" by layout.
+    if (
+      event.code === "Period" &&
+      event.ctrlKey &&
+      event.shiftKey &&
+      !event.metaKey &&
+      !event.altKey &&
+      !event.isComposing &&
+      !menuIsActive
+    ) {
+      return regenerateSuggestion();
+    }
     // Fork: Ctrl+. and Ctrl+, as in Pi's prompt autocomplete.
     if (
       (key === "." || key === ",") &&

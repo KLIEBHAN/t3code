@@ -2435,14 +2435,21 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   useEffect(() => {
     clearSuggestionAlternativesRef.current = suggestionAlternatives.clear;
   });
-  const composerSuggestion =
-    suggestionAlternatives.suggestion ??
-    nextPromptGhost ??
-    (composerOffersSuggestions ? draftCompletion.suggestion : null);
+  // While fresh suggestions load, the stale one stays hidden.
+  const composerSuggestion = suggestionAlternatives.refreshing
+    ? null
+    : (suggestionAlternatives.suggestion ??
+      nextPromptGhost ??
+      (composerOffersSuggestions ? draftCompletion.suggestion : null));
   const dismissComposerSuggestion = () => {
     suggestionAlternatives.clear();
     if (nextPromptGhost !== null) dismissPromptSuggestion();
     else draftCompletion.dismiss();
+  };
+  const regenerateComposerSuggestion = () => {
+    if (!promptSuggestionsEnabled || !composerAllowsSuggestions) return false;
+    suggestionAlternatives.refresh(composerSuggestion ?? offeredPromptSuggestion);
+    return true;
   };
   const cycleComposerSuggestion = (direction: 1 | -1) => {
     if (!promptSuggestionsEnabled || !composerAllowsSuggestions) return false;
@@ -2450,8 +2457,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     return true;
   };
   // An empty composer shows its suggestion as the placeholder.
-  const placeholderSuggestion =
-    (prompt.length === 0 ? composerSuggestion : null) ?? offeredPromptSuggestion;
+  const placeholderSuggestion = suggestionAlternatives.refreshing
+    ? null
+    : ((prompt.length === 0 ? composerSuggestion : null) ?? offeredPromptSuggestion);
 
   const onComposerCommandKey = (key: string, event: KeyboardEvent, isTaskItem?: boolean) =>
     composerCommandKeyHandler({
@@ -2495,6 +2503,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       dismissPromptSuggestion: dismissComposerSuggestion,
       cycleSuggestion: cycleComposerSuggestion,
       suggestionPending: suggestionAlternatives.pending,
+      regenerateSuggestion: regenerateComposerSuggestion,
     })(key, event, isTaskItem);
 
   const {

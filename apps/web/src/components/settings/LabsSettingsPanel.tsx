@@ -5,6 +5,7 @@ import { managedCapabilityDenial } from "@t3tools/contracts";
 import { hasCloudPublicConfig } from "~/cloud/publicConfig";
 import { useT3ConnectAuthPrompt } from "../clerk/useT3ConnectAuthPrompt";
 import { Button } from "../ui/button";
+import { Kbd } from "../ui/kbd";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Switch } from "../ui/switch";
 import { useEnvironmentProviders } from "../../state/environments";
@@ -27,6 +28,8 @@ export function LabsSettingsPanel() {
         <PromptSuggestionsRow />
         {/* Fork: model for completions while typing and Ctrl+. alternatives. */}
         <DraftCompletionModelRow />
+        {/* Fork: the composer keys for suggestions. */}
+        <SuggestionKeysRow />
         <SimlockHostsRow />
         <FastWorktreeCheckoutRow />
       </SettingsSection>
@@ -276,6 +279,43 @@ function DraftCompletionModelRow() {
             ))}
           </SelectPopup>
         </Select>
+      }
+    />
+  );
+}
+
+// Fork: the composer keys for suggestions, fixed in composerCommandKey.ts.
+const SUGGESTION_KEYS = [
+  { keys: ["Tab"], action: "accept" },
+  { keys: ["Alt", "→"], action: "accept a word" },
+  { keys: ["Esc"], action: "dismiss" },
+  { keys: ["Ctrl", "."], action: "next alternative" },
+  { keys: ["Ctrl", ","], action: "previous alternative" },
+  { keys: ["Ctrl", "Shift", "."], action: "fresh suggestions" },
+] as const;
+
+/** Fork: lists the composer keys for suggestions; they work in the composer, also while a turn runs. */
+function SuggestionKeysRow() {
+  return (
+    <SettingsRow
+      id="suggestion-keys"
+      title="Keys for suggestions"
+      description="In the composer. Ctrl+. and Ctrl+Shift+. also work while a turn runs."
+      control={
+        <dl className="grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-1 text-xs">
+          {SUGGESTION_KEYS.map(({ keys, action }) => (
+            <div key={action} className="contents">
+              <dt className="flex justify-end gap-0.5">
+                {keys.map((key) => (
+                  <Kbd key={key} variant="outline">
+                    {key}
+                  </Kbd>
+                ))}
+              </dt>
+              <dd className="text-muted-foreground">{action}</dd>
+            </div>
+          ))}
+        </dl>
       }
     />
   );
