@@ -76,7 +76,7 @@ launchd starts `scripts/fork/update.sh --scheduled` at minute 30 of every hour. 
 `scripts/fork/sync-upstream.sh` does the merge:
 
 1. It merges the newest `v*-nightly.*` tag in a scratch worktree, `~/workspace/t3code-fork-build/sync-worktree`.
-2. It accepts the merge only if the result differs from the tag in fork-owned paths alone, the tests of both patches pass, and both packages typecheck.
+2. It accepts the merge only if the result differs from the tag in fork-owned paths alone, the tests of both patches pass, both packages typecheck, and `vp run i18n:check` passes. The fork's own user-facing text stays plain English with `t3code/no-untranslated-copy` silenced: translated text would need keys in upstream's catalogs, which are not fork-owned.
 3. On a conflict or a failed check, a model gets one attempt to repair the merge (`scripts/fork/merge-prompt.md`, run through `pi --print` with `cpa/cpa-worker-plus`, or `FORK_MERGE_MODEL` if set). Its result has to pass step 2 like any other merge. The list of fork-owned paths is read before the merge, so the repair cannot widen it.
 4. Only then does `pi-prompt-suggestions` move forward, and the script pushes it to `origin`. A push that fails is retried by the next run.
 

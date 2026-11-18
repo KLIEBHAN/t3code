@@ -62,7 +62,8 @@ report="$FORK_STATE_DIR/sync-report.txt"
 owned_paths="$(git show "$FORK_BRANCH:scripts/fork/owned-paths.txt")"
 check_commands='vp i
 vp test run packages/provider-pi/src/server/adapter.test.ts apps/desktop/src/app/DesktopUserData.test.ts
-vp run --filter @t3tools/provider-pi --filter @t3tools/desktop typecheck'
+vp run --filter @t3tools/provider-pi --filter @t3tools/desktop typecheck
+vp run i18n:check'
 
 mkdir -p "$FORK_STATE_DIR"
 git worktree remove --force "$worktree" 2>/dev/null || true
