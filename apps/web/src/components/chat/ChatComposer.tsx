@@ -3825,7 +3825,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                             : showProviderUnavailable
                               ? gt("Enable a provider in Settings to send a message")
                               : suggestionAlternatives.pending && prompt.length === 0
-                                ? gt("Loading suggestions…")
+                                ? // Fork: a gt() key would be missing from upstream's catalogs.
+                                  // oxlint-disable-next-line t3code/no-untranslated-copy -- fork text stays English
+                                  "Loading suggestions…"
                                 : (placeholderSuggestion ?? m(DEFAULT_COMPOSER_PLACEHOLDER))
                     }
                     // Fork: the rest of the suggestion stays visible while the draft is its start.

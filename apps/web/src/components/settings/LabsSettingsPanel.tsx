@@ -227,6 +227,8 @@ function PromptSuggestionsRow() {
 const CHAT_MODEL = "chat";
 const choiceValue = (instanceId: string, model: string) => JSON.stringify([instanceId, model]);
 
+// Fork rows: plain English; translated copy needs keys in upstream's catalogs, which the fork leaves alone.
+/* oxlint-disable t3code/no-untranslated-copy -- fork rows stay English */
 /**
  * Fork: picks the Pi model, with its provider instance, for completions while typing and
  * for Ctrl+. alternatives. "Like the chat" uses the thread's Pi model, else cpa/cpa-small.
@@ -393,6 +395,8 @@ function SuggestionKeysRow() {
     />
   );
 }
+
+/* oxlint-enable t3code/no-untranslated-copy */
 
 function SimlockHostsRow() {
   const searchableSetting = useSearchableSetting();

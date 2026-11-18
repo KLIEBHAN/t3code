@@ -6,6 +6,7 @@ The fork differs from upstream only in the paths listed in `scripts/fork/owned-p
 2. Fix the merge:
    - **Conflict:** resolve every conflicted file. In a fork-owned path, keep upstream's new code and reapply the fork's behavior on top of it. In any other path, take upstream's version.
    - **Failing check:** change fork-owned paths until the check passes. Upstream moved; adapt the patch to it and keep the behavior `FORK.md` describes.
+   - **Fork text:** leave the fork's own user-facing strings as plain English, even where upstream wraps its strings in `gt(...)`, `m(...)`, or `<T>`. A wrapped string needs a key in upstream's translation catalogs, which the fork does not change, and `vp run i18n:check` fails without it. Silence the `t3code/no-untranslated-copy` lint rule for such a string with `// oxlint-disable-next-line t3code/no-untranslated-copy -- fork text stays English`, as the fork already does.
 3. Run `vp i` once; the worktree starts without installed dependencies. Then run `vp fmt` on each file you edited and the commands the report lists.
 4. Stage your changes with `git add`. Leave committing, branches, remotes, and pushing to the script.
 
