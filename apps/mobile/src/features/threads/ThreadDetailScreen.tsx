@@ -1899,6 +1899,12 @@ function ThreadDetailBody(
                       <ThreadComposer
                         isDraft={Boolean(props.draftMode)}
                         canOperateThread={props.canOperateThread}
+                        // Fork: pass detail ref and request state for prompt suggestions.
+                        threadDetailRef={props.selectedThreadDetailRef}
+                        hasPendingRequests={
+                          props.activePendingApproval !== null ||
+                          props.activePendingUserInput !== null
+                        }
                         reportedModelSelection={reportedModelSelection}
                         editorRef={composerEditorRef}
                         placeholder={

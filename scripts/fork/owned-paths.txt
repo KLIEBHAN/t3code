@@ -45,3 +45,9 @@ apps/mobile/src/features/threads/composerSuggestions.ts
 apps/mobile/src/features/threads/composerSuggestions.test.ts
 apps/mobile/src/features/threads/useComposerSuggestions.ts
 apps/mobile/src/features/threads/useComposerSuggestions.test.tsx
+apps/mobile/src/features/threads/ComposerSuggestionBar.tsx
+apps/mobile/src/features/threads/ComposerSuggestionBar.test.tsx
+apps/mobile/src/features/threads/ThreadComposer.tsx
+apps/mobile/src/features/threads/ThreadDetailScreen.tsx
+apps/mobile/src/features/settings/PromptSuggestionsBetaSection.tsx
+apps/mobile/src/features/settings/ThreadSettingsSections.tsx
