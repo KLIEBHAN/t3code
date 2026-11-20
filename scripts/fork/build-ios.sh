@@ -55,8 +55,8 @@ detect_team_id() {
     return
   fi
   security find-certificate -c "$FORK_SIGN_IDENTITY" -p 2>/dev/null \
-    | openssl x509 -noout -subject 2>/dev/null \
-    | sed -n -E 's/.*OU=([A-Z0-9]+).*/\1/p' || true
+    | openssl x509 -noout -subject -nameopt RFC2253 2>/dev/null \
+    | sed -n -E 's/.*OU[[:space:]]*=[[:space:]]*([A-Z0-9]+).*/\1/p' || true
 }
 
 if ! command -v pod >/dev/null 2>&1; then
@@ -78,6 +78,14 @@ export T3CODE_IOS_TEAM_ID="$team_id"
 export T3CODE_MOBILE_APP_NAME="${FORK_IOS_APP_NAME:-$FORK_APP_NAME}"
 export T3CODE_MOBILE_SCHEME="${FORK_IOS_SCHEME:-t3code-fork}"
 export T3CODE_MOBILE_UPDATES_ENABLED=0
+
+mkdir -p "$FORK_STATE_DIR"
+lock_dir="$FORK_STATE_DIR/build-ios.lock"
+if ! mkdir "$lock_dir" 2>/dev/null; then
+  echo "build-ios: another iOS build is already running ($lock_dir)" >&2
+  exit 1
+fi
+trap 'rmdir "$lock_dir" 2>/dev/null || true' EXIT
 
 cd apps/mobile
 echo "build-ios: prebuilding $T3CODE_MOBILE_APP_NAME ($T3CODE_IOS_PERSONAL_TEAM_BUNDLE_ID, team ${team_id:-none})"
