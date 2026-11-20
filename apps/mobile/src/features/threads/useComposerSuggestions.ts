@@ -253,11 +253,13 @@ export function useComposerSuggestions(
       }),
   );
 
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- cancels in-flight manual requests on unmount or when switching thread/model
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- cancels in-flight manual requests and clears their pending scopes on unmount or when switching thread/model
   useEffect(() => {
     altScopeKeyRef.current = `${environmentId}\u0000${draftKey}\u0000${modelKey}`;
     return () => {
       latestAltRequestRef.current += 1;
+      setPendingFor(null);
+      setRefreshFor(null);
     };
   }, [draftKey, environmentId, modelKey]);
 

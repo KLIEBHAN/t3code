@@ -282,4 +282,51 @@ describe("useComposerSuggestions", () => {
     expect(state?.suggestion).toBe("Different idea");
     act(() => root.unmount());
   });
+
+  it("clears pending and refresh scopes when switching models mid-request", async () => {
+    promptSuggestionDataRef.current = { runId: RUN_ID, text: "First idea" };
+    let resolvePending:
+      | ((value: { _tag: "Success"; value: { completion: string; completions: string[] } }) => void)
+      | undefined;
+    completeDraftMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolvePending = resolve;
+        }),
+    );
+
+    let state: ComposerSuggestionsState | undefined;
+    const onState = (next: ComposerSuggestionsState) => {
+      state = next;
+    };
+
+    const root = createRoot(document.createElement("div"));
+    await act(async () => root.render(<Probe input={baseInput()} onState={onState} />));
+    await act(async () => state?.refresh());
+    expect(state?.pending).toBe(true);
+    expect(state?.suggestion).toBeNull();
+
+    const otherModel: ModelSelection = {
+      instanceId: "pi" as ProviderInstanceId,
+      model: "cpa/cpa-small",
+    };
+    await act(async () =>
+      root.render(
+        <Probe input={baseInput({ selectedModelSelection: otherModel })} onState={onState} />,
+      ),
+    );
+    await act(async () => root.render(<Probe input={baseInput()} onState={onState} />));
+
+    expect(state?.pending).toBe(false);
+    expect(state?.suggestion).toBe("First idea");
+
+    await act(async () => {
+      resolvePending?.({
+        _tag: "Success",
+        value: { completion: "Abandoned idea", completions: ["Abandoned idea"] },
+      });
+    });
+    expect(state?.suggestion).toBe("First idea");
+    act(() => root.unmount());
+  });
 });
