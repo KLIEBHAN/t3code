@@ -77,6 +77,7 @@ import {
   pendingRestartCancelledBackgroundWork,
   restartCancelledBackgroundWorkNote,
 } from "./RestartBackgroundNote.ts";
+import { pendingStoppedWatches, stoppedWatchNote } from "./StoppedWatchNote.ts";
 
 export class ProviderTurnStartError extends Schema.TaggedError<ProviderTurnStartError>()(
   "ProviderTurnStartError",
@@ -1006,19 +1007,20 @@ export const layer: Layer.Layer<
         projection.providerTurns,
         projection.attempts,
       );
+      const compactionMessageIds = () =>
+        new Set(
+          projection.messages
+            .filter(
+              (candidate) =>
+                isCompactionCommandMessage(candidate) ||
+                (goalDriver && parseGoalCommand(candidate) !== null),
+            )
+            .map((candidate) => candidate.id),
+        );
       const restartCancelledWork = pendingRestartCancelledBackgroundWork({
         runs: projection.runs,
         providerTurns: projection.providerTurns,
-        compactionMessageIds: () =>
-          new Set(
-            projection.messages
-              .filter(
-                (candidate) =>
-                  isCompactionCommandMessage(candidate) ||
-                  (goalDriver && parseGoalCommand(candidate) !== null),
-              )
-              .map((candidate) => candidate.id),
-          ),
+        compactionMessageIds,
         run,
         attempts: projection.attempts,
       });
@@ -1026,6 +1028,17 @@ export const layer: Layer.Layer<
         restartCancelledWork.length === 0
           ? ""
           : restartCancelledBackgroundWorkNote(restartCancelledWork);
+      // Fork: watches the user's Stop ended, told once.
+      const stopNote = stoppedWatchNote(
+        pendingStoppedWatches({
+          pullRequests: projection.thread.pullRequests ?? [],
+          run,
+          runs: projection.runs,
+          attempts: projection.attempts,
+          providerTurns: projection.providerTurns,
+          compactionMessageIds,
+        }),
+      );
       const tokenCap = yield* handoffTokenCapConfig.pipe(
         Effect.orElseSucceed(() => DEFAULT_HANDOFF_TOKEN_CAP),
       );
@@ -1168,7 +1181,9 @@ export const layer: Layer.Layer<
             return handoffBudget({
               tokenCap,
               modelContextWindow,
-              userText: restartNote === "" ? userText : `${restartNote}\n\n${userText}`,
+              userText: [restartNote, stopNote, userText]
+                .filter((part) => part !== "")
+                .join("\n\n"),
               attachments: providerMessage.attachments,
               providerThread: budgetProviderThread,
               nativeContextEstimate:
@@ -1992,7 +2007,7 @@ export const layer: Layer.Layer<
             sideChatHandoff === undefined || compact || goalCommand
               ? ""
               : sideChatHandoff.summaryText;
-          const context = [delivery.context, sideChatContext, restartNote]
+          const context = [delivery.context, sideChatContext, restartNote, stopNote]
             .filter((part) => part !== "")
             .join("\n\n");
           const { restartContinuationOfRunId: _resumedRunId, ...promptedInput } = turnInput;
@@ -2087,6 +2102,7 @@ export const layer: Layer.Layer<
         retryHandoff.attachments.length === 0 &&
         sideChatHandoff === undefined &&
         restartNote === "" &&
+        stopNote === "" &&
         !noteContinuation
           ? session
           : makeDeliverySession(session, startWithHandoffs);

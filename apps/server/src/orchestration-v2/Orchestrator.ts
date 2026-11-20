@@ -13163,6 +13163,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     }
     const pullRequests = thread.pullRequests ?? [];
     if (pullRequests.some((link) => link.watch !== undefined)) {
+      // Fork: the ended watch records the Stop, so the agent's next turn is told (StoppedWatchNote).
+      const stoppedAt = DateTime.formatIso(input.now);
       yield* emitEvent({
         type: "thread.pull-request-synced",
         threadId: thread.id,
@@ -13170,7 +13172,12 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         occurredAt: input.now,
         payload: {
           ...thread,
-          pullRequests: pullRequests.map((link) => withPullRequestWatch(link, undefined)),
+          pullRequests: pullRequests.map((link) =>
+            withPullRequestWatch(
+              link.watch === undefined ? link : { ...link, watch: { ...link.watch, stoppedAt } },
+              undefined,
+            ),
+          ),
         },
       });
     }
