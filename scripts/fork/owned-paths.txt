@@ -40,3 +40,8 @@ apps/server/src/orchestration-v2/StoppedWatchNote.test.ts
 apps/server/src/orchestration-v2/ThreadStop.test.ts
 apps/mobile/app.config.ts
 apps/mobile/app.config.fork.test.ts
+apps/mobile/vite.config.ts
+apps/mobile/src/features/threads/composerSuggestions.ts
+apps/mobile/src/features/threads/composerSuggestions.test.ts
+apps/mobile/src/features/threads/useComposerSuggestions.ts
+apps/mobile/src/features/threads/useComposerSuggestions.test.tsx
