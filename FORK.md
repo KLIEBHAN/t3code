@@ -101,6 +101,17 @@ scripts/fork/update.sh
 
 Then follow [Switch from the official app](#switch-from-the-official-app).
 
+## iOS fork app
+
+`scripts/fork/build-ios.sh` builds and installs the iOS fork app (`T3 Code (Fork)`, bundle ID `com.kliebhan.t3code-fork`, scheme `t3code-fork`, Expo OTA updates off) side-by-side with the App Store app:
+
+```sh
+scripts/fork/build-ios.sh --device          # connected iPhone (Release, Personal Team)
+scripts/fork/build-ios.sh --simulator       # iOS Simulator
+```
+
+It reads the Apple Team ID from `FORK_SIGN_IDENTITY` (or `FORK_IOS_TEAM_ID`) and needs Xcode plus CocoaPods (`brew install cocoapods`). Personal Team profiles omit push notifications, widgets, share extension, associated domains, and Sign in with Apple, and expire after 7 days (re-run the script to renew). Connect to the fork server over LAN, VPN, or Tailscale (`t3 pair`).
+
 ## Remove it
 
 ```sh

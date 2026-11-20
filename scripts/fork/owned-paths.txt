@@ -38,3 +38,5 @@ apps/server/src/orchestration-v2/ProviderTurnStartService.ts
 apps/server/src/orchestration-v2/StoppedWatchNote.ts
 apps/server/src/orchestration-v2/StoppedWatchNote.test.ts
 apps/server/src/orchestration-v2/ThreadStop.test.ts
+apps/mobile/app.config.ts
+apps/mobile/app.config.fork.test.ts
