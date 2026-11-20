@@ -32,3 +32,9 @@ apps/web/src/components/chat/useSuggestionAlternatives.ts
 apps/web/src/components/chat/useSuggestionAlternatives.browser.test.tsx
 packages/contracts/src/settings.ts
 apps/web/src/components/settings/LabsSettingsPanel.tsx
+packages/contracts/src/threadPullRequest.ts
+apps/server/src/orchestration-v2/Orchestrator.ts
+apps/server/src/orchestration-v2/ProviderTurnStartService.ts
+apps/server/src/orchestration-v2/StoppedWatchNote.ts
+apps/server/src/orchestration-v2/StoppedWatchNote.test.ts
+apps/server/src/orchestration-v2/ThreadStop.test.ts
