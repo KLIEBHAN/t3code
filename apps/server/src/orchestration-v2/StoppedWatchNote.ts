@@ -9,8 +9,6 @@ import type {
 import * as DateTime from "effect/DateTime";
 import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
 
-const MAX_NOTE_ENTRIES = 10;
-
 /**
  * Links whose watch Stop ended and that no turn started since has completed with the note. A
  * new watch or unlinking the pull request drops it; compactions and goal commands carry none.
@@ -18,10 +16,8 @@ const MAX_NOTE_ENTRIES = 10;
 export function pendingStoppedWatches(input: {
   readonly pullRequests: ReadonlyArray<ThreadPullRequestLink>;
   readonly run: Pick<OrchestrationV2Run, "id" | "userMessageId" | "activeAttemptId">;
-  readonly runs: ReadonlyArray<
-    Pick<OrchestrationV2Run, "id" | "userMessageId" | "status" | "startedAt">
-  >;
-  readonly attempts: ReadonlyArray<Pick<OrchestrationV2RunAttempt, "id" | "runId">>;
+  readonly runs: ReadonlyArray<Pick<OrchestrationV2Run, "id" | "userMessageId" | "status">>;
+  readonly attempts: ReadonlyArray<Pick<OrchestrationV2RunAttempt, "id" | "runId" | "startedAt">>;
   readonly providerTurns: ReadonlyArray<
     Pick<OrchestrationV2ProviderTurn, "runAttemptId" | "status">
   >;
@@ -47,24 +43,22 @@ export function pendingStoppedWatches(input: {
       completedAttemptIds.has(attempt.id) &&
       run !== undefined &&
       run.status !== "rolled_back" &&
-      run.startedAt !== null &&
+      attempt.startedAt !== null &&
       !compactionMessageIds.has(run.userMessageId)
-      ? [DateTime.toEpochMillis(run.startedAt)]
+      ? [DateTime.toEpochMillis(attempt.startedAt)]
       : [];
   });
   return stopped.filter((link) => {
     const stoppedAt = Date.parse(link.endedWatch!.stoppedAt!);
-    return !deliveredStarts.some((startedAt) => startedAt > stoppedAt);
+    return !deliveredStarts.some((startedAt) => startedAt >= stoppedAt);
   });
 }
 
-/** Bounds entries to protect the context budget; empty when nothing is pending. */
+/** Names every pending pull request, since delivery covers all of them; empty when none is pending. */
 export function stoppedWatchNote(links: ReadonlyArray<ThreadPullRequestLink>): string {
   if (links.length === 0) return "";
-  const omitted = links.length - MAX_NOTE_ENTRIES;
   return [
     "Note: the user pressed Stop, which also ended T3 Code's watch on these pull requests. They no longer wake you. Call watch_pull_request again only if the user's request still needs it:",
-    ...links.slice(0, MAX_NOTE_ENTRIES).map((link) => `- #${link.number} ${link.url}`),
-    ...(omitted > 0 ? [`- and ${omitted} more`] : []),
+    ...links.map((link) => `- #${link.number} ${link.url}`),
   ].join("\n");
 }

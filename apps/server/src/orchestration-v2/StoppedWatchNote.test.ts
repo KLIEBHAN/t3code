@@ -60,7 +60,11 @@ const pending = (input: {
     pullRequests: input.pullRequests,
     run: input.runs.at(-1)!,
     runs: input.runs,
-    attempts: input.runs.map((source) => ({ id: source.activeAttemptId!, runId: source.id })),
+    attempts: input.runs.map((source) => ({
+      id: source.activeAttemptId!,
+      runId: source.id,
+      startedAt: source.startedAt,
+    })),
     providerTurns: (input.completed ?? []).map((source) => ({
       runAttemptId: source.activeAttemptId!,
       status: "completed" as const,
@@ -78,6 +82,16 @@ it("tells the first prompted turn after Stop which watches it ended, and only th
   // Delivered once the turn that carried it completed.
   assert.deepEqual(
     pending({ pullRequests: [link(66)], runs: [stopped, next, later], completed: [next] }),
+    [],
+  );
+  // A turn that started in the same millisecond as Stop carried it too.
+  const sameInstant = run(3, STOPPED_AT);
+  assert.deepEqual(
+    pending({
+      pullRequests: [link(66)],
+      runs: [stopped, sameInstant, later],
+      completed: [sameInstant],
+    }),
     [],
   );
   // A turn that started after Stop but never completed has not delivered it.
@@ -136,8 +150,8 @@ it("does not repeat the note in a steer's replacement attempt of the same run", 
     run: replaced,
     runs: [replaced],
     attempts: [
-      { id: RunAttemptId.make("attempt:3"), runId: next.id },
-      { id: RunAttemptId.make("attempt:3b"), runId: next.id },
+      { id: RunAttemptId.make("attempt:3"), runId: next.id, startedAt: next.startedAt },
+      { id: RunAttemptId.make("attempt:3b"), runId: next.id, startedAt: next.startedAt },
     ],
     providerTurns: [{ runAttemptId: RunAttemptId.make("attempt:3"), status: "completed" }],
     compactionMessageIds: () => new Set(),
@@ -146,11 +160,9 @@ it("does not repeat the note in a steer's replacement attempt of the same run", 
   assert.deepEqual(result, []);
 });
 
-it("names each pull request and bounds the list", () => {
+it("names every pending pull request, since delivery covers all of them", () => {
   assert.equal(stoppedWatchNote([]), "");
   const note = stoppedWatchNote(Array.from({ length: 12 }, (_, index) => link(index + 1)));
-  assert.include(note, "Call watch_pull_request again only if the user's request still needs it");
   assert.include(note, "- #1 https://github.com/acme/app/pull/1");
-  assert.notInclude(note, "pull/11");
-  assert.isTrue(note.endsWith("- and 2 more"));
+  assert.include(note, "- #12 https://github.com/acme/app/pull/12");
 });
