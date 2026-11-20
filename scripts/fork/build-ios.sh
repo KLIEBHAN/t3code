@@ -59,6 +59,26 @@ detect_team_id() {
     | sed -n -E 's/.*OU[[:space:]]*=[[:space:]]*([A-Z0-9]+).*/\1/p' || true
 }
 
+resolve_simulator_udid() {
+  local query="$1"
+  xcrun simctl list devices available -j | python3 -c '
+import json, sys
+query = sys.argv[1]
+data = json.load(sys.stdin)
+booted = []
+other = []
+for devices in data.get("devices", {}).values():
+    for dev in devices:
+        if not dev.get("isAvailable", True):
+            continue
+        if dev.get("udid") == query or dev.get("name") == query:
+            (booted if dev.get("state") == "Booted" else other).append(dev["udid"])
+match = (booted + other)[:1]
+if match:
+    print(match[0])
+' "$query"
+}
+
 if ! command -v pod >/dev/null 2>&1; then
   echo "build-ios: CocoaPods ('pod') is required for iOS builds. Install it with: brew install cocoapods" >&2
   exit 1
@@ -70,11 +90,19 @@ if [ -z "$team_id" ] && [ "$mode" = "device" ]; then
   exit 1
 fi
 
+if [ "$mode" = "simulator" ] && [ -n "$target" ]; then
+  sim_udid="$(resolve_simulator_udid "$target")"
+  if [ -z "$sim_udid" ]; then
+    echo "build-ios: no available iOS simulator matches '$target'" >&2
+    exit 1
+  fi
+  target="$sim_udid"
+fi
+
 export APP_VARIANT=production
 export EXPO_NO_GIT_STATUS=1
 export T3CODE_IOS_PERSONAL_TEAM=1
 export T3CODE_IOS_PERSONAL_TEAM_BUNDLE_ID="${FORK_IOS_BUNDLE_ID:-$FORK_BUNDLE_ID}"
-export T3CODE_IOS_TEAM_ID="$team_id"
 export T3CODE_MOBILE_APP_NAME="${FORK_IOS_APP_NAME:-$FORK_APP_NAME}"
 export T3CODE_MOBILE_SCHEME="${FORK_IOS_SCHEME:-t3code-fork}"
 export T3CODE_MOBILE_UPDATES_ENABLED=0
@@ -89,7 +117,9 @@ trap 'rmdir "$lock_dir" 2>/dev/null || true' EXIT
 
 cd apps/mobile
 echo "build-ios: prebuilding $T3CODE_MOBILE_APP_NAME ($T3CODE_IOS_PERSONAL_TEAM_BUNDLE_ID, team ${team_id:-none})"
-vp exec expo prebuild --clean --platform ios
+# Leave DEVELOPMENT_TEAM unset during prebuild so expo run:ios --device configures signing
+# with T3CODE_IOS_TEAM_ID and passes -allowProvisioningUpdates / -allowProvisioningDeviceRegistration.
+T3CODE_IOS_TEAM_ID="" vp exec expo prebuild --clean --platform ios
 
 run_args=(--configuration "$configuration")
 if [ "$configuration" = "Release" ]; then
@@ -106,4 +136,4 @@ elif [ -n "$target" ]; then
 fi
 
 echo "build-ios: building and installing ($mode, $configuration)"
-vp exec expo run:ios "${run_args[@]}"
+T3CODE_IOS_TEAM_ID="$team_id" vp exec expo run:ios "${run_args[@]}"
