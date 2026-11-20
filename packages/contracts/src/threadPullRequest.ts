@@ -120,6 +120,8 @@ export const ThreadPullRequestWatch = Schema.Struct({
   checksPending: Schema.optional(Schema.Boolean),
   /** How long the watch holds its thread. Absent means until every check finished. */
   until: Schema.optional(Schema.Literal("merged")),
+  /** Fork: when Stop ended this watch, so the agent's next turn is told. Set only on `endedWatch`. */
+  stoppedAt: Schema.optional(IsoDateTime),
 });
 export type ThreadPullRequestWatch = typeof ThreadPullRequestWatch.Type;
 

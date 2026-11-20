@@ -61,8 +61,8 @@ report="$FORK_STATE_DIR/sync-report.txt"
 # Read before the merge, so a repair cannot widen what the fork may change.
 owned_paths="$(git show "$FORK_BRANCH:scripts/fork/owned-paths.txt")"
 check_commands='vp i
-vp test run packages/provider-pi/src/server/adapter.test.ts apps/desktop/src/app/DesktopUserData.test.ts
-vp run --filter @t3tools/provider-pi --filter @t3tools/desktop typecheck
+vp test run packages/provider-pi/src/server/adapter.test.ts apps/desktop/src/app/DesktopUserData.test.ts apps/server/src/orchestration-v2/StoppedWatchNote.test.ts apps/server/src/orchestration-v2/ThreadStop.test.ts
+vp run --filter @t3tools/provider-pi --filter @t3tools/desktop --filter t3 typecheck
 vp run i18n:check'
 
 mkdir -p "$FORK_STATE_DIR"

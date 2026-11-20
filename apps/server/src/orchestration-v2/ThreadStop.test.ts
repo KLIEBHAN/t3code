@@ -966,6 +966,9 @@ it.effect.each([false, true])(
         assert.isEmpty(result?.pendingBackgroundTasks ?? []);
         assert.equal(result?.latestRunStopRequested, stopped);
       }
+      // Fork: only a Stop stamps the ended watch, which the next turn's note reads.
+      const ended = (yield* orchestrator.getThreadProjection(threadId)).thread.pullRequests?.[0];
+      assert.equal(ended?.endedWatch?.stoppedAt !== undefined, stopped);
 
       yield* send(threadId, "next", "start_immediately");
       assert.isFalse((yield* projections.getThreadShell(threadId))?.latestRunStopRequested);
