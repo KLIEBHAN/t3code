@@ -468,6 +468,22 @@ describe("useComposerSuggestions", () => {
     expect(state?.notice).toBeNull();
     expect(state?.canTrigger).toBe(true);
 
+    // Refreshing from a manual-only alternative (nothing underlying) shows a notice on failure.
+    completeDraftMock
+      .mockResolvedValueOnce({
+        _tag: "Success",
+        value: { completion: "Manual prompt", completions: ["Manual prompt"] },
+      })
+      .mockResolvedValueOnce({ _tag: "Failure", cause: "network" });
+    await act(async () =>
+      root.render(<Probe input={baseInput({ draft: "" })} onState={onState} />),
+    );
+    await act(async () => state?.refresh());
+    expect(state?.suggestion).toBe("Manual prompt");
+    await act(async () => state?.refresh());
+    expect(state?.suggestion).toBeNull();
+    expect(state?.notice).toBe("error");
+
     act(() => root.unmount());
   });
 });

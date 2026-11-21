@@ -315,12 +315,14 @@ export function useComposerSuggestions(
       : null;
   const alternativeCount = alternativeIndex !== null ? visibleAlternatives.length : 0;
 
+  const hasVisibleSuggestion = formatSuggestionPreview(draft, suggestion) !== null;
+
   const fetchAlternatives = (
     shown: string | null,
     fresh: boolean,
-    stale: string | null = null,
-    allowFreshFallback = false,
-    hadVisible = formatSuggestionPreview(draft, suggestion) !== null,
+    stale: string | null,
+    allowFreshFallback: boolean,
+    hasFallbackSuggestion: boolean,
   ) => {
     const requestId = ++latestAltRequestRef.current;
     const asked = draft;
@@ -341,7 +343,7 @@ export function useComposerSuggestions(
       if (result._tag !== "Success") {
         setPendingFor(null);
         setRefreshFor(null);
-        if (!hadVisible) {
+        if (!hasFallbackSuggestion) {
           setSuppressedDraft({ draftKey, draft: asked });
           setNoticeFor({ draftKey, modelKey, base: asked, kind: "error" });
         }
@@ -356,13 +358,13 @@ export function useComposerSuggestions(
       const choices = continuingPrompts(prompts, asked);
       // If cached alternatives gave nothing different from what is on screen, retry once past cache.
       if (allowFreshFallback && !fresh && shown !== null && choices.length <= 1) {
-        fetchAlternatives(null, true, shown, false, hadVisible);
+        fetchAlternatives(null, true, shown, false, hasFallbackSuggestion);
         return;
       }
       setPendingFor(null);
       setRefreshFor(null);
       if (choices.length === 0) {
-        if (!hadVisible) {
+        if (!hasFallbackSuggestion) {
           setSuppressedDraft({ draftKey, draft: asked });
           setNoticeFor({ draftKey, modelKey, base: asked, kind: "empty" });
         }
@@ -418,16 +420,18 @@ export function useComposerSuggestions(
       if (next !== undefined) setAlternatives({ ...alternatives, selected: next });
       return;
     }
-    fetchAlternatives(shown, false, shown, true);
+    fetchAlternatives(shown, false, shown, true, hasVisibleSuggestion);
   };
 
   const refresh = () => {
     if (!promptSuggestionsEnabled || !allowsSuggestions) return;
     const stale = activeAlternative ?? suggestion ?? offeredPromptText;
+    const hasUnderlyingSuggestion =
+      formatSuggestionPreview(draft, nextPromptGhost ?? matchingDraftAnswer) !== null;
     setSuppressedDraft(null);
     setAlternatives(null);
     setRefreshFor({ draftKey, modelKey, base: draft });
-    fetchAlternatives(null, true, stale, false);
+    fetchAlternatives(null, true, stale, false, hasUnderlyingSuggestion);
   };
 
   const acceptAll = () => {
@@ -445,7 +449,6 @@ export function useComposerSuggestions(
     return draft + nextWord;
   };
 
-  const hasVisibleSuggestion = formatSuggestionPreview(draft, suggestion) !== null;
   const notice: ComposerSuggestionNotice | null =
     promptSuggestionsEnabled &&
     allowsSuggestions &&

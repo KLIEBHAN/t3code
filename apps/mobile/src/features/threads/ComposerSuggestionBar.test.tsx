@@ -3,13 +3,17 @@ import { act, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
+const { announceForAccessibilityMock } = vi.hoisted(() => ({
+  announceForAccessibilityMock: vi.fn(),
+}));
+
 vi.mock("expo-haptics", () => ({
   selectionAsync: vi.fn(),
   impactAsync: vi.fn(),
   ImpactFeedbackStyle: { Light: "light" },
 }));
 vi.mock("react-native", () => ({
-  AccessibilityInfo: { announceForAccessibility: vi.fn() },
+  AccessibilityInfo: { announceForAccessibility: announceForAccessibilityMock },
   Platform: { OS: "ios" },
   View: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
   Pressable: ({
@@ -17,17 +21,20 @@ vi.mock("react-native", () => ({
     onPress,
     onLongPress,
     accessibilityLabel,
+    accessibilityHint,
     disabled,
   }: {
     children?: ReactNode;
     onPress?: () => void;
     onLongPress?: () => void;
     accessibilityLabel?: string;
+    accessibilityHint?: string;
     disabled?: boolean;
   }) => (
     <button
       type="button"
       aria-label={accessibilityLabel}
+      data-hint={accessibilityHint}
       disabled={disabled}
       onClick={onPress}
       onContextMenu={(event) => {
@@ -65,6 +72,7 @@ import { ComposerSuggestionBar } from "./ComposerSuggestionBar";
 describe("ComposerSuggestionBar", () => {
   beforeEach(() => {
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    announceForAccessibilityMock.mockReset();
   });
 
   it("renders nothing when no suggestion is offered and nothing is loading", async () => {
@@ -164,6 +172,52 @@ describe("ComposerSuggestionBar", () => {
     );
     expect(container.textContent).toContain("Loading suggestions…");
     expect(container.querySelector('button[aria-label="Accept next word"]')).toBeNull();
+    act(() => root.unmount());
+  });
+
+  it("announces transient manual feedback on iOS and routes retry tap to onRefresh", async () => {
+    const onCycle = vi.fn();
+    const onRefresh = vi.fn();
+    const onDismiss = vi.fn();
+    const container = document.createElement("div");
+    const root = createRoot(container);
+
+    await act(async () =>
+      root.render(
+        <ComposerSuggestionBar
+          draft=""
+          suggestion={null}
+          hasNextWord={false}
+          pending={false}
+          notice="error"
+          alternativeIndex={null}
+          alternativeCount={0}
+          onAcceptAll={vi.fn()}
+          onAcceptNextWord={vi.fn()}
+          onCycle={onCycle}
+          onRefresh={onRefresh}
+          onDismiss={onDismiss}
+        />,
+      ),
+    );
+
+    expect(announceForAccessibilityMock).toHaveBeenCalledWith("Couldn't load suggestions");
+    const retry = container.querySelector(
+      'button[aria-label="Retry suggestions"]',
+    ) as HTMLButtonElement | null;
+    expect(retry?.dataset.hint).toBeUndefined();
+    const dismiss = container.querySelector(
+      'button[aria-label="Dismiss"]',
+    ) as HTMLButtonElement | null;
+    expect(dismiss).not.toBeNull();
+
+    await act(async () => {
+      retry?.click();
+      dismiss?.click();
+    });
+    expect(onRefresh).toHaveBeenCalledOnce();
+    expect(onCycle).not.toHaveBeenCalled();
+    expect(onDismiss).toHaveBeenCalledOnce();
     act(() => root.unmount());
   });
 });
