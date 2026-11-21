@@ -801,5 +801,12 @@ PLIST
     );
     expect(afterPatchEdit.exitCode).toBe(0);
     expect(readLines(prebuildLog)).toHaveLength(3);
+
+    // 5. A directory symlink loop under a fingerprinted root must not fail the build.
+    NodeFS.symlinkSync("..", NodePath.join(moduleIosDir, "zzz-loop"));
+    const withLoopLink = runForkScript(fixture, "scripts/fork/build-ios.sh", ["--stage"], buildEnv);
+    expect(withLoopLink.exitCode).toBe(0);
+    expect(withLoopLink.output).toContain("reusing cached prebuild");
+    expect(readLines(prebuildLog)).toHaveLength(3);
   });
 });

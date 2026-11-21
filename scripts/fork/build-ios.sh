@@ -177,12 +177,17 @@ prebuild_fingerprint() {
     shasum -a 256 apps/mobile/app.config.ts apps/mobile/package.json pnpm-lock.yaml \
       ${extra_files[@]+"${extra_files[@]}"}
     if [ "${#roots[@]}" -gt 0 ]; then
-      # Follow symlinks (e.g. apps/mobile/modules/.../AppleSpeechEngine.swift -> native/apple-speech/).
-      find -L "${roots[@]}" \
+      # Match regular files and file symlinks (e.g. AppleSpeechEngine.swift -> native/apple-speech/)
+      # without descending into directory symlinks, avoiding symlink loops.
+      find "${roots[@]}" \
         -type d \( -name node_modules -o -name build -o -name .build -o -name Pods \) -prune \
-        -o -type f -print \
+        -o \( -type f -o -type l \) -print \
         | LC_ALL=C sort \
-        | tr '\n' '\0' \
+        | while IFS= read -r path; do
+          if [ -f "$path" ]; then
+            printf '%s\0' "$path"
+          fi
+        done \
         | xargs -0 shasum -a 256
     fi
   } | shasum -a 256 | awk '{ print $1 }'
