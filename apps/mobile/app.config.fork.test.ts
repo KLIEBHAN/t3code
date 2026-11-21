@@ -31,4 +31,10 @@ it("applies Personal Team bundle id, team id, name, scheme, and strips restricte
   expect(config.ios?.entitlements?.["keychain-access-groups"]).toEqual([
     "$(AppIdentifierPrefix)com.kliebhan.t3code-fork",
   ]);
+  const pluginNames = (config.plugins ?? []).map((entry) =>
+    Array.isArray(entry) ? entry[0] : entry,
+  );
+  // Expo entitlements mods run in reverse order, so the stripper must precede expo-notifications.
+  expect(pluginNames.indexOf("./plugins/withoutIosPersonalTeamCapabilities.cjs")).toBe(0);
+  expect(pluginNames.indexOf("expo-notifications")).toBeGreaterThan(0);
 });
