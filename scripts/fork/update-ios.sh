@@ -8,6 +8,7 @@
 #      without a successful wireless renewal (for example while away from home).
 #
 # Usage: scripts/fork/update-ios.sh [--scheduled] [--now] [--build-only] [--device <udid>]
+# Exit codes: 0 done, 1 build failed, 2 invalid arguments or non-fork branch with --scheduled.
 set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
@@ -15,7 +16,7 @@ cd "$(git rev-parse --show-toplevel)"
 
 case "${1:-}" in
   -h | --help)
-    sed -n '2,10p' "$0"
+    sed -n '2,11p' "$0"
     exit 0
     ;;
 esac
@@ -51,7 +52,7 @@ while [ $# -gt 0 ]; do
       shift
       ;;
     -h | --help)
-      sed -n '2,10p' "$0"
+      sed -n '2,11p' "$0"
       exit 0
       ;;
     *)
