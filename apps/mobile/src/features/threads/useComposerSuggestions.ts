@@ -10,7 +10,14 @@ import {
   type ThreadId,
 } from "@t3tools/contracts";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
-import { useEffect, useEffectEvent, useRef, useState, useSyncExternalStore } from "react";
+import {
+  useEffect,
+  useEffectEvent,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 
 import { appAtomRegistry } from "../../state/atom-registry";
 import { orchestrationEnvironment } from "../../state/orchestration";
@@ -268,8 +275,8 @@ export function useComposerSuggestions(
       }),
   );
 
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- cancels in-flight manual requests and clears their pending scopes on unmount or when switching thread/model/thinking
-  useEffect(() => {
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- cancels in-flight manual requests and clears their pending scopes synchronously on commit when switching thread/model/thinking
+  useLayoutEffect(() => {
     altScopeKeyRef.current = altScopeKey;
     return () => {
       latestAltRequestRef.current += 1;

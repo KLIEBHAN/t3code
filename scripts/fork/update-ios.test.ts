@@ -617,12 +617,34 @@ describe.skipIf(NodeOS.platform() !== "darwin")("scripts/fork/update-ios.sh", ()
     expect(readLines(fixture.buildLog)).toEqual([]);
     expect(readLines(fixture.iosUpdateLog)).toEqual(["unlocked:--scheduled"]);
 
-    // Web/desktop change triggers a macOS rebuild as usual.
-    commitChange(fixture.repo, "apps/web/index.ts", "export const w = 2;\n");
+    // Moving a file out of apps/web into apps/mobile removes a desktop input and must trigger a macOS rebuild.
+    NodeChildProcess.execFileSync("git", ["mv", "apps/web/index.ts", "apps/mobile/moved-web.ts"], {
+      cwd: fixture.repo,
+      stdio: "pipe",
+    });
+    NodeChildProcess.execFileSync("git", ["commit", "-m", "move web file to mobile"], {
+      cwd: fixture.repo,
+      env: {
+        ...process.env,
+        GIT_AUTHOR_NAME: "Test",
+        GIT_AUTHOR_EMAIL: "test@example.com",
+        GIT_COMMITTER_NAME: "Test",
+        GIT_COMMITTER_EMAIL: "test@example.com",
+      },
+      stdio: "pipe",
+    });
+    const renameOutOfWebRun = runForkScript(fixture, "scripts/fork/update.sh", ["--scheduled"], {
+      TEST_NOW_HOUR: "14",
+    });
+    expect(renameOutOfWebRun.exitCode).toBe(0);
+    expect(readLines(fixture.buildLog)).toEqual(["build-app"]);
+
+    // Ordinary web/desktop edit also triggers a macOS rebuild as usual.
+    commitChange(fixture.repo, "apps/web/other.ts", "export const w = 2;\n");
     const webChangeRun = runForkScript(fixture, "scripts/fork/update.sh", ["--scheduled"], {
       TEST_NOW_HOUR: "14",
     });
     expect(webChangeRun.exitCode).toBe(0);
-    expect(readLines(fixture.buildLog)).toEqual(["build-app"]);
+    expect(readLines(fixture.buildLog)).toEqual(["build-app", "build-app"]);
   });
 });

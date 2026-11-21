@@ -208,7 +208,7 @@ build_head() {
   local built_from changed
   built_from="$(fork_app_commit "$FORK_STAGED_APP")"
   [ -n "$built_from" ] || built_from="$(fork_app_commit "$FORK_APP_PATH")"
-  if [ -n "$built_from" ] && changed="$(git diff --name-only "$built_from" "$head" 2>/dev/null)" &&
+  if [ -n "$built_from" ] && changed="$(git diff --no-renames --name-only "$built_from" "$head" 2>/dev/null)" &&
     [ -n "$changed" ] && ! grep -qvE '^(apps/mobile|scripts/fork)/|\.md$' <<<"$changed"; then
     return 0
   fi
