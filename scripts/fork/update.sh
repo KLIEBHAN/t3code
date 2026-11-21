@@ -204,12 +204,12 @@ build_head() {
   if [ "$(fork_app_commit "$FORK_STAGED_APP")" = "$head" ] || [ "$(fork_app_commit "$FORK_APP_PATH")" = "$head" ]; then
     return 0
   fi
-  # Updater scripts and docs are not part of the app: such a change needs no build.
+  # Updater scripts, mobile-only changes, and docs are not part of the macOS app.
   local built_from changed
   built_from="$(fork_app_commit "$FORK_STAGED_APP")"
   [ -n "$built_from" ] || built_from="$(fork_app_commit "$FORK_APP_PATH")"
-  if [ -n "$built_from" ] && changed="$(git diff --name-only "$built_from" "$head" 2>/dev/null)" &&
-    [ -n "$changed" ] && ! grep -qvE '^scripts/fork/|\.md$' <<<"$changed"; then
+  if [ -n "$built_from" ] && changed="$(git diff --no-renames --name-only "$built_from" "$head" 2>/dev/null)" &&
+    [ -n "$changed" ] && ! grep -qvE '^(apps/mobile|scripts/fork)/|\.md$' <<<"$changed"; then
     return 0
   fi
   if [ "${1:-}" = once ] && [ "$(cat "$failed" 2>/dev/null)" = "$head" ]; then

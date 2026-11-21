@@ -10,7 +10,14 @@ import {
   type ThreadId,
 } from "@t3tools/contracts";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
-import { useEffect, useEffectEvent, useRef, useState, useSyncExternalStore } from "react";
+import {
+  useEffect,
+  useEffectEvent,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 
 import { appAtomRegistry } from "../../state/atom-registry";
 import { orchestrationEnvironment } from "../../state/orchestration";
@@ -55,13 +62,13 @@ export function resetDismissedMobilePromptSuggestionsForTests(): void {
 
 interface DraftAnswer {
   readonly draftKey: string;
-  readonly modelKey: string;
+  readonly completionKey: string;
   readonly text: string;
 }
 
 interface AlternativesState {
   readonly draftKey: string;
-  readonly modelKey: string;
+  readonly completionKey: string;
   readonly base: string;
   readonly prompts: ReadonlyArray<string>;
   readonly selected: string;
@@ -69,7 +76,7 @@ interface AlternativesState {
 
 interface RequestScope {
   readonly draftKey: string;
-  readonly modelKey: string;
+  readonly completionKey: string;
   readonly base: string;
 }
 
@@ -147,7 +154,8 @@ export function useComposerSuggestions(
     selectedProviderDriver,
     selectedModelSelection,
   });
-  const modelKey = draftCompletionModelKey(model);
+  const completionKey = `${draftCompletionModelKey(model)}\u0000${serverSettings?.draftCompletionThinking ?? "off"}`;
+  const altScopeKey = `${environmentId}\u0000${draftKey}\u0000${completionKey}`;
 
   const quietStructure = useQuietThreadStructure(promptSuggestionsEnabled ? threadDetailRef : null);
   const runs = quietStructure?.projection.runs ?? EMPTY_RUNS;
@@ -187,7 +195,7 @@ export function useComposerSuggestions(
 
   const latestDraftRequestRef = useRef(0);
   const latestAltRequestRef = useRef(0);
-  const altScopeKeyRef = useRef("");
+  const altScopeKeyRef = useRef(altScopeKey);
 
   const readContext = () => {
     if (threadDetailRef === null) return {};
@@ -207,7 +215,7 @@ export function useComposerSuggestions(
     allowsSuggestions &&
     alternatives !== null &&
     alternatives.draftKey === draftKey &&
-    alternatives.modelKey === modelKey &&
+    alternatives.completionKey === completionKey &&
     draft.startsWith(alternatives.base)
       ? continuingPrompts(alternatives.prompts, draft)
       : [];
@@ -222,13 +230,13 @@ export function useComposerSuggestions(
     allowsSuggestions &&
     pendingFor !== null &&
     pendingFor.draftKey === draftKey &&
-    pendingFor.modelKey === modelKey &&
+    pendingFor.completionKey === completionKey &&
     draft.startsWith(pendingFor.base);
 
   const refreshing =
     refreshFor !== null &&
     refreshFor.draftKey === draftKey &&
-    refreshFor.modelKey === modelKey &&
+    refreshFor.completionKey === completionKey &&
     draft === refreshFor.base;
 
   const matchingDraftAnswer =
@@ -239,7 +247,7 @@ export function useComposerSuggestions(
     draft.trim().length > 0 &&
     draftAnswer !== null &&
     draftAnswer.draftKey === draftKey &&
-    draftAnswer.modelKey === modelKey &&
+    draftAnswer.completionKey === completionKey &&
     composerSuggestionRemainder(draft, draftAnswer.text) !== null
       ? draftAnswer.text
       : null;
@@ -267,16 +275,16 @@ export function useComposerSuggestions(
       }),
   );
 
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- cancels in-flight manual requests and clears their pending scopes on unmount or when switching thread/model
-  useEffect(() => {
-    altScopeKeyRef.current = `${environmentId}\u0000${draftKey}\u0000${modelKey}`;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- cancels in-flight manual requests and clears their pending scopes synchronously on commit when switching thread/model/thinking
+  useLayoutEffect(() => {
+    altScopeKeyRef.current = altScopeKey;
     return () => {
       latestAltRequestRef.current += 1;
       setPendingFor(null);
       setRefreshFor(null);
       setNoticeFor(null);
     };
-  }, [draftKey, environmentId, modelKey]);
+  }, [altScopeKey]);
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- auto-clears transient manual-trigger feedback notice after a short timeout
   useEffect(() => {
@@ -293,11 +301,11 @@ export function useComposerSuggestions(
       void requestDraftCompletion(environmentId, draft).then((result) => {
         if (requestId !== latestDraftRequestRef.current) return;
         const completion = result._tag === "Success" ? result.value.completion : null;
-        setDraftAnswer(completion ? { draftKey, modelKey, text: draft + completion } : null);
+        setDraftAnswer(completion ? { draftKey, completionKey, text: draft + completion } : null);
       });
     }, DEBOUNCE_MS);
     return () => clearTimeout(timer);
-  }, [autoDraftActive, draft, draftKey, environmentId, modelKey]);
+  }, [autoDraftActive, completionKey, draft, draftKey, environmentId]);
 
   const suggestion = refreshing
     ? null
@@ -325,9 +333,10 @@ export function useComposerSuggestions(
     hasFallbackSuggestion: boolean,
   ) => {
     const requestId = ++latestAltRequestRef.current;
+    const scopeAtStart = altScopeKey;
     const asked = draft;
     setNoticeFor(null);
-    setPendingFor({ draftKey, modelKey, base: asked });
+    setPendingFor({ draftKey, completionKey, base: asked });
     void completeDraft({
       environmentId,
       input: {
@@ -339,13 +348,15 @@ export function useComposerSuggestions(
         ...draftCompletionModelFields(model),
       },
     }).then((result) => {
-      if (requestId !== latestAltRequestRef.current) return;
+      if (requestId !== latestAltRequestRef.current || altScopeKeyRef.current !== scopeAtStart) {
+        return;
+      }
       if (result._tag !== "Success") {
         setPendingFor(null);
         setRefreshFor(null);
         if (!hasFallbackSuggestion) {
           setSuppressedDraft({ draftKey, draft: asked });
-          setNoticeFor({ draftKey, modelKey, base: asked, kind: "error" });
+          setNoticeFor({ draftKey, completionKey, base: asked, kind: "error" });
         }
         return;
       }
@@ -366,7 +377,7 @@ export function useComposerSuggestions(
       if (choices.length === 0) {
         if (!hasFallbackSuggestion) {
           setSuppressedDraft({ draftKey, draft: asked });
-          setNoticeFor({ draftKey, modelKey, base: asked, kind: "empty" });
+          setNoticeFor({ draftKey, completionKey, base: asked, kind: "empty" });
         }
         return;
       }
@@ -375,7 +386,7 @@ export function useComposerSuggestions(
           ? (choices[1] ?? choices[0])
           : (choices.find((choice) => choice !== stale) ?? choices[0]);
       if (selected !== undefined) {
-        setAlternatives({ draftKey, modelKey, base: asked, prompts, selected });
+        setAlternatives({ draftKey, completionKey, base: asked, prompts, selected });
       }
     });
   };
@@ -430,7 +441,7 @@ export function useComposerSuggestions(
       formatSuggestionPreview(draft, nextPromptGhost ?? matchingDraftAnswer) !== null;
     setSuppressedDraft(null);
     setAlternatives(null);
-    setRefreshFor({ draftKey, modelKey, base: draft });
+    setRefreshFor({ draftKey, completionKey, base: draft });
     fetchAlternatives(null, true, stale, false, hasUnderlyingSuggestion);
   };
 
@@ -456,7 +467,7 @@ export function useComposerSuggestions(
     !hasVisibleSuggestion &&
     noticeFor !== null &&
     noticeFor.draftKey === draftKey &&
-    noticeFor.modelKey === modelKey &&
+    noticeFor.completionKey === completionKey &&
     draft === noticeFor.base
       ? noticeFor.kind
       : null;
