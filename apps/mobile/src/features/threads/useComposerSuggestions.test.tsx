@@ -280,6 +280,26 @@ describe("useComposerSuggestions", () => {
       input: { manual: true, fresh: true },
     });
     expect(state?.suggestion).toBe("Different idea");
+
+    // A failing cycle while a draft completion is already shown preserves that suggestion.
+    await act(async () => state?.clear());
+    completeDraftMock
+      .mockResolvedValueOnce({
+        _tag: "Success",
+        value: { completion: " and fix tests", completions: [" and fix tests"] },
+      })
+      .mockResolvedValueOnce({ _tag: "Failure", cause: "network" });
+    await act(async () =>
+      root.render(<Probe input={baseInput({ draft: "Check logs" })} onState={onState} />),
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(400);
+    });
+    expect(state?.suggestion).toBe("Check logs and fix tests");
+
+    await act(async () => state?.cycle());
+    expect(state?.suggestion).toBe("Check logs and fix tests");
+    expect(state?.notice).toBeNull();
     act(() => root.unmount());
   });
 
@@ -386,6 +406,84 @@ describe("useComposerSuggestions", () => {
       root.render(<Probe input={baseInput({ allowsSuggestions: false })} onState={onState} />),
     );
     expect(state?.canTrigger).toBe(false);
+    act(() => root.unmount());
+  });
+
+  it("shows a transient notice only after manual empty or failed requests and keeps auto-typing silent", async () => {
+    let state: ComposerSuggestionsState | undefined;
+    const onState = (next: ComposerSuggestionsState) => {
+      state = next;
+    };
+
+    const root = createRoot(document.createElement("div"));
+
+    // Automatic debounced draft completion errors stay silent.
+    completeDraftMock.mockResolvedValueOnce({ _tag: "Failure", cause: "network" });
+    await act(async () =>
+      root.render(<Probe input={baseInput({ draft: "Check logs" })} onState={onState} />),
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(400);
+    });
+    expect(state?.notice).toBeNull();
+    expect(state?.canTrigger).toBe(true);
+
+    // Manual failure shows error notice, hides trigger while visible, then auto-clears.
+    completeDraftMock.mockResolvedValueOnce({ _tag: "Failure", cause: "network" });
+    await act(async () => state?.refresh());
+    expect(state?.notice).toBe("error");
+    expect(state?.canTrigger).toBe(false);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2_400);
+    });
+    expect(state?.notice).toBeNull();
+    expect(state?.canTrigger).toBe(true);
+    // Does not spin up a new automatic completion loop for the same unchanged draft.
+    expect(completeDraftMock).toHaveBeenCalledTimes(2);
+
+    // Manual empty response shows empty notice and clears on draft change or dismiss.
+    completeDraftMock.mockResolvedValueOnce({
+      _tag: "Success",
+      value: { completion: "", completions: [] },
+    });
+    await act(async () => state?.refresh());
+    expect(state?.notice).toBe("empty");
+    expect(state?.canTrigger).toBe(false);
+
+    await act(async () =>
+      root.render(<Probe input={baseInput({ draft: "Check logs now" })} onState={onState} />),
+    );
+    expect(state?.notice).toBeNull();
+    expect(state?.canTrigger).toBe(true);
+
+    completeDraftMock.mockResolvedValueOnce({
+      _tag: "Success",
+      value: { completion: "", completions: [] },
+    });
+    await act(async () => state?.refresh());
+    expect(state?.notice).toBe("empty");
+
+    await act(async () => state?.dismiss());
+    expect(state?.notice).toBeNull();
+    expect(state?.canTrigger).toBe(true);
+
+    // Refreshing from a manual-only alternative (nothing underlying) shows a notice on failure.
+    completeDraftMock
+      .mockResolvedValueOnce({
+        _tag: "Success",
+        value: { completion: "Manual prompt", completions: ["Manual prompt"] },
+      })
+      .mockResolvedValueOnce({ _tag: "Failure", cause: "network" });
+    await act(async () =>
+      root.render(<Probe input={baseInput({ draft: "" })} onState={onState} />),
+    );
+    await act(async () => state?.refresh());
+    expect(state?.suggestion).toBe("Manual prompt");
+    await act(async () => state?.refresh());
+    expect(state?.suggestion).toBeNull();
+    expect(state?.notice).toBe("error");
+
     act(() => root.unmount());
   });
 });

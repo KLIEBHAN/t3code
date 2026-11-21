@@ -33,6 +33,7 @@ import {
 } from "./composerSuggestions";
 
 const DEBOUNCE_MS = 350;
+const NOTICE_DURATION_MS = 2_400;
 const EMPTY_RUNS: ReadonlyArray<OrchestrationV2Run> = [];
 
 // Dismissed next-prompt suggestions, keyed by environment and run, survive screen remounts.
@@ -72,6 +73,12 @@ interface RequestScope {
   readonly base: string;
 }
 
+export type ComposerSuggestionNotice = "empty" | "error";
+
+interface NoticeScope extends RequestScope {
+  readonly kind: ComposerSuggestionNotice;
+}
+
 interface SuppressedDraft {
   readonly draftKey: string;
   readonly draft: string;
@@ -102,6 +109,8 @@ export interface ComposerSuggestionsState {
   /** Present only when accepting one word leaves more suggestion text afterwards. */
   readonly nextWord: string | null;
   readonly pending: boolean;
+  /** Transient feedback after a manual request returns nothing or fails; never set by automatic typing. */
+  readonly notice: ComposerSuggestionNotice | null;
   /** True when a manual refresh trigger can be shown (enabled, allowed, and bar is closed). */
   readonly canTrigger: boolean;
   readonly alternativeIndex: number | null;
@@ -174,6 +183,7 @@ export function useComposerSuggestions(
   const [alternatives, setAlternatives] = useState<AlternativesState | null>(null);
   const [pendingFor, setPendingFor] = useState<RequestScope | null>(null);
   const [refreshFor, setRefreshFor] = useState<RequestScope | null>(null);
+  const [noticeFor, setNoticeFor] = useState<NoticeScope | null>(null);
 
   const latestDraftRequestRef = useRef(0);
   const latestAltRequestRef = useRef(0);
@@ -264,8 +274,16 @@ export function useComposerSuggestions(
       latestAltRequestRef.current += 1;
       setPendingFor(null);
       setRefreshFor(null);
+      setNoticeFor(null);
     };
   }, [draftKey, environmentId, modelKey]);
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- auto-clears transient manual-trigger feedback notice after a short timeout
+  useEffect(() => {
+    if (noticeFor === null) return;
+    const timer = setTimeout(() => setNoticeFor(null), NOTICE_DURATION_MS);
+    return () => clearTimeout(timer);
+  }, [noticeFor]);
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- debounces a network completion request as the user pauses typing
   useEffect(() => {
@@ -297,14 +315,18 @@ export function useComposerSuggestions(
       : null;
   const alternativeCount = alternativeIndex !== null ? visibleAlternatives.length : 0;
 
+  const hasVisibleSuggestion = formatSuggestionPreview(draft, suggestion) !== null;
+
   const fetchAlternatives = (
     shown: string | null,
     fresh: boolean,
-    stale: string | null = null,
-    allowFreshFallback = false,
+    stale: string | null,
+    allowFreshFallback: boolean,
+    hasFallbackSuggestion: boolean,
   ) => {
     const requestId = ++latestAltRequestRef.current;
     const asked = draft;
+    setNoticeFor(null);
     setPendingFor({ draftKey, modelKey, base: asked });
     void completeDraft({
       environmentId,
@@ -321,6 +343,10 @@ export function useComposerSuggestions(
       if (result._tag !== "Success") {
         setPendingFor(null);
         setRefreshFor(null);
+        if (!hasFallbackSuggestion) {
+          setSuppressedDraft({ draftKey, draft: asked });
+          setNoticeFor({ draftKey, modelKey, base: asked, kind: "error" });
+        }
         return;
       }
       const prompts = [
@@ -332,12 +358,18 @@ export function useComposerSuggestions(
       const choices = continuingPrompts(prompts, asked);
       // If cached alternatives gave nothing different from what is on screen, retry once past cache.
       if (allowFreshFallback && !fresh && shown !== null && choices.length <= 1) {
-        fetchAlternatives(null, true, shown, false);
+        fetchAlternatives(null, true, shown, false, hasFallbackSuggestion);
         return;
       }
       setPendingFor(null);
       setRefreshFor(null);
-      if (choices.length === 0) return;
+      if (choices.length === 0) {
+        if (!hasFallbackSuggestion) {
+          setSuppressedDraft({ draftKey, draft: asked });
+          setNoticeFor({ draftKey, modelKey, base: asked, kind: "empty" });
+        }
+        return;
+      }
       const selected =
         shown !== null && choices.length > 1
           ? (choices[1] ?? choices[0])
@@ -355,6 +387,7 @@ export function useComposerSuggestions(
     setAlternatives(null);
     setPendingFor(null);
     setRefreshFor(null);
+    setNoticeFor(null);
   };
 
   const dismissPromptSuggestion = () => {
@@ -371,6 +404,7 @@ export function useComposerSuggestions(
     setAlternatives(null);
     setPendingFor(null);
     setRefreshFor(null);
+    setNoticeFor(null);
     setDraftAnswer(null);
     setSuppressedDraft({ draftKey, draft });
     if (nextPromptGhost !== null) dismissPromptSuggestion();
@@ -386,16 +420,18 @@ export function useComposerSuggestions(
       if (next !== undefined) setAlternatives({ ...alternatives, selected: next });
       return;
     }
-    fetchAlternatives(shown, false, shown, true);
+    fetchAlternatives(shown, false, shown, true, hasVisibleSuggestion);
   };
 
   const refresh = () => {
     if (!promptSuggestionsEnabled || !allowsSuggestions) return;
     const stale = activeAlternative ?? suggestion ?? offeredPromptText;
+    const hasUnderlyingSuggestion =
+      formatSuggestionPreview(draft, nextPromptGhost ?? matchingDraftAnswer) !== null;
     setSuppressedDraft(null);
     setAlternatives(null);
     setRefreshFor({ draftKey, modelKey, base: draft });
-    fetchAlternatives(null, true, stale, false);
+    fetchAlternatives(null, true, stale, false, hasUnderlyingSuggestion);
   };
 
   const acceptAll = () => {
@@ -413,17 +449,31 @@ export function useComposerSuggestions(
     return draft + nextWord;
   };
 
+  const notice: ComposerSuggestionNotice | null =
+    promptSuggestionsEnabled &&
+    allowsSuggestions &&
+    !pending &&
+    !hasVisibleSuggestion &&
+    noticeFor !== null &&
+    noticeFor.draftKey === draftKey &&
+    noticeFor.modelKey === modelKey &&
+    draft === noticeFor.base
+      ? noticeFor.kind
+      : null;
+
   const canTrigger =
     promptSuggestionsEnabled &&
     allowsSuggestions &&
     !pending &&
-    formatSuggestionPreview(draft, suggestion) === null;
+    notice === null &&
+    !hasVisibleSuggestion;
 
   return {
     suggestion,
     remainder,
     nextWord,
     pending,
+    notice,
     canTrigger,
     alternativeIndex,
     alternativeCount,
