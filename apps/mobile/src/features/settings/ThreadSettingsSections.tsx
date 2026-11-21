@@ -31,6 +31,7 @@ import {
   resolveMobileSettingsTargets,
   uniformMobileSetting,
 } from "./settings-scoped-server";
+import { PromptSuggestionsBetaSection } from "./PromptSuggestionsBetaSection";
 
 export function SettingsLabsRouteScreen() {
   const gt = useGT();
@@ -63,6 +64,8 @@ export function SettingsLabsRouteScreen() {
             "On a Mac, clone new worktrees from a checkout cached in the T3 home folder instead of writing every file. Uses Git’s normal checkout when it can’t. Turning it off deletes the cache.",
           )}
         />
+        {/* Fork: Labs toggle for prompt suggestions on connected machines. */}
+        <PromptSuggestionsBetaSection />
       </ScrollView>
     </SettingsScreen>
   );

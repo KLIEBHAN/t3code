@@ -154,7 +154,8 @@ export function useComposerSuggestions(
     !dismissedKeys.has(promptDismissKey(environmentId, offeredNextPrompt.runId))
       ? offeredNextPrompt.text
       : null;
-  const offeredPromptText = offersAutomaticSuggestions ? rawNextPrompt : null;
+  const automaticAllowed = allowsSuggestions && offersAutomaticSuggestions;
+  const offeredPromptText = automaticAllowed ? rawNextPrompt : null;
   const nextPromptGhost =
     offeredPromptText !== null && composerSuggestionRemainder(draft, offeredPromptText) !== null
       ? offeredPromptText
@@ -219,7 +220,7 @@ export function useComposerSuggestions(
 
   const matchingDraftAnswer =
     promptSuggestionsEnabled &&
-    offersAutomaticSuggestions &&
+    automaticAllowed &&
     nextPromptGhost === null &&
     !isDraftSuppressed &&
     draft.trim().length > 0 &&
@@ -232,7 +233,7 @@ export function useComposerSuggestions(
 
   const autoDraftActive =
     promptSuggestionsEnabled &&
-    offersAutomaticSuggestions &&
+    automaticAllowed &&
     nextPromptGhost === null &&
     activeAlternative === null &&
     !pending &&

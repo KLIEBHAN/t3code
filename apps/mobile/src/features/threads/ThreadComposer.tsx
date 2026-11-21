@@ -16,6 +16,7 @@ import {
   type EnvironmentId,
   type MessageId,
   type ModelSelection,
+  type ScopedThreadRef,
   type ServerConfig as T3ServerConfig,
   type UsageLimitsReport,
 } from "@t3tools/contracts";
@@ -44,11 +45,13 @@ import { armAgentAwarenessLiveActivityForLocalWork } from "../agent-awareness/re
 import { scopedThreadKey } from "../../lib/scopedEntities";
 import {
   getComposerDraftSnapshot,
+  rememberComposerDraftSelection,
   setComposerDraftText,
   composerContextImportsAtom,
   countComposerDraftAttachmentsAfterSelection,
   useComposerDraft,
   useComposerDraftResetGeneration,
+  useComposerDraftSettings,
 } from "../../state/use-composer-drafts";
 import type { ComposerDocumentAttachment } from "../../lib/composerContext";
 import { useProject, useVisibleThreadShells } from "../../state/entities";
@@ -108,7 +111,9 @@ import { useSubmitAfterNativeImages } from "./useSubmitAfterNativeImages";
 import { ComposerCommandPopover } from "./ComposerCommandPopover";
 import { ComposerPopoverAnchor } from "./ComposerPopoverAnchor";
 import { ComposerQueuedEditAttachments } from "./ComposerQueuedEdit";
+import { ComposerSuggestionBar } from "./ComposerSuggestionBar";
 import { useComposerCommandMenu } from "./use-composer-command-menu";
+import { useComposerSuggestions } from "./useComposerSuggestions";
 import type { ComposerEnvironmentCandidate } from "@t3tools/client-runtime/composerThreadItems";
 import { offersLinkedEnvironments } from "@t3tools/client-runtime/link-request";
 import {
@@ -161,6 +166,9 @@ export interface ThreadComposerProps {
   readonly redirectsApproval: boolean;
   readonly canStopThread: boolean;
   readonly environmentId: EnvironmentId;
+  // Fork: thread detail ref and request state for prompt suggestions.
+  readonly threadDetailRef?: ScopedThreadRef | null;
+  readonly hasPendingRequests?: boolean;
   readonly projectCwd: string | null;
   readonly sendBlockedReason?: string | null;
   readonly interactionLocked?: boolean;
@@ -502,6 +510,44 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
     sendBlockedReason === null &&
     !modelUnavailable;
 
+  // Fork: prompt suggestions and debounced draft completions rendered above the composer.
+  const freshSessionArmed = useComposerDraftSettings(composerOwnerKey).freshContext === true;
+  const providerBroken =
+    selectedProviderStatus?.compatibilityAdvisory?.status === "unsupported" ||
+    selectedProviderStatus?.compatibilityAdvisory?.status === "broken";
+  const allowsSuggestions =
+    !isSubmissionLocked &&
+    !freshSessionArmed &&
+    !isVoiceInputPresented &&
+    queuedEdit === null &&
+    props.hasPendingRequests !== true &&
+    !props.redirectsApproval &&
+    props.connectionState === "connected" &&
+    props.canOperateThread &&
+    !modelUnavailable &&
+    !providerBroken &&
+    (draftContext?.records.length ?? 0) === 0 &&
+    composerMenu.trigger === null;
+  const suggestions = useComposerSuggestions({
+    environmentId: props.environmentId,
+    threadId: props.selectedThread.id,
+    threadDetailRef: props.threadDetailRef ?? null,
+    latestRun: props.selectedThread.latestRun,
+    draftKey: composerDraftKey,
+    draft: draftMessage,
+    serverConfig: props.serverConfig,
+    selectedProviderDriver: selectedProviderStatus?.driver ?? null,
+    selectedModelSelection: currentModelSelection,
+    allowsSuggestions,
+    offersAutomaticSuggestions: allowsSuggestions && !props.activeThreadBusy,
+  });
+  const applySuggestionText = (nextText: string) => {
+    const end = { start: nextText.length, end: nextText.length };
+    rememberComposerDraftSelection(composerDraftKey, nextText, end);
+    props.onChangeDraftMessage(nextText);
+    composerMenu.onSelectionChange(end);
+  };
+
   // A pending sheet presentation or focus restore has no composer left to act on.
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- disposes the pending settings sheet presentation and focus restore on unmount
   useEffect(() => () => disposeSettingsSheetPresentation(), []);
@@ -579,6 +625,7 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
       return;
     }
     if (sent.value === null) return;
+    suggestions.clear();
     // Arm after send so preference reads and native Activity startup do not delay tap-frame feedback.
     armAgentAwarenessLiveActivityForLocalWork({
       environmentId: props.environmentId,
@@ -788,6 +835,28 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
             label={gt("Model unavailable. Open model settings.")}
             tone="text"
             onPress={openSettings}
+          />
+        ) : null}
+
+        {allowsSuggestions ? (
+          <ComposerSuggestionBar
+            draft={draftMessage}
+            suggestion={suggestions.suggestion}
+            hasNextWord={suggestions.nextWord !== null}
+            pending={suggestions.pending}
+            alternativeIndex={suggestions.alternativeIndex}
+            alternativeCount={suggestions.alternativeCount}
+            onAcceptAll={() => {
+              const accepted = suggestions.acceptAll();
+              if (accepted !== null) applySuggestionText(accepted);
+            }}
+            onAcceptNextWord={() => {
+              const next = suggestions.acceptNextWord();
+              if (next !== null) applySuggestionText(next);
+            }}
+            onCycle={suggestions.cycle}
+            onRefresh={suggestions.refresh}
+            onDismiss={suggestions.dismiss}
           />
         ) : null}
 
