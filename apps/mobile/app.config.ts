@@ -346,6 +346,8 @@ const config: ExpoConfig = {
     favicon: variant.assets.appIcon,
   },
   plugins: [
+    // Fork: entitlements mods run in reverse order, so strip Personal Team entitlements first (runs last, after expo-notifications).
+    ...(isIosPersonalTeamBuild ? ["./plugins/withoutIosPersonalTeamCapabilities.cjs"] : []),
     "expo-asset",
     [
       "expo-font",
@@ -481,7 +483,6 @@ const config: ExpoConfig = {
     // MainActivity mods run in reverse order; extend the tablet-orientation override.
     "./plugins/withAndroidWindowDisplayMetrics.cjs",
     "./plugins/withAndroidTabletOrientation.cjs",
-    ...(isIosPersonalTeamBuild ? ["./plugins/withoutIosPersonalTeamCapabilities.cjs"] : []),
   ],
   extra: {
     appVariant: APP_VARIANT,

@@ -1,4 +1,5 @@
 // Fork: verifies Personal Team iOS builds omit restricted capabilities and honor fork overrides.
+import { type ExportedConfig, type StaticPlugin, withPlugins } from "expo/config-plugins";
 import { afterEach, expect, it, vi } from "vite-plus/test";
 import { BRAND_ASSET_PATHS } from "../../scripts/lib/brand-assets.ts";
 
@@ -29,6 +30,53 @@ it("applies Personal Team bundle id, team id, name, scheme, and strips restricte
   expect(config.ios?.appleTeamId).toBe("Q8MH2BGE2S");
   expect(config.ios?.associatedDomains).toBeUndefined();
   expect(config.ios?.entitlements?.["keychain-access-groups"]).toEqual([
+    "$(AppIdentifierPrefix)com.kliebhan.t3code-fork",
+  ]);
+  const pluginNames = (config.plugins ?? []).map((entry) =>
+    Array.isArray(entry) ? entry[0] : entry,
+  );
+  // Expo entitlements mods run in reverse order, so the stripper must precede expo-notifications.
+  expect(pluginNames.indexOf("./plugins/withoutIosPersonalTeamCapabilities.cjs")).toBe(0);
+  expect(pluginNames.indexOf("expo-notifications")).toBeGreaterThan(0);
+
+  const plugins: (string | StaticPlugin<unknown>)[] = [];
+  for (const entry of config.plugins ?? []) {
+    if (typeof entry === "string") {
+      plugins.push(entry);
+    } else if (entry.length === 1) {
+      plugins.push(entry[0]);
+    } else if (entry.length === 2) {
+      plugins.push([entry[0], entry[1]]);
+    }
+  }
+  const resolvedConfig: ExportedConfig = withPlugins(
+    {
+      ...config,
+      _internal: { projectRoot: import.meta.dirname },
+    },
+    plugins,
+  );
+  const entitlementsMod = resolvedConfig.mods?.ios?.entitlements;
+  expect(entitlementsMod).toBeTypeOf("function");
+  if (!entitlementsMod) {
+    throw new Error("Expected iOS entitlements mod chain to be defined");
+  }
+  const evaluated = await entitlementsMod({
+    ...resolvedConfig,
+    modResults: { ...config.ios?.entitlements },
+    modRequest: {
+      projectRoot: import.meta.dirname,
+      platformProjectRoot: `${import.meta.dirname}/ios`,
+      modName: "entitlements",
+      platform: "ios",
+      introspect: true,
+    },
+    modRawConfig: config,
+  });
+  expect(evaluated.modResults["aps-environment"]).toBeUndefined();
+  expect(evaluated.modResults["com.apple.developer.applesignin"]).toBeUndefined();
+  expect(evaluated.modResults["com.apple.security.application-groups"]).toBeUndefined();
+  expect(evaluated.modResults["keychain-access-groups"]).toEqual([
     "$(AppIdentifierPrefix)com.kliebhan.t3code-fork",
   ]);
 });
