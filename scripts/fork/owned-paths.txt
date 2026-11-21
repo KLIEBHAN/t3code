@@ -50,4 +50,5 @@ apps/mobile/src/features/threads/ComposerSuggestionBar.test.tsx
 apps/mobile/src/features/threads/ThreadComposer.tsx
 apps/mobile/src/features/threads/ThreadDetailScreen.tsx
 apps/mobile/src/features/settings/PromptSuggestionsBetaSection.tsx
+apps/mobile/src/features/settings/PromptSuggestionsBetaSection.test.tsx
 apps/mobile/src/features/settings/ThreadSettingsSections.tsx
