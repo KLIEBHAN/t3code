@@ -329,4 +329,63 @@ describe("useComposerSuggestions", () => {
     expect(state?.suggestion).toBe("First idea");
     act(() => root.unmount());
   });
+
+  it("exposes canTrigger only when enabled, allowed, idle of requests, and no suggestion is visible", async () => {
+    let resolvePending:
+      | ((value: { _tag: "Success"; value: { completion: string; completions: string[] } }) => void)
+      | undefined;
+    completeDraftMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolvePending = resolve;
+        }),
+    );
+
+    let state: ComposerSuggestionsState | undefined;
+    const onState = (next: ComposerSuggestionsState) => {
+      state = next;
+    };
+
+    const root = createRoot(document.createElement("div"));
+    // Empty draft with no next-prompt suggestion: manual trigger is offered (including mid-turn).
+    await act(async () =>
+      root.render(
+        <Probe input={baseInput({ offersAutomaticSuggestions: false })} onState={onState} />,
+      ),
+    );
+    expect(state?.canTrigger).toBe(true);
+
+    // While loading fresh suggestions, the bar takes over and the trigger hides.
+    await act(async () => state?.refresh());
+    expect(state?.pending).toBe(true);
+    expect(state?.canTrigger).toBe(false);
+
+    // Once a suggestion is visible, the trigger stays hidden until dismissed.
+    await act(async () => {
+      resolvePending?.({
+        _tag: "Success",
+        value: { completion: "Follow up on logs", completions: ["Follow up on logs"] },
+      });
+    });
+    expect(state?.suggestion).toBe("Follow up on logs");
+    expect(state?.canTrigger).toBe(false);
+
+    await act(async () => state?.dismiss());
+    expect(state?.suggestion).toBeNull();
+    expect(state?.canTrigger).toBe(true);
+
+    // Hidden when disabled on server or disallowed by composer state.
+    await act(async () =>
+      root.render(
+        <Probe input={baseInput({ serverConfig: makeServerConfig(false) })} onState={onState} />,
+      ),
+    );
+    expect(state?.canTrigger).toBe(false);
+
+    await act(async () =>
+      root.render(<Probe input={baseInput({ allowsSuggestions: false })} onState={onState} />),
+    );
+    expect(state?.canTrigger).toBe(false);
+    act(() => root.unmount());
+  });
 });

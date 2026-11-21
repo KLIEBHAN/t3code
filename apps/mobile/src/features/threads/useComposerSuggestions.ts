@@ -24,6 +24,7 @@ import {
   draftCompletionContext,
   draftCompletionModelFields,
   draftCompletionModelKey,
+  formatSuggestionPreview,
   latestExchange,
   nextComposerSuggestionWord,
   offeredPromptSuggestion,
@@ -101,6 +102,8 @@ export interface ComposerSuggestionsState {
   /** Present only when accepting one word leaves more suggestion text afterwards. */
   readonly nextWord: string | null;
   readonly pending: boolean;
+  /** True when a manual refresh trigger can be shown (enabled, allowed, and bar is closed). */
+  readonly canTrigger: boolean;
   readonly alternativeIndex: number | null;
   readonly alternativeCount: number;
   readonly acceptAll: () => string | null;
@@ -410,11 +413,18 @@ export function useComposerSuggestions(
     return draft + nextWord;
   };
 
+  const canTrigger =
+    promptSuggestionsEnabled &&
+    allowsSuggestions &&
+    !pending &&
+    formatSuggestionPreview(draft, suggestion) === null;
+
   return {
     suggestion,
     remainder,
     nextWord,
     pending,
+    canTrigger,
     alternativeIndex,
     alternativeCount,
     acceptAll,

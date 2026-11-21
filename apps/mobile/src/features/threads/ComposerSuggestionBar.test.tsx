@@ -49,6 +49,9 @@ vi.mock("react-native-reanimated", () => ({
 vi.mock("../../components/ui/GlassSurface", () => ({
   GlassSurface: ({ children }: { children?: ReactNode }) => <div data-glass="true">{children}</div>,
 }));
+vi.mock("../../components/ui/useAndroidControlSizing", () => ({
+  useAndroidControlSizing: () => ({ scale: 1 }),
+}));
 vi.mock("../../components/ui/AppSymbol", () => ({
   SymbolView: ({ name }: { name: string }) => <span data-symbol={name} />,
 }));
