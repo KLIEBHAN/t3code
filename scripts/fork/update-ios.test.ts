@@ -90,7 +90,10 @@ echo "\${lock_state}:$*" >> "${iosUpdateLog}"
     );
     writeExecutable(
       NodePath.join(repo, "scripts/fork/build-app.sh"),
-      "#!/usr/bin/env bash\nexit 0\n",
+      `#!/usr/bin/env bash
+echo "build-app" >> "${buildLog}"
+exit 0
+`,
     );
     writeExecutable(
       NodePath.join(repo, "scripts/fork/install-applet.sh"),
@@ -235,6 +238,7 @@ function runForkScript(
         PATH: `${fixture.binDir}:/usr/bin:/bin:/usr/sbin:/sbin`,
         VP_ENV: NodePath.join(fixture.root, "vp-env.sh"),
         FORK_STATE_DIR: fixture.stateDir,
+        FORK_APP_PATH: NodePath.join(fixture.root, "installed/T3 Code (Fork).app"),
         FORK_BUILD_HOST: "",
         FORK_IOS_DEVICE: "",
         FORK_IOS_AUTO_UPDATE: "1",
@@ -586,5 +590,39 @@ describe.skipIf(NodeOS.platform() !== "darwin")("scripts/fork/update-ios.sh", ()
     );
     expect(scheduledRun.exitCode).toBe(0);
     expect(readLines(updateLockFixture.iosUpdateLog)).toEqual(["unlocked:--scheduled"]);
+  });
+
+  it("skips macOS desktop rebuilds on apps/mobile-only commits while still running update-ios.sh", () => {
+    const fixture = createFixture({ realUpdateScript: true });
+    const baseHead = gitHead(fixture.repo);
+    NodeFS.writeFileSync(NodePath.join(fixture.stateDir, "last-sync"), `${FIXED_NOW}\n`);
+
+    const installedPlistDir = NodePath.join(fixture.root, "installed/T3 Code (Fork).app/Contents");
+    NodeFS.mkdirSync(installedPlistDir, { recursive: true });
+    NodeFS.writeFileSync(
+      NodePath.join(installedPlistDir, "Info.plist"),
+      `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict><key>T3ForkCommit</key><string>${baseHead}</string></dict></plist>
+`,
+      "utf8",
+    );
+
+    // Mobile-only commit: macOS build is skipped, iOS scheduled update still runs.
+    commitChange(fixture.repo, "apps/mobile/index.ts", "export const v = 2;\n");
+    const mobileOnlyRun = runForkScript(fixture, "scripts/fork/update.sh", ["--scheduled"], {
+      TEST_NOW_HOUR: "14",
+    });
+    expect(mobileOnlyRun.exitCode).toBe(0);
+    expect(readLines(fixture.buildLog)).toEqual([]);
+    expect(readLines(fixture.iosUpdateLog)).toEqual(["unlocked:--scheduled"]);
+
+    // Web/desktop change triggers a macOS rebuild as usual.
+    commitChange(fixture.repo, "apps/web/index.ts", "export const w = 2;\n");
+    const webChangeRun = runForkScript(fixture, "scripts/fork/update.sh", ["--scheduled"], {
+      TEST_NOW_HOUR: "14",
+    });
+    expect(webChangeRun.exitCode).toBe(0);
+    expect(readLines(fixture.buildLog)).toEqual(["build-app"]);
   });
 });

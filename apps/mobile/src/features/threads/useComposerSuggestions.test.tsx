@@ -1,5 +1,6 @@
 // Fork: React tests for the mobile composer suggestion hook.
 import type {
+  DraftCompletionThinking,
   EnvironmentId,
   ModelSelection,
   ProviderInstanceId,
@@ -74,12 +75,13 @@ const MODEL_SELECTION: ModelSelection = {
   model: "cpa/cpa-worker-plus",
 };
 
-const makeServerConfig = (enabled: boolean): ServerConfig =>
+const makeServerConfig = (enabled: boolean, thinking?: DraftCompletionThinking): ServerConfig =>
   ({
     settings: {
       promptSuggestionsEnabled: enabled,
       draftCompletionModel: "",
       draftCompletionInstanceId: "",
+      ...(thinking === undefined ? {} : { draftCompletionThinking: thinking }),
     },
   }) as unknown as ServerConfig;
 
@@ -484,6 +486,97 @@ describe("useComposerSuggestions", () => {
     expect(state?.suggestion).toBeNull();
     expect(state?.notice).toBe("error");
 
+    act(() => root.unmount());
+  });
+
+  it("invalidates cached completions and in-flight requests when draftCompletionThinking changes", async () => {
+    completeDraftMock
+      .mockResolvedValueOnce({
+        _tag: "Success",
+        value: { completion: " the logs", completions: [" the logs"] },
+      })
+      .mockResolvedValueOnce({
+        _tag: "Success",
+        value: { completion: " the logs carefully", completions: [" the logs carefully"] },
+      });
+
+    let state: ComposerSuggestionsState | undefined;
+    const onState = (next: ComposerSuggestionsState) => {
+      state = next;
+    };
+
+    const root = createRoot(document.createElement("div"));
+    await act(async () =>
+      root.render(
+        <Probe
+          input={baseInput({
+            draft: "Check",
+            serverConfig: makeServerConfig(true, "off"),
+          })}
+          onState={onState}
+        />,
+      ),
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(350);
+    });
+    expect(completeDraftMock).toHaveBeenCalledTimes(1);
+    expect(state?.suggestion).toBe("Check the logs");
+
+    // Switching completion thinking drops the cached completion and requests a fresh one.
+    await act(async () =>
+      root.render(
+        <Probe
+          input={baseInput({
+            draft: "Check",
+            serverConfig: makeServerConfig(true, "high"),
+          })}
+          onState={onState}
+        />,
+      ),
+    );
+    expect(state?.suggestion).toBeNull();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(350);
+    });
+    expect(completeDraftMock).toHaveBeenCalledTimes(2);
+    expect(state?.suggestion).toBe("Check the logs carefully");
+
+    // Switching thinking mid-manual-refresh cancels the pending request cleanly.
+    let resolvePending:
+      | ((value: { _tag: "Success"; value: { completion: string; completions: string[] } }) => void)
+      | undefined;
+    completeDraftMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolvePending = resolve;
+        }),
+    );
+
+    await act(async () => state?.refresh());
+    expect(state?.pending).toBe(true);
+
+    await act(async () =>
+      root.render(
+        <Probe
+          input={baseInput({
+            draft: "Check",
+            serverConfig: makeServerConfig(true, "minimal"),
+          })}
+          onState={onState}
+        />,
+      ),
+    );
+    expect(state?.pending).toBe(false);
+
+    await act(async () => {
+      resolvePending?.({
+        _tag: "Success",
+        value: { completion: " stale answer", completions: [" stale answer"] },
+      });
+    });
+    expect(state?.suggestion).toBeNull();
     act(() => root.unmount());
   });
 });

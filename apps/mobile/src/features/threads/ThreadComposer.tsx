@@ -917,7 +917,8 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
                     minWidth:
                       compactEditor.isExpanded ||
                       stripAttachments.length > 0 ||
-                      compactControl !== null
+                      compactControl !== null ||
+                      suggestions.canTrigger
                         ? 0
                         : INLINE_EDITOR_MIN_WIDTH,
                   },

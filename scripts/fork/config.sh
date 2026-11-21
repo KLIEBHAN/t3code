@@ -4,7 +4,7 @@
 FORK_BRANCH="${FORK_BRANCH:-pi-prompt-suggestions}"
 FORK_APP_NAME="T3 Code (Fork)"
 FORK_BUNDLE_ID=com.kliebhan.t3code-fork
-FORK_APP_PATH="/Applications/$FORK_APP_NAME.app"
+FORK_APP_PATH="${FORK_APP_PATH:-/Applications/$FORK_APP_NAME.app}"
 # Build output, the staged app, and logs.
 FORK_STATE_DIR="${FORK_STATE_DIR:-$HOME/workspace/t3code-fork-build}"
 FORK_STAGED_APP="$FORK_STATE_DIR/staged/$FORK_APP_NAME.app"
