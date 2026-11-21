@@ -35,9 +35,10 @@ function writeExecutable(path: string, content: string) {
 
 function createFixture(
   options: {
-    readonly buildShouldFail?: boolean;
+    readonly buildExitCode?: number;
     readonly installShouldFail?: boolean;
     readonly renewedExpires?: number;
+    readonly devicesJson?: string;
   } = {},
 ): Fixture {
   const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "fork-update-ios-test-"));
@@ -67,12 +68,13 @@ function createFixture(
 
   // Stub build-ios.sh: records invocations and stages a synthetic bundle + meta.env.
   const renewedExpires = options.renewedExpires ?? FIXED_NOW + 7 * 86_400;
+  const buildExitCode = options.buildExitCode ?? 0;
   writeExecutable(
     NodePath.join(repo, "scripts/fork/build-ios.sh"),
     `#!/usr/bin/env bash
 set -euo pipefail
 echo "$*" >> "${buildLog}"
-${options.buildShouldFail ? "exit 1" : ""}
+${buildExitCode !== 0 ? `exit ${buildExitCode}` : ""}
 commit="$(git rev-parse HEAD)"
 mkdir -p "$FORK_STATE_DIR/staged-ios/T3CodeFork.app"
 cat >"$FORK_STATE_DIR/staged-ios/meta.env" <<EOF
@@ -99,13 +101,34 @@ esac
 `,
   );
   writeExecutable(NodePath.join(binDir, "pod"), "#!/usr/bin/env bash\nexit 0\n");
+  const defaultDevicesJson = JSON.stringify({
+    result: {
+      devices: [
+        {
+          properties: {
+            hardware: { reality: "physical", platform: "watchOS", udid: "UDID-WATCH-1" },
+            connection: { pairingState: "paired", transportType: "localNetwork" },
+            state: { name: "Test Watch" },
+          },
+        },
+        {
+          properties: {
+            hardware: { reality: "physical", platform: "iOS", udid: "UDID-TEST-1" },
+            connection: { pairingState: "paired", transportType: "localNetwork" },
+            state: { name: "Test iPhone" },
+          },
+        },
+      ],
+    },
+  });
+  const devicesJson = options.devicesJson ?? defaultDevicesJson;
   writeExecutable(
     NodePath.join(binDir, "xcrun"),
     `#!/usr/bin/env bash
 set -euo pipefail
 if [ "$1" = "devicectl" ] && [ "$2" = "list" ]; then
   cat <<'JSON'
-{"result":{"devices":[{"hardwareProperties":{"reality":"physical","udid":"UDID-TEST-1"},"deviceProperties":{"name":"Test iPhone"},"connectionProperties":{"pairingState":"paired","transportType":"localNetwork"}}]}}
+${devicesJson}
 JSON
   exit 0
 fi
@@ -219,7 +242,8 @@ function commitChange(repo: string, relPath: string, content: string): string {
   return gitHead(repo);
 }
 
-describe("scripts/fork/update-ios.sh", () => {
+// oxlint-disable-next-line t3code/no-global-process-runtime -- Shell harness executes macOS lockf; skip on non-macOS hosts.
+describe.skipIf(NodeOS.platform() !== "darwin")("scripts/fork/update-ios.sh", () => {
   it("skips rebuilds for non-iOS changes, stages mobile changes, and waits for night window", () => {
     const fixture = createFixture({ renewedExpires: FIXED_NOW + 7 * 86_400 });
     const initialHead = gitHead(fixture.repo);
@@ -289,7 +313,7 @@ describe("scripts/fork/update-ios.sh", () => {
   });
 
   it("alerts once on build failure and skips retrying the same commit that day", () => {
-    const fixture = createFixture({ buildShouldFail: true });
+    const fixture = createFixture({ buildExitCode: 1 });
 
     const first = runUpdateIos(fixture, ["--scheduled"], { TEST_NOW_HOUR: "14" });
     expect(first.exitCode).toBe(1);
@@ -303,6 +327,51 @@ describe("scripts/fork/update-ios.sh", () => {
     expect(readLines(fixture.buildLog)).toHaveLength(1);
     expect(
       readLines(fixture.pushLog).filter((line) => line.includes("--event fehler")),
+    ).toHaveLength(1);
+  });
+
+  it("handles build lock contention, stalled renewal backoff, and expiry warnings without a resolved device", () => {
+    // Exit 75 from build-ios.sh (concurrent build lock) is non-fatal and must not alert or mark failed.
+    const lockedFixture = createFixture({ buildExitCode: 75 });
+    const lockedRun = runUpdateIos(lockedFixture, ["--scheduled"], { TEST_NOW_HOUR: "14" });
+    expect(lockedRun.exitCode).toBe(0);
+    expect(readLines(lockedFixture.buildLog)).toHaveLength(1);
+    expect(readLines(lockedFixture.pushLog)).toEqual([]);
+    expect(NodeFS.existsSync(NodePath.join(lockedFixture.stateDir, "ios-build-failed"))).toBe(
+      false,
+    );
+
+    // If --renew-profile returns an unchanged expiry, scheduled runs back off for the rest of the day.
+    const stalledExpiry = FIXED_NOW + 30 * 3600;
+    const stalledFixture = createFixture({
+      renewedExpires: stalledExpiry,
+      installShouldFail: true,
+    });
+    const stalledHead = gitHead(stalledFixture.repo);
+    NodeFS.writeFileSync(
+      NodePath.join(stalledFixture.stateDir, "ios-installed.env"),
+      `device=UDID-TEST-1\ncommit=${stalledHead}\nprofile_expires=${stalledExpiry}\n`,
+    );
+    expect(runUpdateIos(stalledFixture, ["--scheduled"], { TEST_NOW_HOUR: "14" }).exitCode).toBe(0);
+    expect(readLines(stalledFixture.buildLog)).toEqual(["--stage --renew-profile"]);
+    expect(runUpdateIos(stalledFixture, ["--scheduled"], { TEST_NOW_HOUR: "15" }).exitCode).toBe(0);
+    expect(readLines(stalledFixture.buildLog)).toEqual(["--stage --renew-profile"]);
+
+    // Even when no paired iOS device resolves, Step 3 still sends the Day-6 expiry warning once.
+    const noDeviceFixture = createFixture({
+      devicesJson: JSON.stringify({ result: { devices: [] } }),
+    });
+    const noDeviceHead = gitHead(noDeviceFixture.repo);
+    NodeFS.writeFileSync(
+      NodePath.join(noDeviceFixture.stateDir, "ios-installed.env"),
+      `device=UDID-TEST-1\ncommit=${noDeviceHead}\nprofile_expires=${FIXED_NOW + 20 * 3600}\n`,
+    );
+    const noDeviceRun = runUpdateIos(noDeviceFixture, ["--scheduled"], { TEST_NOW_HOUR: "14" });
+    expect(noDeviceRun.exitCode).toBe(0);
+    expect(readLines(noDeviceFixture.buildLog)).toEqual([]);
+    expect(readLines(noDeviceFixture.installLog)).toEqual([]);
+    expect(
+      readLines(noDeviceFixture.pushLog).filter((line) => line.includes("--event rueckfrage")),
     ).toHaveLength(1);
   });
 });

@@ -15,7 +15,7 @@ FORK_IOS_INSTALLED_META="$FORK_STATE_DIR/ios-installed.env"
 FORK_IOS_DERIVED_DATA="$FORK_STATE_DIR/ios-derived-data"
 # Optional pinned iPhone UDID/name for automatic wireless iOS updates (git config fork.iosDevice).
 FORK_IOS_DEVICE="${FORK_IOS_DEVICE:-$(git config --get fork.iosDevice || true)}"
-FORK_IOS_AUTO_UPDATE="${FORK_IOS_AUTO_UPDATE:-1}"
+FORK_IOS_AUTO_UPDATE="${FORK_IOS_AUTO_UPDATE:-$(git config --get fork.iosAutoUpdate || echo 1)}"
 # Personal Team profiles last 7 days: renew staged build 48h before expiry, warn at 36h,
 # and allow wireless install outside the night window when <= 24h remain.
 FORK_IOS_RENEW_BEFORE_HOURS="${FORK_IOS_RENEW_BEFORE_HOURS:-48}"
@@ -52,6 +52,8 @@ if [ -z "$FORK_BUILD_HOST" ] || [ -f "$VP_ENV" ]; then
   . "$VP_ENV"
 fi
 export PATH
+# launchd runs without LANG, which makes CocoaPods fail under Ruby with Encoding::CompatibilityError.
+export LANG="${LANG:-en_US.UTF-8}"
 
 # The commit an app bundle was built from, or nothing when the bundle is missing.
 fork_app_commit() {
@@ -134,7 +136,7 @@ print(int(dt.timestamp()))
 }
 
 # Resolves a paired physical iOS device UDID via devicectl.
-# With $1, matches exact UDID or name; without $1, succeeds only if exactly one paired physical device exists.
+# With $1, matches exact UDID or name; without $1, succeeds only if exactly one paired physical iOS device exists.
 fork_ios_resolve_device() {
   local query="${1:-}"
   xcrun devicectl list devices --json-output - 2>/dev/null | python3 -c '
@@ -146,13 +148,14 @@ except Exception:
     sys.exit(0)
 devices = []
 for dev in data.get("result", {}).get("devices", []):
-    hw = dev.get("hardwareProperties") or {}
-    props = dev.get("deviceProperties") or {}
-    conn = dev.get("connectionProperties") or {}
-    if hw.get("reality") != "physical" or conn.get("pairingState") != "paired":
+    props = dev.get("properties") or {}
+    hw = props.get("hardware") or dev.get("hardwareProperties") or {}
+    conn = props.get("connection") or dev.get("connectionProperties") or {}
+    state = props.get("state") or dev.get("deviceProperties") or {}
+    if hw.get("reality") != "physical" or hw.get("platform") != "iOS" or conn.get("pairingState") != "paired":
         continue
     udid = hw.get("udid") or ""
-    name = props.get("name") or ""
+    name = state.get("name") or ""
     if not udid:
         continue
     if query:

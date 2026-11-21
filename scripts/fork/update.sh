@@ -67,10 +67,40 @@ if [ "${FORK_UPDATE_LOCKED:-}" != 1 ]; then
       fi
     fi
     locked=0
+    was_locked=0
     FORK_UPDATE_LOCKED=1 lockf -s -k -t 0 "$FORK_STATE_DIR/update.lock" scripts/fork/update.sh "$@" || locked=$?
     if [ "$locked" = 75 ]; then
       echo "update: another run is active"
+      was_locked=1
       locked=0
+    fi
+    # Run the iOS update outside update.lock with a bounded process-group timeout so an iOS
+    # build never makes the macOS Dock applet report busy or leaves hung child processes behind.
+    if [ "$was_locked" = 0 ] && [ -z "$FORK_BUILD_HOST" ] && [ -x scripts/fork/update-ios.sh ]; then
+      case " $* " in
+        *" --scheduled "*)
+          perl -MPOSIX=WNOHANG -e '
+            my ($t, @cmd) = @ARGV;
+            my $pid = fork();
+            die "fork: $!" unless defined $pid;
+            if ($pid == 0) { setpgrp(0, 0); exec @cmd or die "exec: $!"; }
+            my $timed_out = 0;
+            my $stop = sub {
+              kill "TERM", -$pid;
+              my $end = time + 5;
+              while (time < $end) { return if waitpid($pid, WNOHANG) == $pid; select(undef, undef, undef, 0.1); }
+              kill "KILL", -$pid;
+            };
+            $SIG{ALRM} = sub { $timed_out = 1; $stop->(); };
+            $SIG{TERM} = $SIG{INT} = sub { $stop->(); exit 143; };
+            alarm($t);
+            waitpid($pid, 0);
+            alarm(0);
+            exit(124) if $timed_out;
+            exit($? == -1 ? 1 : ($? & 127 ? 128 + ($? & 127) : $? >> 8));
+          ' 3600 scripts/fork/update-ios.sh --scheduled || echo "update: iOS update step reported a failure" >&2
+          ;;
+      esac
     fi
     exit "$locked"
   } 2>&1 | stamp_lines || status=$?
@@ -323,9 +353,4 @@ fi
 
 # The applet's source moves with these scripts; a failure here leaves the old applet working.
 scripts/fork/install-applet.sh --if-changed || echo "update: could not refresh the Dock applet" >&2
-# Scheduled runs on the build Mac also stage/renew the iOS fork app and install
-# it wirelessly over local Wi-Fi in the night window without blocking macOS updates.
-if [ -z "$FORK_BUILD_HOST" ] && [ "$scheduled" = 1 ] && [ -x scripts/fork/update-ios.sh ]; then
-  scripts/fork/update-ios.sh --scheduled || echo "update: iOS update step reported a failure" >&2
-fi
 exit "$status"

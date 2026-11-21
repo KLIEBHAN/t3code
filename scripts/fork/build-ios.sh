@@ -31,7 +31,7 @@ if [ "${FORK_IOS_BUILD_LOCKED:-}" != 1 ]; then
     scripts/fork/build-ios.sh "$@" || locked=$?
   if [ "$locked" = 75 ]; then
     echo "build-ios: another iOS build is already running" >&2
-    exit 1
+    exit 75
   fi
   exit "$locked"
 fi
@@ -157,6 +157,14 @@ export T3CODE_MOBILE_SCHEME="${FORK_IOS_SCHEME:-t3code-fork}"
 export T3CODE_MOBILE_UPDATES_ENABLED=0
 
 prebuild_fingerprint() {
+  local extra_files=() roots=()
+  local candidate
+  for candidate in scripts/lib/brand-assets.ts scripts/lib/public-config.ts .env .env.local; do
+    [ -f "$candidate" ] && extra_files+=("$candidate")
+  done
+  for candidate in apps/mobile/plugins apps/mobile/modules apps/mobile/assets assets/dev; do
+    [ -d "$candidate" ] && roots+=("$candidate")
+  done
   {
     printf 'env:%s:%s:%s:%s:%s:%s:%s\n' \
       "$APP_VARIANT" \
@@ -166,13 +174,16 @@ prebuild_fingerprint() {
       "$T3CODE_MOBILE_SCHEME" \
       "$T3CODE_MOBILE_UPDATES_ENABLED" \
       "$team_id"
-    shasum -a 256 apps/mobile/app.config.ts apps/mobile/package.json pnpm-lock.yaml
-    find apps/mobile/plugins apps/mobile/modules \
-      -type d \( -name node_modules -o -name build -o -name .build -o -name Pods \) -prune \
-      -o -type f -print \
-      | LC_ALL=C sort \
-      | tr '\n' '\0' \
-      | xargs -0 shasum -a 256
+    shasum -a 256 apps/mobile/app.config.ts apps/mobile/package.json pnpm-lock.yaml \
+      ${extra_files[@]+"${extra_files[@]}"}
+    if [ "${#roots[@]}" -gt 0 ]; then
+      find "${roots[@]}" \
+        -type d \( -name node_modules -o -name build -o -name .build -o -name Pods \) -prune \
+        -o -type f -print \
+        | LC_ALL=C sort \
+        | tr '\n' '\0' \
+        | xargs -0 shasum -a 256
+    fi
   } | shasum -a 256 | awk '{ print $1 }'
 }
 
@@ -181,13 +192,22 @@ prebuild_fingerprint() {
 profile_backup_dir=""
 restore_profile_backup() {
   [ -n "$profile_backup_dir" ] && [ -d "$profile_backup_dir" ] || return 0
-  local entry dest_dir
+  local entry dest_dir restore_failed=0
   for entry in "$profile_backup_dir"/*.mobileprovision; do
     [ -f "$entry" ] || continue
     dest_dir="$(cat "$entry.dir" 2>/dev/null || true)"
-    [ -n "$dest_dir" ] && mkdir -p "$dest_dir" && mv "$entry" "$dest_dir/$(basename "$entry")" || true
+    if [ -n "$dest_dir" ] && mkdir -p "$dest_dir" && mv "$entry" "$dest_dir/$(basename "$entry")"; then
+      rm -f "$entry.dir"
+    else
+      restore_failed=1
+    fi
   done
-  rm -rf "$profile_backup_dir"
+  if [ "$restore_failed" = 0 ]; then
+    rm -rf "$profile_backup_dir"
+  else
+    rmdir "$profile_backup_dir" 2>/dev/null || true
+    echo "build-ios: warning: could not restore all stashed profiles from $profile_backup_dir" >&2
+  fi
   profile_backup_dir=""
 }
 trap restore_profile_backup EXIT
@@ -204,8 +224,8 @@ stash_cached_profiles() {
         if [ -z "$profile_backup_dir" ]; then
           profile_backup_dir="$(mktemp -d "$FORK_STATE_DIR/profile-backup.XXXXXX")"
         fi
-        mv "$file" "$profile_backup_dir/$(basename "$file")"
         printf '%s\n' "$dir" >"$profile_backup_dir/$(basename "$file").dir"
+        mv "$file" "$profile_backup_dir/$(basename "$file")"
         echo "build-ios: stashed cached profile $(basename "$file") for renewal"
       fi
     done
@@ -213,7 +233,7 @@ stash_cached_profiles() {
 }
 
 # Syncs run in a scratch worktree; ensure local node_modules match the lockfile.
-if [ ! -d node_modules ] || [ pnpm-lock.yaml -nt node_modules ]; then
+if [ ! -f node_modules/.modules.yaml ] || [ pnpm-lock.yaml -nt node_modules/.modules.yaml ]; then
   vp install --frozen-lockfile
 fi
 

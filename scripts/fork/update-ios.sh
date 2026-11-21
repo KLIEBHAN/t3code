@@ -100,14 +100,6 @@ ios_paths_changed() {
 
 query="${device_arg:-$FORK_IOS_DEVICE}"
 device_udid="$(fork_ios_resolve_device "$query")"
-if [ -z "$device_udid" ]; then
-  if [ -n "$query" ]; then
-    echo "update-ios: configured device '$query' not found in paired devices; skipping"
-  else
-    echo "update-ios: no unique paired physical iOS device; skipping"
-  fi
-  exit 0
-fi
 
 now="$(date +%s)"
 hour="$((10#$(date +%H)))"
@@ -131,96 +123,122 @@ renew_seconds="$((FORK_IOS_RENEW_BEFORE_HOURS * 3600))"
 warn_seconds="$((FORK_IOS_WARN_BEFORE_HOURS * 3600))"
 emergency_seconds="$((FORK_IOS_EMERGENCY_INSTALL_HOURS * 3600))"
 
-# Step 1: Build/stage when iOS code changed or the Personal Team profile nears expiry.
-needs_code_build=0
-needs_profile_renewal=0
-ref_commit="${staged_commit:-$installed_commit}"
-if [ ! -d "$FORK_IOS_STAGED_APP" ]; then
-  if [ -z "$installed_commit" ] || ios_paths_changed "$installed_commit" "$head"; then
+status=0
+if [ -z "$device_udid" ]; then
+  if [ -n "$query" ]; then
+    echo "update-ios: configured device '$query' not found in paired iOS devices; skipping build/install"
+  else
+    echo "update-ios: no unique paired physical iOS device; skipping build/install"
+  fi
+else
+  # Step 1: Build/stage when iOS code changed or the Personal Team profile nears expiry.
+  needs_code_build=0
+  needs_profile_renewal=0
+  ref_commit="${staged_commit:-$installed_commit}"
+  if [ ! -d "$FORK_IOS_STAGED_APP" ]; then
+    if [ -z "$installed_commit" ] || ios_paths_changed "$installed_commit" "$head"; then
+      needs_code_build=1
+    fi
+  elif ios_paths_changed "$ref_commit" "$head"; then
     needs_code_build=1
   fi
-elif ios_paths_changed "$ref_commit" "$head"; then
-  needs_code_build=1
-fi
 
-active_expires="${staged_expires:-$installed_expires}"
-if [ -n "$active_expires" ] && [ "$((active_expires - now))" -le "$renew_seconds" ]; then
-  needs_profile_renewal=1
-elif [ ! -d "$FORK_IOS_STAGED_APP" ] && [ -z "$installed_expires" ]; then
-  needs_code_build=1
-fi
-
-status=0
-failed_file="$FORK_STATE_DIR/ios-build-failed"
-if [ "$needs_code_build" = 1 ] || [ "$needs_profile_renewal" = 1 ]; then
-  fail_key="${head}:${today}"
-  if [ "$scheduled" = 1 ] && [ "$(cat "$failed_file" 2>/dev/null || true)" = "$fail_key" ]; then
-    echo "update-ios: skipping failed build for ${head:0:10} today"
-  else
-    build_args=(--stage)
-    if [ "$needs_profile_renewal" = 1 ]; then
-      build_args+=(--renew-profile)
-      echo "update-ios: renewing Personal Team profile and staging ${head:0:10}"
+  active_expires="${staged_expires:-$installed_expires}"
+  renew_attempted_file="$FORK_STATE_DIR/ios-renew-attempted"
+  if [ -n "$active_expires" ] && [ "$((active_expires - now))" -le "$renew_seconds" ]; then
+    renew_key="${active_expires}:${today}"
+    if [ "$scheduled" = 1 ] && [ "$(cat "$renew_attempted_file" 2>/dev/null || true)" = "$renew_key" ]; then
+      echo "update-ios: profile renewal for expiry $active_expires already attempted today"
     else
-      echo "update-ios: staging iOS build for ${head:0:10}"
+      needs_profile_renewal=1
     fi
-    if scripts/fork/build-ios.sh "${build_args[@]}"; then
-      rm -f "$failed_file"
-      staged_commit="$(fork_ios_meta_get "$FORK_IOS_STAGED_META" commit)"
-      staged_expires="$(fork_ios_meta_get "$FORK_IOS_STAGED_META" profile_expires)"
-      staged_version="$(fork_ios_meta_get "$FORK_IOS_STAGED_META" version)"
+  elif [ ! -d "$FORK_IOS_STAGED_APP" ] && [ -z "$installed_expires" ]; then
+    needs_code_build=1
+  fi
+
+  failed_file="$FORK_STATE_DIR/ios-build-failed"
+  if [ "$needs_code_build" = 1 ] || [ "$needs_profile_renewal" = 1 ]; then
+    fail_key="${head}:${today}"
+    if [ "$scheduled" = 1 ] && [ "$(cat "$failed_file" 2>/dev/null || true)" = "$fail_key" ]; then
+      echo "update-ios: skipping failed build for ${head:0:10} today"
     else
-      echo "$fail_key" >"$failed_file"
-      status=1
-      push_ios fehler 4 "iOS-Build für T3 Code (Fork) fehlgeschlagen. Log: $FORK_STATE_DIR/logs"
+      build_args=(--stage)
+      if [ "$needs_profile_renewal" = 1 ]; then
+        build_args+=(--renew-profile)
+        echo "update-ios: renewing Personal Team profile and staging ${head:0:10}"
+      else
+        echo "update-ios: staging iOS build for ${head:0:10}"
+      fi
+      build_rc=0
+      scripts/fork/build-ios.sh "${build_args[@]}" || build_rc=$?
+      if [ "$build_rc" = 0 ]; then
+        rm -f "$failed_file"
+        prev_expires="$active_expires"
+        staged_commit="$(fork_ios_meta_get "$FORK_IOS_STAGED_META" commit)"
+        staged_expires="$(fork_ios_meta_get "$FORK_IOS_STAGED_META" profile_expires)"
+        staged_version="$(fork_ios_meta_get "$FORK_IOS_STAGED_META" version)"
+        if [ "$needs_profile_renewal" = 1 ] && [ -n "$prev_expires" ]; then
+          if [ -n "$staged_expires" ] && [ "$staged_expires" -gt "$prev_expires" ]; then
+            rm -f "$renew_attempted_file"
+          else
+            printf '%s\n' "${prev_expires}:${today}" >"$renew_attempted_file"
+          fi
+        fi
+      elif [ "$build_rc" = 75 ]; then
+        echo "update-ios: another iOS build is already running; skipping"
+      else
+        echo "$fail_key" >"$failed_file"
+        status=1
+        push_ios fehler 4 "iOS-Build für T3 Code (Fork) fehlgeschlagen. Log: $FORK_STATE_DIR/logs"
+      fi
     fi
   fi
-fi
 
-# Step 2: Wirelessly install the staged bundle when newer or with a fresher profile.
-install_needed=0
-if [ "$build_only" = 0 ] && [ -d "$FORK_IOS_STAGED_APP" ] && [ -n "$staged_commit" ]; then
-  if [ "$installed_device" != "$device_udid" ] || [ "$staged_commit" != "$installed_commit" ]; then
-    install_needed=1
-  elif [ -n "$staged_expires" ] && { [ -z "$installed_expires" ] || [ "$staged_expires" -gt "$installed_expires" ]; }; then
-    install_needed=1
-  fi
-fi
-
-if [ "$install_needed" = 1 ]; then
-  in_night_window=0
-  if [ "$hour" -ge "$FORK_RESTART_FROM_HOUR" ] && [ "$hour" -lt "$FORK_RESTART_BEFORE_HOUR" ]; then
-    in_night_window=1
-  fi
-  emergency_due=0
-  if [ -n "$installed_expires" ] && [ "$((installed_expires - now))" -le "$emergency_seconds" ]; then
-    emergency_due=1
+  # Step 2: Wirelessly install the staged bundle when newer or with a fresher profile.
+  install_needed=0
+  if [ "$build_only" = 0 ] && [ -d "$FORK_IOS_STAGED_APP" ] && [ -n "$staged_commit" ]; then
+    if [ "$installed_device" != "$device_udid" ] || [ "$staged_commit" != "$installed_commit" ]; then
+      install_needed=1
+    elif [ -n "$staged_expires" ] && { [ -z "$installed_expires" ] || [ "$staged_expires" -gt "$installed_expires" ]; }; then
+      install_needed=1
+    fi
   fi
 
-  if [ "$install_now" = 1 ] || [ "$scheduled" = 0 ] || [ "$in_night_window" = 1 ] || [ "$emergency_due" = 1 ]; then
-    echo "update-ios: installing ${staged_commit:0:10} wirelessly onto $device_udid"
-    if xcrun devicectl device install app --timeout 60 --device "$device_udid" "$FORK_IOS_STAGED_APP"; then
-      installed_at="$(date +%s)"
-      staged_built_at="$(fork_ios_meta_get "$FORK_IOS_STAGED_META" built_at)"
-      fork_ios_meta_write "$FORK_IOS_INSTALLED_META" \
-        "device=$device_udid" \
-        "commit=$staged_commit" \
-        "version=$staged_version" \
-        "built_at=$staged_built_at" \
-        "profile_expires=$staged_expires" \
-        "installed_at=$installed_at"
-      installed_commit="$staged_commit"
-      installed_expires="$staged_expires"
-      rm -f "$FORK_STATE_DIR/ios-expiry-warned"
-      expiry_label=""
-      [ -z "$staged_expires" ] || expiry_label=" (Profil bis $(format_local_expiry "$staged_expires"))"
-      echo "update-ios: installed ${staged_commit:0:10} on $device_udid"
-      push_ios info 3 "iOS-App aktualisiert${expiry_label}."
+  if [ "$install_needed" = 1 ]; then
+    in_night_window=0
+    if [ "$hour" -ge "$FORK_RESTART_FROM_HOUR" ] && [ "$hour" -lt "$FORK_RESTART_BEFORE_HOUR" ]; then
+      in_night_window=1
+    fi
+    emergency_due=0
+    if [ -n "$installed_expires" ] && [ "$((installed_expires - now))" -le "$emergency_seconds" ]; then
+      emergency_due=1
+    fi
+
+    if [ "$install_now" = 1 ] || [ "$scheduled" = 0 ] || [ "$in_night_window" = 1 ] || [ "$emergency_due" = 1 ]; then
+      echo "update-ios: installing ${staged_commit:0:10} wirelessly onto $device_udid"
+      if xcrun devicectl device install app --timeout 60 --device "$device_udid" "$FORK_IOS_STAGED_APP"; then
+        installed_at="$(date +%s)"
+        staged_built_at="$(fork_ios_meta_get "$FORK_IOS_STAGED_META" built_at)"
+        fork_ios_meta_write "$FORK_IOS_INSTALLED_META" \
+          "device=$device_udid" \
+          "commit=$staged_commit" \
+          "version=$staged_version" \
+          "built_at=$staged_built_at" \
+          "profile_expires=$staged_expires" \
+          "installed_at=$installed_at"
+        installed_commit="$staged_commit"
+        installed_expires="$staged_expires"
+        rm -f "$FORK_STATE_DIR/ios-expiry-warned"
+        expiry_label=""
+        [ -z "$staged_expires" ] || expiry_label=" (Profil bis $(format_local_expiry "$staged_expires"))"
+        echo "update-ios: installed ${staged_commit:0:10} on $device_udid"
+        push_ios info 3 "iOS-App aktualisiert${expiry_label}."
+      else
+        echo "update-ios: device $device_udid unreachable right now; staged build waits for next run"
+      fi
     else
-      echo "update-ios: device $device_udid unreachable right now; staged build waits for next run"
+      echo "update-ios: staged build ${staged_commit:0:10} waits for night window (${FORK_RESTART_FROM_HOUR}:00–${FORK_RESTART_BEFORE_HOUR}:00)"
     fi
-  else
-    echo "update-ios: staged build ${staged_commit:0:10} waits for night window (${FORK_RESTART_FROM_HOUR}:00–${FORK_RESTART_BEFORE_HOUR}:00)"
   fi
 fi
 
