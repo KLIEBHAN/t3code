@@ -16,11 +16,9 @@ FORK_IOS_DERIVED_DATA="$FORK_STATE_DIR/ios-derived-data"
 # Optional pinned iPhone UDID/name for automatic wireless iOS updates (git config fork.iosDevice).
 FORK_IOS_DEVICE="${FORK_IOS_DEVICE:-$(git config --get fork.iosDevice || true)}"
 FORK_IOS_AUTO_UPDATE="${FORK_IOS_AUTO_UPDATE:-$(git config --get fork.iosAutoUpdate || echo 1)}"
-# Personal Team profiles last 7 days: renew staged build 48h before expiry, warn at 36h,
-# and allow wireless install outside the night window when <= 24h remain.
+# Personal Team profiles last 7 days: renew staged build 48h before expiry and warn at 36h.
 FORK_IOS_RENEW_BEFORE_HOURS="${FORK_IOS_RENEW_BEFORE_HOURS:-48}"
 FORK_IOS_WARN_BEFORE_HOURS="${FORK_IOS_WARN_BEFORE_HOURS:-36}"
-FORK_IOS_EMERGENCY_INSTALL_HOURS="${FORK_IOS_EMERGENCY_INSTALL_HOURS:-24}"
 # Phone pushes for failures of the hourly run: setup.sh copies the bark and ntfy
 # skill senders from FORK_SKILLS_DIR to FORK_PUSH_DIR.
 FORK_SKILLS_DIR="${FORK_SKILLS_DIR:-$HOME/.pi/agent/skills}"

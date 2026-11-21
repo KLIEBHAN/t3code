@@ -3,7 +3,7 @@
 #   1. Rebuilds staged-ios/T3CodeFork.app when iOS-relevant files changed since
 #      the last build, or when the 7-day Personal Team profile has <= 48h left.
 #   2. Wirelessly installs the staged bundle over local Wi-Fi via devicectl
-#      during the night window (or immediately with --now / <= 24h left).
+#      immediately whenever the paired iPhone is reachable (unless --build-only).
 #   3. Sends a Bark/ntfy reminder if the installed profile has <= 36h left
 #      without a successful wireless renewal (for example while away from home).
 #
@@ -35,13 +35,12 @@ if [ "${FORK_IOS_UPDATE_LOCKED:-}" != 1 ]; then
 fi
 
 scheduled=0
-install_now=0
 build_only=0
 device_arg=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --scheduled) scheduled=1 ;;
-    --now) install_now=1 ;;
+    --now) ;;
     --build-only) build_only=1 ;;
     --device)
       if [ $# -lt 2 ]; then
@@ -107,7 +106,6 @@ query="${device_arg:-$FORK_IOS_DEVICE}"
 device_udid="$(fork_ios_resolve_device "$query")"
 
 now="$(date +%s)"
-hour="$((10#$(date +%H)))"
 today="$(date '+%Y-%m-%d')"
 head="$(git rev-parse HEAD)"
 
@@ -126,7 +124,6 @@ installed_expires="$(fork_ios_meta_get "$FORK_IOS_INSTALLED_META" profile_expire
 
 renew_seconds="$((FORK_IOS_RENEW_BEFORE_HOURS * 3600))"
 warn_seconds="$((FORK_IOS_WARN_BEFORE_HOURS * 3600))"
-emergency_seconds="$((FORK_IOS_EMERGENCY_INSTALL_HOURS * 3600))"
 
 status=0
 if [ -z "$device_udid" ]; then
@@ -210,39 +207,26 @@ else
   fi
 
   if [ "$install_needed" = 1 ]; then
-    in_night_window=0
-    if [ "$hour" -ge "$FORK_RESTART_FROM_HOUR" ] && [ "$hour" -lt "$FORK_RESTART_BEFORE_HOUR" ]; then
-      in_night_window=1
-    fi
-    emergency_due=0
-    if [ -n "$installed_expires" ] && [ "$((installed_expires - now))" -le "$emergency_seconds" ]; then
-      emergency_due=1
-    fi
-
-    if [ "$install_now" = 1 ] || [ "$scheduled" = 0 ] || [ "$in_night_window" = 1 ] || [ "$emergency_due" = 1 ]; then
-      echo "update-ios: installing ${staged_commit:0:10} wirelessly onto $device_udid"
-      if xcrun devicectl device install app --timeout 60 --device "$device_udid" "$FORK_IOS_STAGED_APP"; then
-        installed_at="$(date +%s)"
-        staged_built_at="$(fork_ios_meta_get "$FORK_IOS_STAGED_META" built_at)"
-        fork_ios_meta_write "$FORK_IOS_INSTALLED_META" \
-          "device=$device_udid" \
-          "commit=$staged_commit" \
-          "version=$staged_version" \
-          "built_at=$staged_built_at" \
-          "profile_expires=$staged_expires" \
-          "installed_at=$installed_at"
-        installed_commit="$staged_commit"
-        installed_expires="$staged_expires"
-        rm -f "$FORK_STATE_DIR/ios-expiry-warned"
-        expiry_label=""
-        [ -z "$staged_expires" ] || expiry_label=" (Profil bis $(format_local_expiry "$staged_expires"))"
-        echo "update-ios: installed ${staged_commit:0:10} on $device_udid"
-        push_ios info 3 "iOS-App aktualisiert${expiry_label}."
-      else
-        echo "update-ios: device $device_udid unreachable right now; staged build waits for next run"
-      fi
+    echo "update-ios: installing ${staged_commit:0:10} wirelessly onto $device_udid"
+    if xcrun devicectl device install app --timeout 60 --device "$device_udid" "$FORK_IOS_STAGED_APP"; then
+      installed_at="$(date +%s)"
+      staged_built_at="$(fork_ios_meta_get "$FORK_IOS_STAGED_META" built_at)"
+      fork_ios_meta_write "$FORK_IOS_INSTALLED_META" \
+        "device=$device_udid" \
+        "commit=$staged_commit" \
+        "version=$staged_version" \
+        "built_at=$staged_built_at" \
+        "profile_expires=$staged_expires" \
+        "installed_at=$installed_at"
+      installed_commit="$staged_commit"
+      installed_expires="$staged_expires"
+      rm -f "$FORK_STATE_DIR/ios-expiry-warned"
+      expiry_label=""
+      [ -z "$staged_expires" ] || expiry_label=" (Profil bis $(format_local_expiry "$staged_expires"))"
+      echo "update-ios: installed ${staged_commit:0:10} on $device_udid"
+      push_ios info 3 "iOS-App aktualisiert${expiry_label}."
     else
-      echo "update-ios: staged build ${staged_commit:0:10} waits for night window (${FORK_RESTART_FROM_HOUR}:00–${FORK_RESTART_BEFORE_HOUR}:00)"
+      echo "update-ios: device $device_udid unreachable right now; staged build waits for next run"
     fi
   fi
 fi
