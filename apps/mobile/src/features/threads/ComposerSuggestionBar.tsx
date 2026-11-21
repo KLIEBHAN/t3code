@@ -6,6 +6,7 @@ import Animated, { FadeIn, FadeOut, ReduceMotion } from "react-native-reanimated
 import { SymbolView } from "../../components/ui/AppSymbol";
 import { AppText as Text } from "../../components/ui/AppText";
 import { GlassSurface } from "../../components/ui/GlassSurface";
+import { useAndroidControlSizing } from "../../components/ui/useAndroidControlSizing";
 import { formatSuggestionPreview } from "./composerSuggestions";
 
 const BAR_ENTERING = FadeIn.duration(150).reduceMotion(ReduceMotion.System);
@@ -154,6 +155,34 @@ export function ComposerSuggestionBar(props: ComposerSuggestionBarProps) {
         <View className="rounded-2xl border border-border bg-card">{content}</View>
       )}
     </Animated.View>
+  );
+}
+export interface ComposerSuggestionTriggerButtonProps {
+  readonly size?: "regular" | "large";
+  readonly onPress: () => void;
+}
+
+/** Compact toolbar trigger to fetch fresh prompt suggestions when no suggestion bar is open. */
+export function ComposerSuggestionTriggerButton(props: ComposerSuggestionTriggerButtonProps) {
+  const { scale } = useAndroidControlSizing();
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel="Suggest prompt"
+      onPress={() => {
+        void Haptics.selectionAsync();
+        props.onPress();
+      }}
+      className="size-[44px] shrink-0 items-center justify-center rounded-full active:opacity-70"
+    >
+      <SymbolView
+        name="text.bubble"
+        size={Math.round((props.size === "large" ? 22 : 18) * scale)}
+        weight="regular"
+        tintColorClassName="accent-icon"
+        type="monochrome"
+      />
+    </Pressable>
   );
 }
 /* oxlint-enable t3code/no-untranslated-copy */

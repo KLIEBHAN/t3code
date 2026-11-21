@@ -111,7 +111,7 @@ import { useSubmitAfterNativeImages } from "./useSubmitAfterNativeImages";
 import { ComposerCommandPopover } from "./ComposerCommandPopover";
 import { ComposerPopoverAnchor } from "./ComposerPopoverAnchor";
 import { ComposerQueuedEditAttachments } from "./ComposerQueuedEdit";
-import { ComposerSuggestionBar } from "./ComposerSuggestionBar";
+import { ComposerSuggestionBar, ComposerSuggestionTriggerButton } from "./ComposerSuggestionBar";
 import { useComposerCommandMenu } from "./use-composer-command-menu";
 import { useComposerSuggestions } from "./useComposerSuggestions";
 import type { ComposerEnvironmentCandidate } from "@t3tools/client-runtime/composerThreadItems";
@@ -1098,6 +1098,12 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
                   {compactControl}
                   {modelControl}
                 </Animated.View>
+                {suggestions.canTrigger ? (
+                  <ComposerSuggestionTriggerButton
+                    size={usesLargeControls ? "large" : "regular"}
+                    onPress={suggestions.refresh}
+                  />
+                ) : null}
                 <ComposerDictationStartAction
                   size={usesLargeControls ? "large" : "regular"}
                   state={voiceInput.state}

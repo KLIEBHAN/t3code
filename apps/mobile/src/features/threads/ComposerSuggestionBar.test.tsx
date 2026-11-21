@@ -49,14 +49,19 @@ vi.mock("react-native-reanimated", () => ({
 vi.mock("../../components/ui/GlassSurface", () => ({
   GlassSurface: ({ children }: { children?: ReactNode }) => <div data-glass="true">{children}</div>,
 }));
+vi.mock("../../components/ui/useAndroidControlSizing", () => ({
+  useAndroidControlSizing: () => ({ scale: 1 }),
+}));
 vi.mock("../../components/ui/AppSymbol", () => ({
-  SymbolView: ({ name }: { name: string }) => <span data-symbol={name} />,
+  SymbolView: ({ name }: { name: string | { ios: string } }) => (
+    <span data-symbol={typeof name === "string" ? name : name.ios} />
+  ),
 }));
 vi.mock("../../components/ui/AppText", () => ({
   AppText: ({ children }: { children?: ReactNode }) => <span>{children}</span>,
 }));
 
-import { ComposerSuggestionBar } from "./ComposerSuggestionBar";
+import { ComposerSuggestionBar, ComposerSuggestionTriggerButton } from "./ComposerSuggestionBar";
 
 describe("ComposerSuggestionBar", () => {
   beforeEach(() => {
@@ -160,6 +165,25 @@ describe("ComposerSuggestionBar", () => {
     );
     expect(container.textContent).toContain("Loading suggestions…");
     expect(container.querySelector('button[aria-label="Accept next word"]')).toBeNull();
+    act(() => root.unmount());
+  });
+
+  it("renders the manual suggestion trigger button and invokes onPress", async () => {
+    const onPress = vi.fn();
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    await act(async () =>
+      root.render(<ComposerSuggestionTriggerButton size="regular" onPress={onPress} />),
+    );
+    const trigger = container.querySelector(
+      'button[aria-label="Suggest prompt"]',
+    ) as HTMLButtonElement | null;
+    expect(trigger).not.toBeNull();
+    expect(container.querySelector('[data-symbol="text.bubble"]')).not.toBeNull();
+    await act(async () => {
+      trigger?.click();
+    });
+    expect(onPress).toHaveBeenCalledOnce();
     act(() => root.unmount());
   });
 });
