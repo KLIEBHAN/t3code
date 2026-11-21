@@ -9,6 +9,7 @@ vi.mock("expo-haptics", () => ({
   ImpactFeedbackStyle: { Light: "light" },
 }));
 vi.mock("react-native", () => ({
+  AccessibilityInfo: { announceForAccessibility: vi.fn() },
   Platform: { OS: "ios" },
   View: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
   Pressable: ({

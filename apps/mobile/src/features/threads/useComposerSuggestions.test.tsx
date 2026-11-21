@@ -280,6 +280,26 @@ describe("useComposerSuggestions", () => {
       input: { manual: true, fresh: true },
     });
     expect(state?.suggestion).toBe("Different idea");
+
+    // A failing cycle while a draft completion is already shown preserves that suggestion.
+    await act(async () => state?.clear());
+    completeDraftMock
+      .mockResolvedValueOnce({
+        _tag: "Success",
+        value: { completion: " and fix tests", completions: [" and fix tests"] },
+      })
+      .mockResolvedValueOnce({ _tag: "Failure", cause: "network" });
+    await act(async () =>
+      root.render(<Probe input={baseInput({ draft: "Check logs" })} onState={onState} />),
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(400);
+    });
+    expect(state?.suggestion).toBe("Check logs and fix tests");
+
+    await act(async () => state?.cycle());
+    expect(state?.suggestion).toBe("Check logs and fix tests");
+    expect(state?.notice).toBeNull();
     act(() => root.unmount());
   });
 

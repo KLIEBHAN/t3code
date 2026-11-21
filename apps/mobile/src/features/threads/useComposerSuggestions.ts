@@ -320,6 +320,7 @@ export function useComposerSuggestions(
     fresh: boolean,
     stale: string | null = null,
     allowFreshFallback = false,
+    hadVisible = formatSuggestionPreview(draft, suggestion) !== null,
   ) => {
     const requestId = ++latestAltRequestRef.current;
     const asked = draft;
@@ -340,8 +341,10 @@ export function useComposerSuggestions(
       if (result._tag !== "Success") {
         setPendingFor(null);
         setRefreshFor(null);
-        setSuppressedDraft({ draftKey, draft: asked });
-        setNoticeFor({ draftKey, modelKey, base: asked, kind: "error" });
+        if (!hadVisible) {
+          setSuppressedDraft({ draftKey, draft: asked });
+          setNoticeFor({ draftKey, modelKey, base: asked, kind: "error" });
+        }
         return;
       }
       const prompts = [
@@ -353,14 +356,16 @@ export function useComposerSuggestions(
       const choices = continuingPrompts(prompts, asked);
       // If cached alternatives gave nothing different from what is on screen, retry once past cache.
       if (allowFreshFallback && !fresh && shown !== null && choices.length <= 1) {
-        fetchAlternatives(null, true, shown, false);
+        fetchAlternatives(null, true, shown, false, hadVisible);
         return;
       }
       setPendingFor(null);
       setRefreshFor(null);
       if (choices.length === 0) {
-        setSuppressedDraft({ draftKey, draft: asked });
-        setNoticeFor({ draftKey, modelKey, base: asked, kind: "empty" });
+        if (!hadVisible) {
+          setSuppressedDraft({ draftKey, draft: asked });
+          setNoticeFor({ draftKey, modelKey, base: asked, kind: "empty" });
+        }
         return;
       }
       const selected =

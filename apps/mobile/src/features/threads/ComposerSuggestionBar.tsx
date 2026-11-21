@@ -1,6 +1,7 @@
 // Fork: touch-friendly prompt-suggestion bar rendered directly above the mobile composer.
 import * as Haptics from "expo-haptics";
-import { Platform, Pressable, View } from "react-native";
+import { useEffect } from "react";
+import { AccessibilityInfo, Platform, Pressable, View } from "react-native";
 import Animated, { FadeIn, FadeOut, ReduceMotion } from "react-native-reanimated";
 
 import { SymbolView } from "../../components/ui/AppSymbol";
@@ -32,6 +33,19 @@ export interface ComposerSuggestionBarProps {
 export function ComposerSuggestionBar(props: ComposerSuggestionBarProps) {
   const preview = formatSuggestionPreview(props.draft, props.suggestion);
   const notice = preview === null && !props.pending ? (props.notice ?? null) : null;
+  const statusCopy = props.pending
+    ? "Loading suggestions…"
+    : notice === "error"
+      ? "Couldn't load suggestions"
+      : "No suggestions";
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- announces transient manual feedback to VoiceOver through AccessibilityInfo
+  useEffect(() => {
+    if (Platform.OS === "ios" && notice !== null) {
+      AccessibilityInfo.announceForAccessibility(statusCopy);
+    }
+  }, [notice, statusCopy]);
+
   if (preview === null && !props.pending && notice === null) return null;
 
   const showWordAction = preview !== null && props.hasNextWord && !props.pending;
@@ -39,11 +53,6 @@ export function ComposerSuggestionBar(props: ComposerSuggestionBarProps) {
     props.alternativeIndex !== null && props.alternativeCount > 1 && !props.pending
       ? `${props.alternativeIndex + 1}/${props.alternativeCount}`
       : null;
-  const statusCopy = props.pending
-    ? "Loading suggestions…"
-    : notice === "error"
-      ? "Couldn't load suggestions"
-      : "No suggestions";
 
   const content = (
     <View className="min-h-[40px] flex-row items-center gap-1 py-1 pl-3 pr-1.5">
@@ -109,7 +118,7 @@ export function ComposerSuggestionBar(props: ComposerSuggestionBarProps) {
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={notice !== null ? "Retry suggestions" : "Next suggestion"}
-          accessibilityHint="Long press for fresh suggestions"
+          accessibilityHint={notice !== null ? undefined : "Long press for fresh suggestions"}
           disabled={props.pending}
           hitSlop={6}
           onPress={() => {
@@ -145,7 +154,7 @@ export function ComposerSuggestionBar(props: ComposerSuggestionBarProps) {
 
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Dismiss suggestion"
+          accessibilityLabel={notice !== null ? "Dismiss" : "Dismiss suggestion"}
           hitSlop={6}
           onPress={() => {
             void Haptics.selectionAsync();
