@@ -97,10 +97,10 @@ ios_paths_changed() {
   if [ "$base" = "$head" ]; then
     return 1
   fi
-  if ! changed="$(git diff --name-only "$base" "$head" 2>/dev/null)"; then
+  if ! changed="$(git diff --no-renames --name-only "$base" "$head" 2>/dev/null)"; then
     return 0
   fi
-  [ -n "$changed" ] && grep -qE '^(apps/mobile/|packages/|pnpm-lock\.yaml$|package\.json$|assets/|scripts/lib/(brand-assets|public-config)\.ts$)' <<<"$changed"
+  [ -n "$changed" ] && grep -qE '^(apps/mobile/|packages/|native/apple-speech/|patches/|pnpm-lock\.yaml$|package\.json$|assets/|scripts/lib/(brand-assets|public-config)\.ts$)' <<<"$changed"
 }
 
 query="${device_arg:-$FORK_IOS_DEVICE}"
