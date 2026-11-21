@@ -354,7 +354,7 @@ function commitChange(repo: string, relPath: string, content: string): string {
 
 // oxlint-disable-next-line t3code/no-global-process-runtime -- Shell harness executes macOS lockf; skip on non-macOS hosts.
 describe.skipIf(NodeOS.platform() !== "darwin")("scripts/fork/update-ios.sh", () => {
-  it("skips rebuilds for non-iOS changes, stages mobile changes, and waits for night window", () => {
+  it("skips rebuilds for non-iOS changes and stages + installs mobile changes immediately", () => {
     const fixture = createFixture({ renewedExpires: FIXED_NOW + 7 * 86_400 });
     const initialHead = gitHead(fixture.repo);
 
@@ -371,22 +371,36 @@ describe.skipIf(NodeOS.platform() !== "darwin")("scripts/fork/update-ios.sh", ()
     expect(readLines(fixture.buildLog)).toEqual([]);
     expect(readLines(fixture.installLog)).toEqual([]);
 
-    // A mobile commit triggers --stage, but scheduled daytime defers install to night window.
-    const mobileHead = commitChange(fixture.repo, "apps/mobile/index.ts", "export const v = 2;\n");
-    const daytimeResult = runUpdateIos(fixture, ["--scheduled"], { TEST_NOW_HOUR: "14" });
-    expect(daytimeResult.exitCode).toBe(0);
+    // --build-only stages a mobile commit without installing wirelessly.
+    const stagedOnlyHead = commitChange(
+      fixture.repo,
+      "apps/mobile/index.ts",
+      "export const v = 2;\n",
+    );
+    const buildOnlyResult = runUpdateIos(fixture, ["--scheduled", "--build-only"], {
+      TEST_NOW_HOUR: "14",
+    });
+    expect(buildOnlyResult.exitCode).toBe(0);
     expect(readLines(fixture.buildLog)).toEqual(["--stage"]);
     expect(readLines(fixture.installLog)).toEqual([]);
 
-    // Inside the 02:00-06:00 night window, the staged bundle installs wirelessly and notifies once.
-    const nightResult = runUpdateIos(fixture, ["--scheduled"], { TEST_NOW_HOUR: "03" });
-    expect(nightResult.exitCode).toBe(0);
+    // A regular scheduled daytime run installs the staged bundle wirelessly immediately and notifies once.
+    const daytimeResult = runUpdateIos(fixture, ["--scheduled"], { TEST_NOW_HOUR: "14" });
+    expect(daytimeResult.exitCode).toBe(0);
     expect(readLines(fixture.buildLog)).toEqual(["--stage"]);
     expect(readLines(fixture.installLog)).toHaveLength(1);
     expect(
       NodeFS.readFileSync(NodePath.join(fixture.stateDir, "ios-installed.env"), "utf8"),
-    ).toContain(`commit=${mobileHead}`);
-    expect(readLines(fixture.pushLog).some((line) => line.includes("--event info"))).toBe(true);
+    ).toContain(`commit=${stagedOnlyHead}`);
+    expect(readLines(fixture.pushLog).filter((line) => line.includes("--event info"))).toHaveLength(
+      1,
+    );
+
+    // A second scheduled run without new changes neither rebuilds nor reinstalls.
+    const idleResult = runUpdateIos(fixture, ["--scheduled"], { TEST_NOW_HOUR: "15" });
+    expect(idleResult.exitCode).toBe(0);
+    expect(readLines(fixture.buildLog)).toEqual(["--stage"]);
+    expect(readLines(fixture.installLog)).toHaveLength(1);
   });
 
   it("renews expiring profiles with --renew-profile and warns once when unreachable", () => {
@@ -396,7 +410,7 @@ describe.skipIf(NodeOS.platform() !== "darwin")("scripts/fork/update-ios.sh", ()
     });
     const head = gitHead(fixture.repo);
 
-    // 20 hours left: triggers renewal (<= 48h), emergency install (<= 24h), and warning (<= 36h).
+    // 20 hours left: triggers renewal (<= 48h) and warning (<= 36h); unreachable device does not fail run.
     NodeFS.writeFileSync(
       NodePath.join(fixture.stateDir, "ios-installed.env"),
       `device=UDID-TEST-1\ncommit=${head}\nprofile_expires=${FIXED_NOW + 20 * 3600}\n`,
@@ -405,7 +419,7 @@ describe.skipIf(NodeOS.platform() !== "darwin")("scripts/fork/update-ios.sh", ()
     const first = runUpdateIos(fixture, ["--scheduled"], { TEST_NOW_HOUR: "14" });
     expect(first.exitCode).toBe(0);
     expect(readLines(fixture.buildLog)).toEqual(["--stage --renew-profile"]);
-    // Emergency install attempted even outside night window; unreachable device does not fail run.
+    // Install attempted immediately; unreachable device leaves staged build waiting without failing run.
     expect(readLines(fixture.installLog)).toHaveLength(1);
     const warningsAfterFirst = readLines(fixture.pushLog).filter((line) =>
       line.includes("--event rueckfrage"),
