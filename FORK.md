@@ -107,11 +107,15 @@ Then follow [Switch from the official app](#switch-from-the-official-app).
 `scripts/fork/build-ios.sh` builds and installs the iOS fork app (`T3 Code (Fork)`, bundle ID `com.kliebhan.t3code-fork`, scheme `t3code-fork`, Expo OTA updates off) side-by-side with the App Store app:
 
 ```sh
-scripts/fork/build-ios.sh --device          # connected iPhone (Release, Personal Team)
+scripts/fork/build-ios.sh --device          # build, stage, and install onto paired iPhone
+scripts/fork/build-ios.sh --stage           # build and stage T3CodeFork.app without installing
 scripts/fork/build-ios.sh --simulator       # iOS Simulator
+scripts/fork/update-ios.sh --now            # stage if needed and install wirelessly now
 ```
 
-It reads the Apple Team ID from `FORK_SIGN_IDENTITY` (or `FORK_IOS_TEAM_ID`) and needs Xcode plus CocoaPods (`brew install cocoapods`). Personal Team profiles omit push notifications, widgets, share extension, associated domains, and Sign in with Apple, and expire after 7 days (re-run the script to renew). Connect to the fork server over LAN, VPN, or Tailscale (`t3 pair`).
+It reads the Apple Team ID from `FORK_SIGN_IDENTITY` (or `FORK_IOS_TEAM_ID`) and needs Xcode plus CocoaPods (`brew install cocoapods`). Prebuild output in `apps/mobile/ios` is cached by a hash of native inputs (`app.config.ts`, `plugins/`, `modules/`, `apps/mobile/assets/`, `assets/dev/`, `scripts/lib/{brand-assets,public-config}.ts`, `package.json`, `pnpm-lock.yaml`, optional `.env`/`.env.local`, build env) and Xcode DerivedData lives under `~/workspace/t3code-fork-build/ios-derived-data`; pass `--clean` to force a fresh prebuild and `--renew-profile` to stash any cached provisioning profile for this bundle ID before renewing.
+
+Personal Team profiles omit push notifications, widgets, share extension, associated domains, and Sign in with Apple, and expire after 7 days. On the build Mac, scheduled `update.sh` runs call `scripts/fork/update-ios.sh --scheduled` outside the macOS update lock (1 h timeout): it stages a new build whenever iOS-relevant paths change or the profile has <= 48 hours left (re-signing with `--renew-profile`), installs it wirelessly over local Wi-Fi via `xcrun devicectl` during the night window (02:00–06:00, or sooner if <= 24 hours remain), and sends a Bark/ntfy reminder once <= 36 hours remain if the phone was unreachable. Pin a device with `scripts/fork/setup.sh --ios-device <udid>` or disable auto-updates with `git config fork.iosAutoUpdate 0`. Connect to the fork server over LAN, VPN, or Tailscale (`t3 pair`).
 
 ## Remove it
 

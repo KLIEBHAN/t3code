@@ -67,10 +67,40 @@ if [ "${FORK_UPDATE_LOCKED:-}" != 1 ]; then
       fi
     fi
     locked=0
+    was_locked=0
     FORK_UPDATE_LOCKED=1 lockf -s -k -t 0 "$FORK_STATE_DIR/update.lock" scripts/fork/update.sh "$@" || locked=$?
     if [ "$locked" = 75 ]; then
       echo "update: another run is active"
+      was_locked=1
       locked=0
+    fi
+    # Run the iOS update outside update.lock with a bounded process-group timeout so an iOS
+    # build never makes the macOS Dock applet report busy or leaves hung child processes behind.
+    if [ "$was_locked" = 0 ] && [ "$locked" != 2 ] && [ -z "$FORK_BUILD_HOST" ] && [ -x scripts/fork/update-ios.sh ]; then
+      case " $* " in
+        *" --scheduled "*)
+          perl -MPOSIX=WNOHANG -e '
+            my ($t, @cmd) = @ARGV;
+            my $pid = fork();
+            die "fork: $!" unless defined $pid;
+            if ($pid == 0) { setpgrp(0, 0); exec @cmd or die "exec: $!"; }
+            my $timed_out = 0;
+            my $stop = sub {
+              kill "TERM", -$pid;
+              my $end = time + 5;
+              while (time < $end) { last if waitpid($pid, WNOHANG) == $pid; select(undef, undef, undef, 0.1); }
+              kill "KILL", -$pid;
+            };
+            $SIG{ALRM} = sub { $timed_out = 1; $stop->(); };
+            $SIG{TERM} = $SIG{INT} = sub { $stop->(); exit 143; };
+            alarm($t);
+            waitpid($pid, 0);
+            alarm(0);
+            exit(124) if $timed_out;
+            exit($? == -1 ? 1 : ($? & 127 ? 128 + ($? & 127) : $? >> 8));
+          ' 3600 scripts/fork/update-ios.sh --scheduled || echo "update: iOS update step reported a failure" >&2
+          ;;
+      esac
     fi
     exit "$locked"
   } 2>&1 | stamp_lines || status=$?
@@ -100,20 +130,7 @@ notify() {
 # nobody watches them. A push that fails leaves a line in the log.
 push() {
   [ "$scheduled" = 1 ] || return 0
-  if [ ! -x "$FORK_PUSH_DIR/python3" ]; then
-    echo "update: no Python for phone pushes; run scripts/fork/setup.sh" >&2
-    return 0
-  fi
-  local message
-  message="$(scutil --get ComputerName 2>/dev/null || hostname -s): $3"
-  if [ -f "$FORK_PUSH_DIR/bark/scripts/send.py" ]; then
-    "$FORK_PUSH_DIR/python3" "$FORK_PUSH_DIR/bark/scripts/send.py" --event "$1" --title "$FORK_APP_NAME" --message "$message" >/dev/null 2>&1 ||
-      echo "update: the Bark push failed" >&2
-  fi
-  if [ -f "$FORK_PUSH_DIR/ntfy/scripts/publish.py" ]; then
-    "$FORK_PUSH_DIR/python3" "$FORK_PUSH_DIR/ntfy/scripts/publish.py" --priority "$2" --title "$FORK_APP_NAME" --message "$message" >/dev/null 2>&1 ||
-      echo "update: the ntfy push failed" >&2
-  fi
+  fork_push_phone "$1" "$2" "$3"
 }
 
 # A failure: the banner, and in a scheduled run also a push.
