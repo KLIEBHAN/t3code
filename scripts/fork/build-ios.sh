@@ -162,7 +162,7 @@ prebuild_fingerprint() {
   for candidate in scripts/lib/brand-assets.ts scripts/lib/public-config.ts .env .env.local; do
     [ -f "$candidate" ] && extra_files+=("$candidate")
   done
-  for candidate in apps/mobile/plugins apps/mobile/modules apps/mobile/assets assets/dev; do
+  for candidate in apps/mobile/plugins apps/mobile/modules apps/mobile/assets assets/dev patches; do
     [ -d "$candidate" ] && roots+=("$candidate")
   done
   {
@@ -177,7 +177,8 @@ prebuild_fingerprint() {
     shasum -a 256 apps/mobile/app.config.ts apps/mobile/package.json pnpm-lock.yaml \
       ${extra_files[@]+"${extra_files[@]}"}
     if [ "${#roots[@]}" -gt 0 ]; then
-      find "${roots[@]}" \
+      # Follow symlinks (e.g. apps/mobile/modules/.../AppleSpeechEngine.swift -> native/apple-speech/).
+      find -L "${roots[@]}" \
         -type d \( -name node_modules -o -name build -o -name .build -o -name Pods \) -prune \
         -o -type f -print \
         | LC_ALL=C sort \

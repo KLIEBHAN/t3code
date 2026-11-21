@@ -235,8 +235,10 @@ function runForkScript(
       cwd: fixture.repo,
       env: {
         ...process.env,
-        // A test run inside a scheduled update.sh inherits its lock marker; each fixture takes its own lock.
+        // A test run inside a scheduled update.sh or iOS script inherits its lock markers; each fixture takes its own lock.
         FORK_UPDATE_LOCKED: "",
+        FORK_IOS_UPDATE_LOCKED: "",
+        FORK_IOS_BUILD_LOCKED: "",
         PATH: `${fixture.binDir}:/usr/bin:/bin:/usr/sbin:/sbin`,
         VP_ENV: NodePath.join(fixture.root, "vp-env.sh"),
         FORK_STATE_DIR: fixture.stateDir,
@@ -332,7 +334,9 @@ function gitHead(repo: string): string {
 }
 
 function commitChange(repo: string, relPath: string, content: string): string {
-  NodeFS.writeFileSync(NodePath.join(repo, relPath), content, "utf8");
+  const fullPath = NodePath.join(repo, relPath);
+  NodeFS.mkdirSync(NodePath.dirname(fullPath), { recursive: true });
+  NodeFS.writeFileSync(fullPath, content, "utf8");
   NodeChildProcess.execFileSync("git", ["add", relPath], { cwd: repo });
   NodeChildProcess.execFileSync("git", ["commit", "-m", `update ${relPath}`], {
     cwd: repo,
@@ -648,5 +652,154 @@ describe.skipIf(NodeOS.platform() !== "darwin")("scripts/fork/update-ios.sh", ()
     });
     expect(webChangeRun.exitCode).toBe(0);
     expect(readLines(fixture.buildLog)).toEqual(["build-app", "build-app"]);
+  });
+
+  it("triggers iOS builds on native/apple-speech, patches, and renames out of apps/mobile while skipping desktop-only native changes", () => {
+    const fixture = createFixture();
+    const initialHead = gitHead(fixture.repo);
+
+    NodeFS.writeFileSync(
+      NodePath.join(fixture.stateDir, "ios-installed.env"),
+      [
+        "device=UDID-TEST-1",
+        `commit=${initialHead}`,
+        "version=2.3.0",
+        `built_at=${FIXED_NOW - 3600}`,
+        `profile_expires=${FIXED_NOW + 6 * 86_400}`,
+        `installed_at=${FIXED_NOW - 3600}`,
+      ].join("\n") + "\n",
+    );
+
+    // Desktop-only native code must not trigger an iOS rebuild.
+    commitChange(fixture.repo, "native/libghostty-vt/foo.c", "int x = 1;\n");
+    const desktopNativeRun = runUpdateIos(fixture, ["--scheduled"], { TEST_NOW_HOUR: "14" });
+    expect(desktopNativeRun.exitCode).toBe(0);
+    expect(readLines(fixture.buildLog)).toEqual([]);
+
+    // Shared iOS Apple Speech Swift file must trigger an iOS rebuild.
+    commitChange(
+      fixture.repo,
+      "native/apple-speech/AppleSpeechEngine.swift",
+      "struct AppleSpeechEngine {}\n",
+    );
+    const appleSpeechRun = runUpdateIos(fixture, ["--scheduled"], { TEST_NOW_HOUR: "14" });
+    expect(appleSpeechRun.exitCode).toBe(0);
+    expect(readLines(fixture.buildLog)).toEqual(["--stage"]);
+
+    // Native module patch edits under patches/ must trigger an iOS rebuild.
+    commitChange(fixture.repo, "patches/expo-audio@58.0.11.patch", "--- a/foo\n+++ b/foo\n");
+    const patchRun = runUpdateIos(fixture, ["--scheduled"], { TEST_NOW_HOUR: "14" });
+    expect(patchRun.exitCode).toBe(0);
+    expect(readLines(fixture.buildLog)).toEqual(["--stage", "--stage"]);
+
+    // Moving a file out of apps/mobile into apps/web removes an iOS input and must trigger a rebuild.
+    NodeChildProcess.execFileSync(
+      "git",
+      ["mv", "apps/mobile/index.ts", "apps/web/moved-from-mobile.ts"],
+      {
+        cwd: fixture.repo,
+        stdio: "pipe",
+      },
+    );
+    NodeChildProcess.execFileSync("git", ["commit", "-m", "move mobile file to web"], {
+      cwd: fixture.repo,
+      env: {
+        ...process.env,
+        GIT_AUTHOR_NAME: "Test",
+        GIT_AUTHOR_EMAIL: "test@example.com",
+        GIT_COMMITTER_NAME: "Test",
+        GIT_COMMITTER_EMAIL: "test@example.com",
+      },
+      stdio: "pipe",
+    });
+    const renameOutOfMobileRun = runUpdateIos(fixture, ["--scheduled"], { TEST_NOW_HOUR: "14" });
+    expect(renameOutOfMobileRun.exitCode).toBe(0);
+    expect(readLines(fixture.buildLog)).toEqual(["--stage", "--stage", "--stage"]);
+  });
+
+  it("invalidates build-ios.sh prebuild cache when symlinked native module inputs or patches change", () => {
+    const fixture = createFixture({ realBuildScript: true });
+    const prebuildLog = NodePath.join(fixture.root, "prebuild.log");
+
+    // Seed minimal repo files and the AppleSpeechEngine.swift symlink matching the real repo layout.
+    NodeFS.writeFileSync(NodePath.join(fixture.repo, "apps/mobile/app.config.ts"), "export {};\n");
+    NodeFS.writeFileSync(NodePath.join(fixture.repo, "apps/mobile/package.json"), "{}\n");
+    NodeFS.writeFileSync(NodePath.join(fixture.repo, "pnpm-lock.yaml"), "lockfileVersion: 9\n");
+    NodeFS.mkdirSync(NodePath.join(fixture.repo, "node_modules"), { recursive: true });
+    NodeFS.writeFileSync(NodePath.join(fixture.repo, "node_modules/.modules.yaml"), "ok: true\n");
+    NodeFS.mkdirSync(NodePath.join(fixture.repo, "native/apple-speech"), { recursive: true });
+    const speechTarget = NodePath.join(fixture.repo, "native/apple-speech/AppleSpeechEngine.swift");
+    NodeFS.writeFileSync(speechTarget, "struct Engine { let v = 1 }\n");
+    const moduleIosDir = NodePath.join(
+      fixture.repo,
+      "apps/mobile/modules/t3-voice-transcription/ios",
+    );
+    NodeFS.mkdirSync(moduleIosDir, { recursive: true });
+    NodeFS.symlinkSync(
+      "../../../../../native/apple-speech/AppleSpeechEngine.swift",
+      NodePath.join(moduleIosDir, "AppleSpeechEngine.swift"),
+    );
+    NodeFS.mkdirSync(NodePath.join(fixture.repo, "patches"), { recursive: true });
+    const patchFile = NodePath.join(fixture.repo, "patches/expo-audio@58.0.11.patch");
+    NodeFS.writeFileSync(patchFile, "--- a/a\n+++ b/a\n");
+
+    writeExecutable(
+      NodePath.join(fixture.binDir, "vp"),
+      `#!/usr/bin/env bash
+set -euo pipefail
+echo "$*" >> "${prebuildLog}"
+mkdir -p ios/T3CodeFork.xcworkspace ios/Pods
+touch ios/Pods/Manifest.lock
+`,
+    );
+    writeExecutable(
+      NodePath.join(fixture.binDir, "xcodebuild"),
+      `#!/usr/bin/env bash
+set -euo pipefail
+app_dir="$FORK_STATE_DIR/ios-derived-data/Build/Products/Release-iphoneos/T3CodeFork.app"
+mkdir -p "$app_dir"
+cat >"$app_dir/Info.plist" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict><key>CFBundleShortVersionString</key><string>2.3.0</string></dict></plist>
+PLIST
+`,
+    );
+    writeExecutable(NodePath.join(fixture.binDir, "node"), "#!/usr/bin/env bash\nexit 0\n");
+
+    const buildEnv = { FORK_IOS_TEAM_ID: "TEAMTEST01" };
+
+    // 1. First build runs prebuild and records the fingerprint.
+    const first = runForkScript(fixture, "scripts/fork/build-ios.sh", ["--stage"], buildEnv);
+    expect(first.exitCode).toBe(0);
+    expect(readLines(prebuildLog)).toHaveLength(1);
+
+    // 2. Unchanged inputs reuse the cached prebuild.
+    const cached = runForkScript(fixture, "scripts/fork/build-ios.sh", ["--stage"], buildEnv);
+    expect(cached.exitCode).toBe(0);
+    expect(cached.output).toContain("reusing cached prebuild");
+    expect(readLines(prebuildLog)).toHaveLength(1);
+
+    // 3. Editing the symlink target invalidates the prebuild cache.
+    NodeFS.writeFileSync(speechTarget, "struct Engine { let v = 2 }\n");
+    const afterSymlinkEdit = runForkScript(
+      fixture,
+      "scripts/fork/build-ios.sh",
+      ["--stage"],
+      buildEnv,
+    );
+    expect(afterSymlinkEdit.exitCode).toBe(0);
+    expect(readLines(prebuildLog)).toHaveLength(2);
+
+    // 4. Editing a native patch file invalidates the prebuild cache.
+    NodeFS.writeFileSync(patchFile, "--- a/a\n+++ b/a\n+changed\n");
+    const afterPatchEdit = runForkScript(
+      fixture,
+      "scripts/fork/build-ios.sh",
+      ["--stage"],
+      buildEnv,
+    );
+    expect(afterPatchEdit.exitCode).toBe(0);
+    expect(readLines(prebuildLog)).toHaveLength(3);
   });
 });
