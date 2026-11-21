@@ -100,20 +100,7 @@ notify() {
 # nobody watches them. A push that fails leaves a line in the log.
 push() {
   [ "$scheduled" = 1 ] || return 0
-  if [ ! -x "$FORK_PUSH_DIR/python3" ]; then
-    echo "update: no Python for phone pushes; run scripts/fork/setup.sh" >&2
-    return 0
-  fi
-  local message
-  message="$(scutil --get ComputerName 2>/dev/null || hostname -s): $3"
-  if [ -f "$FORK_PUSH_DIR/bark/scripts/send.py" ]; then
-    "$FORK_PUSH_DIR/python3" "$FORK_PUSH_DIR/bark/scripts/send.py" --event "$1" --title "$FORK_APP_NAME" --message "$message" >/dev/null 2>&1 ||
-      echo "update: the Bark push failed" >&2
-  fi
-  if [ -f "$FORK_PUSH_DIR/ntfy/scripts/publish.py" ]; then
-    "$FORK_PUSH_DIR/python3" "$FORK_PUSH_DIR/ntfy/scripts/publish.py" --priority "$2" --title "$FORK_APP_NAME" --message "$message" >/dev/null 2>&1 ||
-      echo "update: the ntfy push failed" >&2
-  fi
+  fork_push_phone "$1" "$2" "$3"
 }
 
 # A failure: the banner, and in a scheduled run also a push.
@@ -336,4 +323,9 @@ fi
 
 # The applet's source moves with these scripts; a failure here leaves the old applet working.
 scripts/fork/install-applet.sh --if-changed || echo "update: could not refresh the Dock applet" >&2
+# Scheduled runs on the build Mac also stage/renew the iOS fork app and install
+# it wirelessly over local Wi-Fi in the night window without blocking macOS updates.
+if [ -z "$FORK_BUILD_HOST" ] && [ "$scheduled" = 1 ] && [ -x scripts/fork/update-ios.sh ]; then
+  scripts/fork/update-ios.sh --scheduled || echo "update: iOS update step reported a failure" >&2
+fi
 exit "$status"

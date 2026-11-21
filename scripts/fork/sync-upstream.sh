@@ -61,7 +61,7 @@ report="$FORK_STATE_DIR/sync-report.txt"
 # Read before the merge, so a repair cannot widen what the fork may change.
 owned_paths="$(git show "$FORK_BRANCH:scripts/fork/owned-paths.txt")"
 check_commands='vp i
-vp test run packages/provider-pi/src/server/adapter.test.ts apps/desktop/src/app/DesktopUserData.test.ts apps/server/src/orchestration-v2/StoppedWatchNote.test.ts apps/server/src/orchestration-v2/ThreadStop.test.ts
+vp test run packages/provider-pi/src/server/adapter.test.ts apps/desktop/src/app/DesktopUserData.test.ts apps/server/src/orchestration-v2/StoppedWatchNote.test.ts apps/server/src/orchestration-v2/ThreadStop.test.ts scripts/fork/update-ios.test.ts
 (cd apps/mobile && vp test run --project unit app.config.test.ts app.config.fork.test.ts src/features/threads/composerSuggestions.test.ts && vp test run --project unit src/reactCompilerCoverage.test.ts -t "composerSuggestions|useComposerSuggestions|ComposerSuggestionBar|PromptSuggestionsBetaSection|ThreadComposer|ThreadDetailScreen|ThreadSettingsSections")
 (cd apps/mobile && vp test run --project react src/features/threads/useComposerSuggestions.test.tsx src/features/threads/ComposerSuggestionBar.test.tsx)
 vp run --filter @t3tools/provider-pi --filter @t3tools/desktop --filter @t3tools/mobile --filter t3 typecheck

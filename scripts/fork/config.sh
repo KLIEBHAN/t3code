@@ -8,6 +8,19 @@ FORK_APP_PATH="/Applications/$FORK_APP_NAME.app"
 # Build output, the staged app, and logs.
 FORK_STATE_DIR="${FORK_STATE_DIR:-$HOME/workspace/t3code-fork-build}"
 FORK_STAGED_APP="$FORK_STATE_DIR/staged/$FORK_APP_NAME.app"
+FORK_IOS_STAGED_DIR="$FORK_STATE_DIR/staged-ios"
+FORK_IOS_STAGED_APP="$FORK_IOS_STAGED_DIR/T3CodeFork.app"
+FORK_IOS_STAGED_META="$FORK_IOS_STAGED_DIR/meta.env"
+FORK_IOS_INSTALLED_META="$FORK_STATE_DIR/ios-installed.env"
+FORK_IOS_DERIVED_DATA="$FORK_STATE_DIR/ios-derived-data"
+# Optional pinned iPhone UDID/name for automatic wireless iOS updates (git config fork.iosDevice).
+FORK_IOS_DEVICE="${FORK_IOS_DEVICE:-$(git config --get fork.iosDevice || true)}"
+FORK_IOS_AUTO_UPDATE="${FORK_IOS_AUTO_UPDATE:-1}"
+# Personal Team profiles last 7 days: renew staged build 48h before expiry, warn at 36h,
+# and allow wireless install outside the night window when <= 24h remain.
+FORK_IOS_RENEW_BEFORE_HOURS="${FORK_IOS_RENEW_BEFORE_HOURS:-48}"
+FORK_IOS_WARN_BEFORE_HOURS="${FORK_IOS_WARN_BEFORE_HOURS:-36}"
+FORK_IOS_EMERGENCY_INSTALL_HOURS="${FORK_IOS_EMERGENCY_INSTALL_HOURS:-24}"
 # Phone pushes for failures of the hourly run: setup.sh copies the bark and ntfy
 # skill senders from FORK_SKILLS_DIR to FORK_PUSH_DIR.
 FORK_SKILLS_DIR="${FORK_SKILLS_DIR:-$HOME/.pi/agent/skills}"
@@ -69,4 +82,86 @@ fork_app_home() {
 fork_active_runs() {
   sqlite3 "file:$1/userdata/statev2.sqlite?mode=ro" \
     "select count(*) from orchestration_v2_projection_runs where status in ('preparing','queued','starting','running','waiting');" 2>/dev/null || true
+}
+
+# Sends $3 with this Mac's name to the phone through the copied Bark/ntfy senders.
+# $1 is the Bark event (info, fertig, rueckfrage, fehler), $2 is the ntfy priority.
+fork_push_phone() {
+  if [ ! -x "$FORK_PUSH_DIR/python3" ]; then
+    echo "push: no Python for phone pushes; run scripts/fork/setup.sh" >&2
+    return 0
+  fi
+  local message
+  message="$(scutil --get ComputerName 2>/dev/null || hostname -s): $3"
+  if [ -f "$FORK_PUSH_DIR/bark/scripts/send.py" ]; then
+    "$FORK_PUSH_DIR/python3" "$FORK_PUSH_DIR/bark/scripts/send.py" --event "$1" --title "$FORK_APP_NAME" --message "$message" >/dev/null 2>&1 ||
+      echo "push: the Bark push failed" >&2
+  fi
+  if [ -f "$FORK_PUSH_DIR/ntfy/scripts/publish.py" ]; then
+    "$FORK_PUSH_DIR/python3" "$FORK_PUSH_DIR/ntfy/scripts/publish.py" --priority "$2" --title "$FORK_APP_NAME" --message "$message" >/dev/null 2>&1 ||
+      echo "push: the ntfy push failed" >&2
+  fi
+}
+
+# Reads key=$2 from a plain key=value metadata file $1 without sourcing it.
+fork_ios_meta_get() {
+  [ -f "$1" ] || return 0
+  awk -F= -v key="$2" '$1 == key { sub(/^[^=]*=/, ""); print; exit }' "$1"
+}
+
+# Atomically writes key=value pairs ($2..) to $1.
+fork_ios_meta_write() {
+  local target="$1"
+  shift
+  mkdir -p "$(dirname "$target")"
+  printf '%s\n' "$@" >"$target.tmp" && mv "$target.tmp" "$target"
+}
+
+# Unix epoch expiration of an iOS .app bundle or .mobileprovision file, or empty.
+fork_ios_profile_expires() {
+  local profile="$1" raw
+  if [ -d "$profile" ]; then
+    profile="$profile/embedded.mobileprovision"
+  fi
+  [ -f "$profile" ] || return 0
+  raw="$(security cms -D -i "$profile" 2>/dev/null | plutil -extract ExpirationDate raw - 2>/dev/null || true)"
+  [ -n "$raw" ] || return 0
+  python3 -c '
+import datetime, sys
+dt = datetime.datetime.fromisoformat(sys.argv[1].replace("Z", "+00:00"))
+print(int(dt.timestamp()))
+' "$raw" 2>/dev/null || true
+}
+
+# Resolves a paired physical iOS device UDID via devicectl.
+# With $1, matches exact UDID or name; without $1, succeeds only if exactly one paired physical device exists.
+fork_ios_resolve_device() {
+  local query="${1:-}"
+  xcrun devicectl list devices --json-output - 2>/dev/null | python3 -c '
+import json, sys
+query = sys.argv[1]
+try:
+    data = json.load(sys.stdin)
+except Exception:
+    sys.exit(0)
+devices = []
+for dev in data.get("result", {}).get("devices", []):
+    hw = dev.get("hardwareProperties") or {}
+    props = dev.get("deviceProperties") or {}
+    conn = dev.get("connectionProperties") or {}
+    if hw.get("reality") != "physical" or conn.get("pairingState") != "paired":
+        continue
+    udid = hw.get("udid") or ""
+    name = props.get("name") or ""
+    if not udid:
+        continue
+    if query:
+        if udid == query or name == query:
+            print(udid)
+            sys.exit(0)
+    else:
+        devices.append(udid)
+if not query and len(devices) == 1:
+    print(devices[0])
+' "$query" 2>/dev/null || true
 }

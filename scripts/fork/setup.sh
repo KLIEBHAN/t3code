@@ -9,10 +9,11 @@
 #      those credentials change.
 #   4. The launchd job that runs update.sh every hour from this checkout.
 #
-# Usage: scripts/fork/setup.sh [--no-job] [--build-host <ssh host>]
+# Usage: scripts/fork/setup.sh [--no-job] [--build-host <ssh host>] [--ios-device <udid-or-name>]
 #   --no-job      skip steps 2 to 4, for a checkout that only builds
 #   --build-host  this Mac installs the app that Mac builds, and makes none
 #                 itself: no step 1, and update.sh fetches instead of building
+#   --ios-device  pin the paired iPhone UDID or name for automatic wireless iOS updates
 set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
@@ -28,6 +29,14 @@ while [ $# -gt 0 ]; do
         exit 2
       fi
       git config fork.buildHost "$2"
+      shift
+      ;;
+    --ios-device)
+      if [ $# -lt 2 ]; then
+        echo "setup: --ios-device needs a UDID or device name" >&2
+        exit 2
+      fi
+      git config fork.iosDevice "$2"
       shift
       ;;
     *)
