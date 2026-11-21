@@ -844,6 +844,7 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
             suggestion={suggestions.suggestion}
             hasNextWord={suggestions.nextWord !== null}
             pending={suggestions.pending}
+            notice={suggestions.notice}
             alternativeIndex={suggestions.alternativeIndex}
             alternativeCount={suggestions.alternativeCount}
             onAcceptAll={() => {

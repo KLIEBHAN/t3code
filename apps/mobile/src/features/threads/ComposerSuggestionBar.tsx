@@ -8,6 +8,7 @@ import { AppText as Text } from "../../components/ui/AppText";
 import { GlassSurface } from "../../components/ui/GlassSurface";
 import { useAndroidControlSizing } from "../../components/ui/useAndroidControlSizing";
 import { formatSuggestionPreview } from "./composerSuggestions";
+import type { ComposerSuggestionNotice } from "./useComposerSuggestions";
 
 const BAR_ENTERING = FadeIn.duration(150).reduceMotion(ReduceMotion.System);
 const BAR_EXITING = FadeOut.duration(110).reduceMotion(ReduceMotion.System);
@@ -17,6 +18,7 @@ export interface ComposerSuggestionBarProps {
   readonly suggestion: string | null;
   readonly hasNextWord: boolean;
   readonly pending: boolean;
+  readonly notice?: ComposerSuggestionNotice | null;
   readonly alternativeIndex: number | null;
   readonly alternativeCount: number;
   readonly onAcceptAll: () => void;
@@ -29,19 +31,25 @@ export interface ComposerSuggestionBarProps {
 /* oxlint-disable t3code/no-untranslated-copy -- fork text stays English */
 export function ComposerSuggestionBar(props: ComposerSuggestionBarProps) {
   const preview = formatSuggestionPreview(props.draft, props.suggestion);
-  if (preview === null && !props.pending) return null;
+  const notice = preview === null && !props.pending ? (props.notice ?? null) : null;
+  if (preview === null && !props.pending && notice === null) return null;
 
   const showWordAction = preview !== null && props.hasNextWord && !props.pending;
   const altLabel =
     props.alternativeIndex !== null && props.alternativeCount > 1 && !props.pending
       ? `${props.alternativeIndex + 1}/${props.alternativeCount}`
       : null;
+  const statusCopy = props.pending
+    ? "Loading suggestions…"
+    : notice === "error"
+      ? "Couldn't load suggestions"
+      : "No suggestions";
 
   const content = (
     <View className="min-h-[40px] flex-row items-center gap-1 py-1 pl-3 pr-1.5">
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={preview === null ? "Loading suggestions" : "Accept suggestion"}
+        accessibilityLabel={preview === null ? statusCopy : "Accept suggestion"}
         disabled={preview === null}
         onPress={() => {
           void Haptics.selectionAsync();
@@ -50,8 +58,13 @@ export function ComposerSuggestionBar(props: ComposerSuggestionBarProps) {
         className="min-w-0 flex-1 py-1 pr-1 active:opacity-65"
       >
         {preview === null ? (
-          <Text textRole="footnote" numberOfLines={1} className="text-foreground-muted">
-            Loading suggestions…
+          <Text
+            accessibilityLiveRegion="polite"
+            textRole="footnote"
+            numberOfLines={1}
+            className="text-foreground-muted"
+          >
+            {statusCopy}
           </Text>
         ) : (
           <Text textRole="footnote" numberOfLines={2} ellipsizeMode="tail">
@@ -95,13 +108,17 @@ export function ComposerSuggestionBar(props: ComposerSuggestionBarProps) {
 
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Next suggestion"
+          accessibilityLabel={notice !== null ? "Retry suggestions" : "Next suggestion"}
           accessibilityHint="Long press for fresh suggestions"
           disabled={props.pending}
           hitSlop={6}
           onPress={() => {
             void Haptics.selectionAsync();
-            props.onCycle();
+            if (notice !== null) {
+              props.onRefresh();
+            } else {
+              props.onCycle();
+            }
           }}
           onLongPress={() => {
             void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
