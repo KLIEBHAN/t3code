@@ -70,6 +70,10 @@ if ! command -v pod >/dev/null 2>&1; then
   echo "update-ios: CocoaPods not installed; skipping iOS update"
   exit 0
 fi
+if [ "$scheduled" = 1 ] && [ "$(git branch --show-current)" != "$FORK_BRANCH" ]; then
+  echo "update-ios: check out $FORK_BRANCH first" >&2
+  exit 2
+fi
 
 push_ios() {
   [ "$scheduled" = 1 ] || return 0
@@ -95,7 +99,7 @@ ios_paths_changed() {
   if ! changed="$(git diff --name-only "$base" "$head" 2>/dev/null)"; then
     return 0
   fi
-  [ -n "$changed" ] && grep -qE '^(apps/mobile/|packages/|pnpm-lock\.yaml$|package\.json$|assets/)' <<<"$changed"
+  [ -n "$changed" ] && grep -qE '^(apps/mobile/|packages/|pnpm-lock\.yaml$|package\.json$|assets/|scripts/lib/(brand-assets|public-config)\.ts$)' <<<"$changed"
 }
 
 query="${device_arg:-$FORK_IOS_DEVICE}"

@@ -76,7 +76,7 @@ if [ "${FORK_UPDATE_LOCKED:-}" != 1 ]; then
     fi
     # Run the iOS update outside update.lock with a bounded process-group timeout so an iOS
     # build never makes the macOS Dock applet report busy or leaves hung child processes behind.
-    if [ "$was_locked" = 0 ] && [ -z "$FORK_BUILD_HOST" ] && [ -x scripts/fork/update-ios.sh ]; then
+    if [ "$was_locked" = 0 ] && [ "$locked" != 2 ] && [ -z "$FORK_BUILD_HOST" ] && [ -x scripts/fork/update-ios.sh ]; then
       case " $* " in
         *" --scheduled "*)
           perl -MPOSIX=WNOHANG -e '
@@ -88,7 +88,7 @@ if [ "${FORK_UPDATE_LOCKED:-}" != 1 ]; then
             my $stop = sub {
               kill "TERM", -$pid;
               my $end = time + 5;
-              while (time < $end) { return if waitpid($pid, WNOHANG) == $pid; select(undef, undef, undef, 0.1); }
+              while (time < $end) { last if waitpid($pid, WNOHANG) == $pid; select(undef, undef, undef, 0.1); }
               kill "KILL", -$pid;
             };
             $SIG{ALRM} = sub { $timed_out = 1; $stop->(); };

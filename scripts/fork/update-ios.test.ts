@@ -373,5 +373,16 @@ describe.skipIf(NodeOS.platform() !== "darwin")("scripts/fork/update-ios.sh", ()
     expect(
       readLines(noDeviceFixture.pushLog).filter((line) => line.includes("--event rueckfrage")),
     ).toHaveLength(1);
+
+    // Scheduled runs refuse non-fork branches so a feature branch is never staged/installed.
+    const branchFixture = createFixture();
+    NodeChildProcess.execFileSync("git", ["checkout", "-b", "some-feature-branch"], {
+      cwd: branchFixture.repo,
+      stdio: "pipe",
+    });
+    const wrongBranchRun = runUpdateIos(branchFixture, ["--scheduled"], { TEST_NOW_HOUR: "03" });
+    expect(wrongBranchRun.exitCode).toBe(2);
+    expect(readLines(branchFixture.buildLog)).toEqual([]);
+    expect(readLines(branchFixture.installLog)).toEqual([]);
   });
 });

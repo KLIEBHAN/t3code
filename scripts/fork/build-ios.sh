@@ -237,6 +237,7 @@ if [ ! -f node_modules/.modules.yaml ] || [ pnpm-lock.yaml -nt node_modules/.mod
   vp install --frozen-lockfile
 fi
 
+commit="$(git rev-parse HEAD)"
 fingerprint="$(prebuild_fingerprint)"
 stamp_file="apps/mobile/ios/.fork-prebuild.sha256"
 workspace="apps/mobile/ios/T3CodeFork.xcworkspace"
@@ -302,7 +303,6 @@ if [ ! -d "$built_app" ]; then
   exit 1
 fi
 
-commit="$(git rev-parse HEAD)"
 built_at="$(date +%s)"
 version="$(plutil -extract CFBundleShortVersionString raw "$built_app/Info.plist" 2>/dev/null || true)"
 profile_expires="$(fork_ios_profile_expires "$built_app")"
