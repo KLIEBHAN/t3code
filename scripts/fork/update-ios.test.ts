@@ -235,6 +235,8 @@ function runForkScript(
       cwd: fixture.repo,
       env: {
         ...process.env,
+        // A test run inside a scheduled update.sh inherits its lock marker; each fixture takes its own lock.
+        FORK_UPDATE_LOCKED: "",
         PATH: `${fixture.binDir}:/usr/bin:/bin:/usr/sbin:/sbin`,
         VP_ENV: NodePath.join(fixture.root, "vp-env.sh"),
         FORK_STATE_DIR: fixture.stateDir,
