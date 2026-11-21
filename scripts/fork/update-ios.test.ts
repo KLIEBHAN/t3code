@@ -1,4 +1,4 @@
-// Fork: behavioral tests for scripts/fork/update-ios.sh scheduling, renewal, install, and warnings.
+// Fork: behavioral tests for iOS update scheduling, renewal, branch guards, locking, and warnings.
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
@@ -7,7 +7,9 @@ import { afterEach, describe, expect, it } from "vite-plus/test";
 
 const REPO_ROOT = NodePath.resolve(import.meta.dirname, "../..");
 const CONFIG_SH = NodePath.join(REPO_ROOT, "scripts/fork/config.sh");
+const BUILD_IOS_SH = NodePath.join(REPO_ROOT, "scripts/fork/build-ios.sh");
 const UPDATE_IOS_SH = NodePath.join(REPO_ROOT, "scripts/fork/update-ios.sh");
+const UPDATE_SH = NodePath.join(REPO_ROOT, "scripts/fork/update.sh");
 const FIXED_NOW = 1_800_000_000;
 
 interface Fixture {
@@ -18,6 +20,7 @@ interface Fixture {
   readonly buildLog: string;
   readonly installLog: string;
   readonly pushLog: string;
+  readonly iosUpdateLog: string;
 }
 
 const tempRoots: string[] = [];
@@ -39,6 +42,8 @@ function createFixture(
     readonly installShouldFail?: boolean;
     readonly renewedExpires?: number;
     readonly devicesJson?: string;
+    readonly realBuildScript?: boolean;
+    readonly realUpdateScript?: boolean;
   } = {},
 ): Fixture {
   const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "fork-update-ios-test-"));
@@ -49,6 +54,7 @@ function createFixture(
   const buildLog = NodePath.join(root, "build.log");
   const installLog = NodePath.join(root, "install.log");
   const pushLog = NodePath.join(root, "push.log");
+  const iosUpdateLog = NodePath.join(root, "ios-update.log");
 
   NodeFS.mkdirSync(NodePath.join(repo, "scripts/fork"), { recursive: true });
   NodeFS.mkdirSync(NodePath.join(repo, "apps/mobile"), { recursive: true });
@@ -56,22 +62,59 @@ function createFixture(
   NodeFS.mkdirSync(NodePath.join(stateDir, "push/bark/scripts"), { recursive: true });
   NodeFS.mkdirSync(binDir, { recursive: true });
 
-  // Copy the real config.sh and update-ios.sh under test into the scratch git repo.
+  // Copy the real config.sh and selected fork scripts under test into the scratch git repo.
   NodeFS.writeFileSync(
     NodePath.join(repo, "scripts/fork/config.sh"),
     NodeFS.readFileSync(CONFIG_SH, "utf8"),
   );
-  writeExecutable(
-    NodePath.join(repo, "scripts/fork/update-ios.sh"),
-    NodeFS.readFileSync(UPDATE_IOS_SH, "utf8"),
-  );
+  if (options.realUpdateScript) {
+    writeExecutable(
+      NodePath.join(repo, "scripts/fork/update.sh"),
+      NodeFS.readFileSync(UPDATE_SH, "utf8"),
+    );
+    writeExecutable(
+      NodePath.join(repo, "scripts/fork/update-ios.sh"),
+      `#!/usr/bin/env bash
+set -euo pipefail
+if lockf -s -k -t 0 "$FORK_STATE_DIR/update.lock" true 2>/dev/null; then
+  lock_state="unlocked"
+else
+  lock_state="locked"
+fi
+echo "\${lock_state}:$*" >> "${iosUpdateLog}"
+`,
+    );
+    writeExecutable(
+      NodePath.join(repo, "scripts/fork/sync-upstream.sh"),
+      "#!/usr/bin/env bash\nexit 0\n",
+    );
+    writeExecutable(
+      NodePath.join(repo, "scripts/fork/build-app.sh"),
+      "#!/usr/bin/env bash\nexit 0\n",
+    );
+    writeExecutable(
+      NodePath.join(repo, "scripts/fork/install-applet.sh"),
+      "#!/usr/bin/env bash\nexit 0\n",
+    );
+  } else {
+    writeExecutable(
+      NodePath.join(repo, "scripts/fork/update-ios.sh"),
+      NodeFS.readFileSync(UPDATE_IOS_SH, "utf8"),
+    );
+  }
 
-  // Stub build-ios.sh: records invocations and stages a synthetic bundle + meta.env.
+  // Copy the real build-ios.sh when testing its lockf wrapper; otherwise stub staging.
   const renewedExpires = options.renewedExpires ?? FIXED_NOW + 7 * 86_400;
   const buildExitCode = options.buildExitCode ?? 0;
-  writeExecutable(
-    NodePath.join(repo, "scripts/fork/build-ios.sh"),
-    `#!/usr/bin/env bash
+  if (options.realBuildScript) {
+    writeExecutable(
+      NodePath.join(repo, "scripts/fork/build-ios.sh"),
+      NodeFS.readFileSync(BUILD_IOS_SH, "utf8"),
+    );
+  } else {
+    writeExecutable(
+      NodePath.join(repo, "scripts/fork/build-ios.sh"),
+      `#!/usr/bin/env bash
 set -euo pipefail
 echo "$*" >> "${buildLog}"
 ${buildExitCode !== 0 ? `exit ${buildExitCode}` : ""}
@@ -86,9 +129,10 @@ team_id=TEAMTEST01
 bundle_id=com.kliebhan.t3code-fork
 EOF
 `,
-  );
+    );
+  }
 
-  // Stub deterministic date, pod, and xcrun (devicectl list/install) on PATH.
+  // Stub deterministic date, pod, osascript, and xcrun (devicectl list/install) on PATH.
   writeExecutable(
     NodePath.join(binDir, "date"),
     `#!/usr/bin/env bash
@@ -101,6 +145,7 @@ esac
 `,
   );
   writeExecutable(NodePath.join(binDir, "pod"), "#!/usr/bin/env bash\nexit 0\n");
+  writeExecutable(NodePath.join(binDir, "osascript"), "#!/usr/bin/env bash\nexit 0\n");
   const defaultDevicesJson = JSON.stringify({
     result: {
       devices: [
@@ -173,16 +218,17 @@ echo "$*" >> "${pushLog}"
   git(["add", "."]);
   git(["commit", "-m", "initial"]);
 
-  return { root, repo, stateDir, binDir, buildLog, installLog, pushLog };
+  return { root, repo, stateDir, binDir, buildLog, installLog, pushLog, iosUpdateLog };
 }
 
-function runUpdateIos(
+function runForkScript(
   fixture: Fixture,
+  scriptPath: string,
   args: string[],
   extraEnv: Record<string, string> = {},
 ): { readonly exitCode: number; readonly output: string } {
   try {
-    const output = NodeChildProcess.execFileSync("bash", ["scripts/fork/update-ios.sh", ...args], {
+    const output = NodeChildProcess.execFileSync("bash", [scriptPath, ...args], {
       cwd: fixture.repo,
       env: {
         ...process.env,
@@ -204,6 +250,60 @@ function runUpdateIos(
       exitCode: failed.status ?? 1,
       output: `${failed.stdout ?? ""}${failed.stderr ?? ""}`,
     };
+  }
+}
+
+function runUpdateIos(
+  fixture: Fixture,
+  args: string[],
+  extraEnv: Record<string, string> = {},
+): { readonly exitCode: number; readonly output: string } {
+  return runForkScript(fixture, "scripts/fork/update-ios.sh", args, extraEnv);
+}
+
+// Holds a real macOS lockf lock until fn finishes, using stdout readiness instead of polling.
+async function withFileLock<T>(lockPath: string, fn: () => T | Promise<T>): Promise<T> {
+  NodeFS.mkdirSync(NodePath.dirname(lockPath), { recursive: true });
+  const holder = NodeChildProcess.spawn(
+    "lockf",
+    ["-s", "-k", "-t", "0", lockPath, "sh", "-c", "printf locked; exec cat"],
+    { stdio: ["pipe", "pipe", "pipe"] },
+  );
+
+  await new Promise<void>((resolve, reject) => {
+    let stdout = "";
+    let stderr = "";
+    holder.stdout.setEncoding("utf8");
+    holder.stderr.setEncoding("utf8");
+    holder.stdout.on("data", (chunk: string) => {
+      stdout += chunk;
+      if (stdout.includes("locked")) {
+        resolve();
+      }
+    });
+    holder.stderr.on("data", (chunk: string) => {
+      stderr += chunk;
+    });
+    holder.once("error", reject);
+    holder.once("exit", (code) => {
+      if (!stdout.includes("locked")) {
+        reject(new Error(`lockf holder exited early (code ${String(code)}): ${stderr}`));
+      }
+    });
+  });
+
+  try {
+    return await fn();
+  } finally {
+    const exited = new Promise<void>((resolve) => {
+      if (holder.exitCode !== null || holder.signalCode !== null) {
+        resolve();
+        return;
+      }
+      holder.once("close", () => resolve());
+    });
+    holder.stdin.end();
+    await exited;
   }
 }
 
@@ -373,16 +473,118 @@ describe.skipIf(NodeOS.platform() !== "darwin")("scripts/fork/update-ios.sh", ()
     expect(
       readLines(noDeviceFixture.pushLog).filter((line) => line.includes("--event rueckfrage")),
     ).toHaveLength(1);
+  });
 
-    // Scheduled runs refuse non-fork branches so a feature branch is never staged/installed.
-    const branchFixture = createFixture();
+  it("enforces branch guards for scheduled runs while allowing manual --now builds", () => {
+    // update-ios.sh refuses --scheduled (alone or with --now) on a non-fork branch,
+    // while allowing manual --now builds so feature branches can still be tested on device.
+    const iosFixture = createFixture();
     NodeChildProcess.execFileSync("git", ["checkout", "-b", "some-feature-branch"], {
-      cwd: branchFixture.repo,
+      cwd: iosFixture.repo,
       stdio: "pipe",
     });
-    const wrongBranchRun = runUpdateIos(branchFixture, ["--scheduled"], { TEST_NOW_HOUR: "03" });
-    expect(wrongBranchRun.exitCode).toBe(2);
-    expect(readLines(branchFixture.buildLog)).toEqual([]);
-    expect(readLines(branchFixture.installLog)).toEqual([]);
+    const featureHead = commitChange(
+      iosFixture.repo,
+      "apps/mobile/index.ts",
+      "export const v = 3;\n",
+    );
+
+    const scheduledRun = runUpdateIos(iosFixture, ["--scheduled"], { TEST_NOW_HOUR: "03" });
+    expect(scheduledRun.exitCode).toBe(2);
+    expect(scheduledRun.output).toContain("check out pi-prompt-suggestions first");
+    expect(readLines(iosFixture.buildLog)).toEqual([]);
+    expect(readLines(iosFixture.installLog)).toEqual([]);
+
+    const scheduledNowRun = runUpdateIos(iosFixture, ["--scheduled", "--now"], {
+      TEST_NOW_HOUR: "03",
+    });
+    expect(scheduledNowRun.exitCode).toBe(2);
+    expect(readLines(iosFixture.buildLog)).toEqual([]);
+    expect(readLines(iosFixture.installLog)).toEqual([]);
+
+    const manualNowRun = runUpdateIos(iosFixture, ["--now"], { TEST_NOW_HOUR: "14" });
+    expect(manualNowRun.exitCode).toBe(0);
+    expect(readLines(iosFixture.buildLog)).toEqual(["--stage"]);
+    expect(readLines(iosFixture.installLog)).toHaveLength(1);
+    expect(
+      NodeFS.readFileSync(NodePath.join(iosFixture.stateDir, "ios-installed.env"), "utf8"),
+    ).toContain(`commit=${featureHead}`);
+
+    // update.sh --scheduled must not invoke update-ios.sh when its own branch guard exits 2.
+    const updateFixture = createFixture({ realUpdateScript: true });
+    NodeChildProcess.execFileSync("git", ["checkout", "-b", "some-feature-branch"], {
+      cwd: updateFixture.repo,
+      stdio: "pipe",
+    });
+    const updateWrongBranch = runForkScript(
+      updateFixture,
+      "scripts/fork/update.sh",
+      ["--scheduled"],
+      { TEST_NOW_HOUR: "14" },
+    );
+    expect(updateWrongBranch.exitCode).toBe(2);
+    expect(updateWrongBranch.output).toContain("check out pi-prompt-suggestions first");
+    expect(readLines(updateFixture.iosUpdateLog)).toEqual([]);
+  });
+
+  it("serializes update-ios.sh, build-ios.sh, and update.sh with lockf and runs iOS outside update.lock", async () => {
+    // 1. Holding update-ios.lock causes update-ios.sh to exit 0 cleanly without building or pushing.
+    const iosLockFixture = createFixture();
+    await withFileLock(NodePath.join(iosLockFixture.stateDir, "update-ios.lock"), () => {
+      const result = runUpdateIos(iosLockFixture, ["--scheduled"], { TEST_NOW_HOUR: "14" });
+      expect(result.exitCode).toBe(0);
+      expect(result.output).toContain("update-ios: another run is active");
+      expect(readLines(iosLockFixture.buildLog)).toEqual([]);
+      expect(readLines(iosLockFixture.installLog)).toEqual([]);
+      expect(readLines(iosLockFixture.pushLog)).toEqual([]);
+    });
+
+    // 2. Holding build-ios.lock makes build-ios.sh exit 75, and update-ios.sh treats it as non-fatal.
+    const buildLockFixture = createFixture({ realBuildScript: true });
+    await withFileLock(NodePath.join(buildLockFixture.stateDir, "build-ios.lock"), () => {
+      const directBuild = runForkScript(buildLockFixture, "scripts/fork/build-ios.sh", ["--stage"]);
+      expect(directBuild.exitCode).toBe(75);
+      expect(directBuild.output).toContain("build-ios: another iOS build is already running");
+
+      const scheduledIos = runUpdateIos(buildLockFixture, ["--scheduled"], { TEST_NOW_HOUR: "14" });
+      expect(scheduledIos.exitCode).toBe(0);
+      expect(scheduledIos.output).toContain("another iOS build is already running; skipping");
+      expect(readLines(buildLockFixture.pushLog)).toEqual([]);
+      expect(NodeFS.existsSync(NodePath.join(buildLockFixture.stateDir, "ios-build-failed"))).toBe(
+        false,
+      );
+    });
+
+    // 3. Holding update.lock skips update-ios.sh; once free, scheduled update.sh runs iOS unlocked.
+    const updateLockFixture = createFixture({ realUpdateScript: true });
+    const head = gitHead(updateLockFixture.repo);
+    NodeFS.writeFileSync(NodePath.join(updateLockFixture.stateDir, "last-sync"), `${FIXED_NOW}\n`);
+    NodeFS.writeFileSync(NodePath.join(updateLockFixture.stateDir, "build-failed"), `${head}\n`);
+
+    await withFileLock(NodePath.join(updateLockFixture.stateDir, "update.lock"), () => {
+      const busyRun = runForkScript(updateLockFixture, "scripts/fork/update.sh", ["--scheduled"], {
+        TEST_NOW_HOUR: "14",
+      });
+      expect(busyRun.exitCode).toBe(0);
+      expect(busyRun.output).toContain("update: another run is active");
+      expect(readLines(updateLockFixture.iosUpdateLog)).toEqual([]);
+    });
+
+    // Non-scheduled update.sh must not trigger the scheduled iOS step.
+    const manualRun = runForkScript(updateLockFixture, "scripts/fork/update.sh", [], {
+      TEST_NOW_HOUR: "14",
+    });
+    expect(manualRun.exitCode).toBe(0);
+    expect(readLines(updateLockFixture.iosUpdateLog)).toEqual([]);
+
+    // Scheduled update.sh on the fork branch runs update-ios.sh after releasing update.lock.
+    const scheduledRun = runForkScript(
+      updateLockFixture,
+      "scripts/fork/update.sh",
+      ["--scheduled"],
+      { TEST_NOW_HOUR: "14" },
+    );
+    expect(scheduledRun.exitCode).toBe(0);
+    expect(readLines(updateLockFixture.iosUpdateLog)).toEqual(["unlocked:--scheduled"]);
   });
 });
