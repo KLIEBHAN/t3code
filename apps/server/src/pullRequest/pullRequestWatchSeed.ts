@@ -147,11 +147,14 @@ export function seedPullRequestWatch(input: {
 
   const checks = summarizeChecks(detail.checks);
   const realChecks = detail.checks.filter((check) => check.placeholder !== true);
-  // Keep a finished no-checks timeout from an earlier watch on the same head.
-  const endedHadNoChecksTimeout =
+  const sameEndedHead =
     endedWatch !== undefined &&
     endedWatch.headSha !== null &&
-    endedWatch.headSha === (detail.headSha ?? null) &&
+    endedWatch.headSha === (detail.headSha ?? null);
+  // Keep a finished no-checks timeout from an earlier watch on the same head.
+  const endedHadNoChecksTimeout =
+    sameEndedHead &&
+    endedWatch.awaitingBaseline === undefined &&
     endedWatch.checksAwaitedSince === null &&
     endedWatch.checksPending === false &&
     !endedWatch.passed &&
@@ -163,6 +166,17 @@ export function seedPullRequestWatch(input: {
       ...initialWatch,
       checksAwaitedSince: null,
       checksPending: false,
+    };
+  } else if (
+    sameEndedHead &&
+    endedWatch.checksPending === true &&
+    checks.incomplete === true &&
+    initialWatch.awaitingBaseline === "checks"
+  ) {
+    // Preserve pending CI across an incomplete placeholder read on the same head.
+    initialWatch = {
+      ...initialWatch,
+      checksPending: true,
     };
   }
   const runningCount = realChecks.filter((check) => check.status === "pending").length;
