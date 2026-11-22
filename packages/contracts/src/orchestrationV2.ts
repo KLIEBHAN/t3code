@@ -3472,6 +3472,8 @@ export const OrchestrationV2Command = Schema.Union([
     until: Schema.optional(PullRequestWatchUntil),
     /** Whether CI was pending with no failure yet when the watch started, so any failure is news. */
     checksPending: Schema.optional(Schema.Boolean),
+    /** Fork: pre-seeded baseline from a fresh watch-start read, avoiding the baseline race window. */
+    initialWatch: Schema.optional(ThreadPullRequestWatch),
     link: Schema.optional(
       Schema.Struct({
         url: TrimmedNonEmptyString,

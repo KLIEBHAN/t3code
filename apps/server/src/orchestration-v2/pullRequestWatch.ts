@@ -94,7 +94,10 @@ export function evaluatePullRequestWatch(
       changes.push({ kind: "checks-failed", failed: newlyFailed });
     }
     if (!approvalAnnounced && awaiting.length > 0) {
-      if (!checksBaseline) changes.push({ kind: "checks-awaiting-approval", checks: awaiting });
+      // Fork: match checks-failed when CI was pending at start and hit approval before baseline.
+      if (!checksBaseline || watch.checksPending === true) {
+        changes.push({ kind: "checks-awaiting-approval", checks: awaiting });
+      }
       approvalAnnounced = true;
     }
     failedChecks = failed.map((check) => check.name);
@@ -154,7 +157,8 @@ export function evaluatePullRequestWatch(
       checks.every((check) => check.status !== "pending");
     owedChecks = owed;
     if (passedNow && (!passed || gateGrew)) {
-      if (!checksBaseline) {
+      // Fork: match checks-failed when CI was pending at start and passed before baseline.
+      if (!checksBaseline || watch.checksPending === true) {
         changes.push({ kind: "checks-passed", count: gate.length, required: required.length > 0 });
       }
       owedChecks =
@@ -365,7 +369,7 @@ function withoutMarkup(body: string): string {
   return parts.join("\n");
 }
 
-function snippet(body: string): string {
+export function snippet(body: string): string {
   const text = withoutMarkup(body.replaceAll(/<!--[\s\S]*?-->/g, " "))
     .replaceAll(/\s+/g, " ")
     .trim();

@@ -4,7 +4,9 @@ import {
   ThreadId,
   PullRequestOperationError,
   PullRequestUnavailableError,
-  type PullRequestSummary,
+  type PullRequestActivity,
+  type PullRequestCheck,
+  type PullRequestDetail,
   type OrchestrationV2ServerCommand as OrchestrationCommand,
   type OrchestrationProjectShell,
   type ThreadPullRequestLink,
@@ -113,14 +115,17 @@ interface HarnessOptions {
   readonly thread?: PullRequestTestThread | null;
   readonly project?: OrchestrationProjectShell | null;
   readonly readFailure?: PullRequestService.PullRequestError;
-  readonly readState?: PullRequestSummary["state"];
-  readonly readChecksState?: PullRequestSummary["checksState"];
+  readonly activityFailure?: PullRequestService.PullRequestError;
+  readonly readState?: PullRequestDetail["state"];
+  readonly readChecks?: ReadonlyArray<PullRequestCheck>;
+  readonly readActivity?: PullRequestActivity;
 }
 
 const makeHarness = Effect.fn("makePullRequestWatchHarness")(function* (
   options: HarnessOptions = {},
 ) {
   const commands = yield* Ref.make<ReadonlyArray<OrchestrationCommand>>([]);
+  const invalidations = yield* Ref.make(0);
   const thread = options.thread === undefined ? makeThread([]) : options.thread;
   const project = options.project === undefined ? makeProject() : options.project;
   const dependencies = Layer.mergeAll(
@@ -136,22 +141,74 @@ const makeHarness = Effect.fn("makePullRequestWatchHarness")(function* (
         ),
     }),
     Layer.mock(PullRequestService.PullRequestService)({
-      summary: (input) =>
+      invalidate: () => Ref.update(invalidations, (count) => count + 1),
+      detail: (input) =>
         options.readFailure !== undefined
           ? Effect.fail(options.readFailure)
           : Effect.succeed({
-              ...input,
               provider: SourceControlProviderKind.make("github"),
+              capabilities: {
+                diff: true,
+                comment: true,
+                actions: ["merge", "close"],
+                mergeMethods: ["merge", "squash"],
+                search: false,
+                checksAlwaysReport: true,
+                review: {
+                  inlineComment: true,
+                  reply: true,
+                  resolve: true,
+                  verdicts: ["approve", "comment"],
+                },
+                reviewers: { request: true, listCandidates: false },
+              },
+              viewerPermissions: {
+                actions: ["merge", "close"],
+                comment: true,
+                resolve: true,
+                verdicts: ["approve", "comment"],
+                requestReviewers: true,
+              },
+              projectId: input.projectId,
+              projectTitle: "Project",
+              workspaceRoot: "/workspace/project",
+              repository: input.repository,
+              number: input.number,
               title: "Pull request",
+              body: "",
               url: `https://github.com/${input.repository}/pull/${input.number}`,
+              author: { login: "author", name: null, avatarUrl: null },
               state: options.readState ?? "open",
-              ...(options.readChecksState !== undefined && {
-                checksState: options.readChecksState,
-              }),
+              isDraft: false,
+              mergeability: "mergeable",
+              additions: 1,
+              deletions: 0,
+              changedFiles: 1,
               headBranch: "feature",
+              headSha: "abc1234def",
               baseBranch: "main",
+              createdAt: "2026-08-20T00:00:00.000Z",
               updatedAt: "2026-08-20T00:00:00.000Z",
+              mergedAt: null,
+              closedAt: null,
+              reviewers: [],
+              labels: [],
+              checks: options.readChecks ?? [],
+              mergeCapabilities: { merge: true, squash: true, rebase: true },
+              viewer: "author",
             }),
+      activity: () =>
+        options.activityFailure !== undefined
+          ? Effect.fail(options.activityFailure)
+          : Effect.succeed(
+              options.readActivity ?? {
+                comments: [],
+                commentCount: 0,
+                commentsTruncated: false,
+                reviewThreads: [],
+                commits: [],
+              },
+            ),
     }),
     Layer.succeed(SecureRandom.SecureRandom, testCrypto),
   );
@@ -160,48 +217,88 @@ const makeHarness = Effect.fn("makePullRequestWatchHarness")(function* (
   );
   return {
     commands,
+    invalidations,
     setWatching: (watching: boolean, target: PullRequestTarget) =>
       service.setWatching({ threadId: THREAD_ID, target, watching }),
   };
 });
 
+const check = (name: string, status: PullRequestCheck["status"]): PullRequestCheck => ({
+  name,
+  status,
+  description: null,
+  url: null,
+});
+
 describe("PullRequestWatchService", () => {
-  it.effect("links an unlinked watch even while the host has a transient read failure", () =>
+  it.effect(
+    "links an unlinked watch, seeds initialWatch from fresh detail, and tolerates transient read failures",
+    () =>
+      Effect.gen(function* () {
+        const cases: ReadonlyArray<readonly [HarnessOptions, boolean | undefined, boolean]> = [
+          [{ readChecks: [check("ci", "pending")] }, true, true],
+          [{ readChecks: [check("ci", "failure")] }, false, true],
+          [{ readChecks: [check("ci", "success")] }, false, true],
+          [{ readChecks: [] }, true, true],
+          [
+            {
+              readFailure: new PullRequestOperationError({
+                operation: "detail",
+                detail: "The host is temporarily unavailable.",
+              }),
+            },
+            undefined,
+            false,
+          ],
+        ];
+        for (const [options, checksPending, hasInitialWatch] of cases) {
+          const harness = yield* makeHarness(options);
+          const result = yield* harness.setWatching(true, {
+            url: "https://github.com/t3tools/t3code/pull/9",
+          });
+          expect(result).toMatchObject({ number: 9, wasWatching: false });
+          expect(yield* Ref.get(harness.invalidations)).toBe(1);
+          const commands = yield* Ref.get(harness.commands);
+          expect(commands).toMatchObject([
+            {
+              type: "thread.pull-request.watch",
+              number: 9,
+              watching: true,
+              link: { url: "https://github.com/t3tools/t3code/pull/9", source: "agent" },
+            },
+          ]);
+          const [command] = commands;
+          expect(command?.type === "thread.pull-request.watch" ? command.checksPending : null).toBe(
+            checksPending,
+          );
+          expect(
+            command?.type === "thread.pull-request.watch" && command.initialWatch !== undefined,
+          ).toBe(hasInitialWatch);
+        }
+      }),
+  );
+
+  it.effect("still seeds check baseline when activity read fails transiently", () =>
     Effect.gen(function* () {
-      const cases: ReadonlyArray<readonly [HarnessOptions, boolean | undefined]> = [
-        [{ readChecksState: "pending" }, true],
-        [{ readChecksState: "failing" }, false],
-        [{}, false],
-        [
-          {
-            readFailure: new PullRequestOperationError({
-              operation: "summary",
-              detail: "The host is temporarily unavailable.",
-            }),
-          },
-          undefined,
-        ],
-      ];
-      for (const [options, checksPending] of cases) {
-        const harness = yield* makeHarness(options);
-        const result = yield* harness.setWatching(true, {
-          url: "https://github.com/t3tools/t3code/pull/9",
-        });
-        expect(result).toMatchObject({ number: 9, wasWatching: false });
-        const commands = yield* Ref.get(harness.commands);
-        expect(commands).toMatchObject([
-          {
-            type: "thread.pull-request.watch",
-            number: 9,
-            watching: true,
-            link: { url: "https://github.com/t3tools/t3code/pull/9", source: "agent" },
-          },
-        ]);
-        const [command] = commands;
-        expect(command?.type === "thread.pull-request.watch" ? command.checksPending : null).toBe(
-          checksPending,
-        );
-      }
+      const harness = yield* makeHarness({
+        readChecks: [check("ci", "success")],
+        activityFailure: new PullRequestOperationError({
+          operation: "activity",
+          detail: "comments temporarily unavailable",
+        }),
+      });
+      const result = yield* harness.setWatching(true, {
+        url: "https://github.com/t3tools/t3code/pull/9",
+      });
+      expect(result).toMatchObject({
+        number: 9,
+        checks: { passed: 1, pending: 0, failed: [] },
+        next: expect.stringContaining("all 1 check passed"),
+      });
+      const [command] = yield* Ref.get(harness.commands);
+      expect(command?.type === "thread.pull-request.watch" && command.initialWatch?.passed).toBe(
+        true,
+      );
     }),
   );
 
