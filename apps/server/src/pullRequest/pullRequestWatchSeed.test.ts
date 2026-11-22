@@ -273,8 +273,8 @@ describe("seedPullRequestWatch", () => {
     }
   });
 
-  it("preserves a finished no-checks timeout from endedWatch on the same head", () => {
-    const endedWatch: ThreadPullRequestWatch = {
+  it("preserves a finished no-checks timeout only when endedWatch completed a no-checks wait and checks are complete", () => {
+    const timedOutWatch: ThreadPullRequestWatch = {
       startedAt: "2026-11-22T17:00:00.000Z",
       headSha: "e7cf68c111",
       failedChecks: [],
@@ -287,13 +287,49 @@ describe("seedPullRequestWatch", () => {
       checksAwaitedSince: null,
       checksPending: false,
     };
-    const seeded = seedPullRequestWatch({
+    const timedOutSeeded = seedPullRequestWatch({
       detail: makeDetail({ headSha: "e7cf68c111", checks: [] }),
       activity: emptyActivity,
-      endedWatch,
+      endedWatch: timedOutWatch,
       nowMs: NOW_MS,
     });
-    assert.isNull(seeded.initialWatch.checksAwaitedSince);
-    assert.isFalse(seeded.initialWatch.checksPending);
+    assert.isNull(timedOutSeeded.initialWatch.checksAwaitedSince);
+    assert.isFalse(timedOutSeeded.initialWatch.checksPending);
+
+    // Pending CI followed by a placeholder-only read must keep checksPending true and baseline open.
+    const pendingWatch: ThreadPullRequestWatch = {
+      ...timedOutWatch,
+      checksPending: true,
+    };
+    const placeholder = check("Workflow approval status", "pending", { placeholder: true });
+    const pendingPlaceholder = seedPullRequestWatch({
+      detail: makeDetail({ headSha: "e7cf68c111", checks: [placeholder] }),
+      activity: emptyActivity,
+      endedWatch: pendingWatch,
+      nowMs: NOW_MS,
+    });
+    assert.isTrue(pendingPlaceholder.initialWatch.checksPending);
+    assert.equal(pendingPlaceholder.initialWatch.awaitingBaseline, "checks");
+    assert.equal(pendingPlaceholder.snapshot.checks?.incomplete, true);
+
+    // Even after a genuine no-checks timeout, a placeholder-only read cannot confirm completion.
+    const timedOutPlaceholder = seedPullRequestWatch({
+      detail: makeDetail({ headSha: "e7cf68c111", checks: [placeholder] }),
+      activity: emptyActivity,
+      endedWatch: timedOutWatch,
+      nowMs: NOW_MS,
+    });
+    assert.isTrue(timedOutPlaceholder.initialWatch.checksPending);
+    assert.equal(timedOutPlaceholder.initialWatch.awaitingBaseline, "checks");
+
+    // Previously passed checks with a null clock must not be mistaken for a no-checks timeout.
+    const passedEmpty = seedPullRequestWatch({
+      detail: makeDetail({ headSha: "e7cf68c111", checks: [] }),
+      activity: emptyActivity,
+      endedWatch: { ...timedOutWatch, passed: true, passedChecks: ["pytest"] },
+      nowMs: NOW_MS,
+    });
+    assert.isTrue(passedEmpty.initialWatch.checksPending);
+    assert.isNotNull(passedEmpty.initialWatch.checksAwaitedSince);
   });
 });

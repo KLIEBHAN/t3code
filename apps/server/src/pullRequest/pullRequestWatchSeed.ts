@@ -145,22 +145,26 @@ export function seedPullRequestWatch(input: {
     wakes: 0,
   };
 
+  const checks = summarizeChecks(detail.checks);
   const realChecks = detail.checks.filter((check) => check.placeholder !== true);
   // Keep a finished no-checks timeout from an earlier watch on the same head.
-  if (
-    realChecks.length === 0 &&
+  const endedHadNoChecksTimeout =
     endedWatch !== undefined &&
+    endedWatch.headSha !== null &&
     endedWatch.headSha === (detail.headSha ?? null) &&
-    endedWatch.checksAwaitedSince === null
-  ) {
+    endedWatch.checksAwaitedSince === null &&
+    endedWatch.checksPending === false &&
+    !endedWatch.passed &&
+    endedWatch.failedChecks.length === 0 &&
+    endedWatch.passedChecks.length === 0 &&
+    (endedWatch.awaitingApproval?.length ?? 0) === 0;
+  if (realChecks.length === 0 && checks.incomplete !== true && endedHadNoChecksTimeout) {
     initialWatch = {
       ...initialWatch,
       checksAwaitedSince: null,
       checksPending: false,
     };
   }
-
-  const checks = summarizeChecks(detail.checks);
   const runningCount = realChecks.filter((check) => check.status === "pending").length;
   const awaitingApprovalCount = realChecks.filter(
     (check) => check.status === "action-required",
