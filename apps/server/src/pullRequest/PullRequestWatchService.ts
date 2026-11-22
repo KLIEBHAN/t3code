@@ -6,6 +6,7 @@ import {
   type PullRequestWatchUntil,
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
+import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
@@ -22,6 +23,11 @@ import {
   type PullRequestTargetError,
   type ResolvedTarget,
 } from "./pullRequestTarget.ts";
+import {
+  seedPullRequestWatch,
+  type SeededPullRequestWatch,
+  type WatchPullRequestSnapshot,
+} from "./pullRequestWatchSeed.ts";
 import {
   threadPullRequestKeysEqual,
   threadPullRequestsOf,
@@ -63,12 +69,13 @@ export class PullRequestWatchService extends Context.Service<
       readonly watching: boolean;
       readonly until?: PullRequestWatchUntil | undefined;
     }) => Effect.Effect<
-      ResolvedTarget & {
-        readonly watching: boolean;
-        readonly wasWatching: boolean;
-        /** Set when the PR already ended, so no watch was registered. */
-        readonly state?: "merged" | "closed";
-      },
+      ResolvedTarget &
+        WatchPullRequestSnapshot & {
+          readonly watching: boolean;
+          readonly wasWatching: boolean;
+          /** Set when the PR already ended, so no watch was registered. */
+          readonly state?: "merged" | "closed";
+        },
       | PullRequestWatchFailedError
       | PullRequestWatchFromSubagentError
       | PullRequestWatchThreadNotFoundError
@@ -128,29 +135,38 @@ const make = Effect.gen(function* () {
     });
     // A closed snapshot still gets a read below, since the PR may have reopened.
     if (watching && before?.snapshot?.state === "merged") return alreadyEnded("merged");
-    // A pending rollup has no failure yet, so any failure the first read finds is news.
-    let checksPendingAtStart: boolean | undefined;
+    // Fork: read fresh detail and activity at watch start to seed baseline and return current state.
+    let seeded: SeededPullRequestWatch | undefined;
     if (watching && !wasWatching) {
-      const read = yield* pullRequests
-        .summary(
-          {
-            projectId: thread.projectId,
-            host: target.host,
-            repository: target.repository,
-            number: target.number,
-            allowStale: false,
-          },
-          { recoverTransientFailure: false, bypassCache: true },
-        )
-        .pipe(
-          Effect.catchTags({
-            // Host and transport errors can recover while the watch is active.
-            // A failed read leaves the seed to the link's last sync.
-            PullRequestOperationError: () => Effect.undefined,
-          }),
-        );
-      if (read?.state === "merged" || read?.state === "closed") return alreadyEnded(read.state);
-      checksPendingAtStart = read === undefined ? undefined : read.checksState === "pending";
+      const ref = {
+        projectId: thread.projectId,
+        host: target.host,
+        repository: target.repository,
+        number: target.number,
+      };
+      yield* pullRequests.invalidate({ reference: ref });
+      const detailRead = pullRequests.detail({ ...ref, allowStale: false }).pipe(
+        Effect.catchTags({
+          // Host and transport errors can recover while the watch is active.
+          PullRequestOperationError: () => Effect.undefined,
+        }),
+      );
+      const activityRead = pullRequests
+        .activity(ref)
+        .pipe(Effect.option, Effect.map(Option.getOrUndefined));
+      const [detail, activity] = yield* Effect.all([detailRead, activityRead], { concurrency: 2 });
+      if (detail?.state === "merged" || detail?.state === "closed") {
+        return alreadyEnded(detail.state);
+      }
+      if (detail !== undefined) {
+        const nowMs = yield* Clock.currentTimeMillis;
+        seeded = seedPullRequestWatch({
+          detail,
+          activity,
+          endedWatch: before?.endedWatch,
+          nowMs,
+        });
+      }
     }
     const uuid = yield* random.uuidV4().pipe(Effect.orDie);
     yield* engine
@@ -164,8 +180,13 @@ const make = Effect.gen(function* () {
         watching,
         ...(watching ? { link: { url: target.url, source: "agent" as const } } : {}),
         ...(watching && input.until !== undefined && { until: input.until }),
-        ...(watching && checksPendingAtStart !== undefined
-          ? { checksPending: checksPendingAtStart }
+        ...(watching && seeded !== undefined
+          ? {
+              initialWatch: seeded.initialWatch,
+              ...(seeded.initialWatch.checksPending !== undefined
+                ? { checksPending: seeded.initialWatch.checksPending }
+                : {}),
+            }
           : {}),
       })
       .pipe(
@@ -180,6 +201,7 @@ const make = Effect.gen(function* () {
       ...target,
       watching: watchedLink(after)?.watch !== undefined,
       wasWatching,
+      ...seeded?.snapshot,
     };
   });
 

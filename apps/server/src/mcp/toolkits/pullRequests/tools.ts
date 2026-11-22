@@ -263,6 +263,30 @@ export const WatchPullRequestResult = Schema.Struct({
       description: "The PR already ended, so nothing was watched.",
     }),
   ),
+  // Fork: compact snapshot from the watch-start read so settled checks or remarks are visible at once.
+  headSha: Schema.optional(Schema.NullOr(Schema.String)),
+  checks: Schema.optional(
+    Schema.Struct({
+      passed: Schema.Int,
+      pending: Schema.Int,
+      failed: Schema.Array(Schema.String),
+      incomplete: Schema.optional(Schema.Literal(true)),
+    }),
+  ),
+  mergeability: Schema.optional(PullRequestMergeability),
+  rebaseRequired: Schema.optional(Schema.Literal(true)),
+  unresolvedThreads: Schema.optional(Schema.Int),
+  latestRemarks: Schema.optional(
+    Schema.Array(
+      Schema.Struct({
+        author: Schema.NullOr(Schema.String),
+        createdAt: Schema.String,
+        reviewState: Schema.NullOr(Schema.String),
+        snippet: Schema.String,
+        url: Schema.NullOr(Schema.String),
+      }),
+    ),
+  ),
   next: Schema.optional(Schema.String),
 });
 export type WatchPullRequestResult = typeof WatchPullRequestResult.Type;

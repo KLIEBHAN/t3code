@@ -191,7 +191,8 @@ function planRead(
       !last.remarksComplete ||
       last.fingerprint !== group.fingerprint ||
       now - last.at >= QUIET_REREAD_MS;
-    return { detail: read || checksDue, activity: read };
+    // Fork: hosts without fingerprints must also fetch remarks when checksDue fires after a push.
+    return { detail: read || checksDue, activity: read || checksDue };
   }
   const activity =
     last.remarks !== fingerprint.remarks ||
@@ -987,7 +988,10 @@ export const make = Effect.gen(function* () {
         if (event.type !== "thread.pull-request-synced") return Effect.void;
         const unread = visibleThreadPullRequests(event.payload.pullRequests ?? []).flatMap(
           (link) =>
-            link.watch === undefined || lives.has(lifeKeyOf(event.threadId, link, link.watch))
+            link.watch === undefined ||
+            // Fork: watches pre-seeded by watch_pull_request already took a fresh baseline.
+            link.watch.awaitingBaseline === undefined ||
+            lives.has(lifeKeyOf(event.threadId, link, link.watch))
               ? []
               : [threadPullRequestKeyOf(link)],
         );
