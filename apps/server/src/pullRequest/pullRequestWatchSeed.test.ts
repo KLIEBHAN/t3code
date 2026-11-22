@@ -11,6 +11,7 @@ import { assert, describe, it } from "@effect/vitest";
 import * as Schema from "effect/Schema";
 
 import { WatchPullRequestResult } from "../mcp/toolkits/pullRequests/tools.ts";
+import { evaluatePullRequestWatch } from "../orchestration-v2/pullRequestWatch.ts";
 import { EPOCH_ISO, floorWholeSecondIso, seedPullRequestWatch } from "./pullRequestWatchSeed.ts";
 
 const NOW_MS = Date.parse("2026-11-22T17:45:43.821Z");
@@ -331,5 +332,75 @@ describe("seedPullRequestWatch", () => {
     });
     assert.isTrue(passedEmpty.initialWatch.checksPending);
     assert.isNotNull(passedEmpty.initialWatch.checksAwaitedSince);
+
+    // An endedWatch that never finished its check baseline must not be treated as a completed timeout.
+    const unbaselinedEmpty = seedPullRequestWatch({
+      detail: makeDetail({ headSha: "e7cf68c111", checks: [] }),
+      activity: emptyActivity,
+      endedWatch: { ...timedOutWatch, awaitingBaseline: "checks" },
+      nowMs: NOW_MS,
+    });
+    assert.isTrue(unbaselinedEmpty.initialWatch.checksPending);
+    assert.isNotNull(unbaselinedEmpty.initialWatch.checksAwaitedSince);
+  });
+
+  it("preserves checksPending across a partial [passed, placeholder] re-seed when endedWatch was pending on the same head", () => {
+    const placeholder = check("Workflow approval status", "pending", { placeholder: true });
+    const lint = check("lint", "success");
+    const pendingEnded: ThreadPullRequestWatch = {
+      startedAt: "2026-11-22T17:00:00.000Z",
+      headSha: "e7cf68c111",
+      failedChecks: [],
+      passed: false,
+      passedChecks: [],
+      remarksThrough: "2026-11-22T17:00:00.000Z",
+      remarkIds: [],
+      conflicting: false,
+      wakes: 0,
+      checksAwaitedSince: null,
+      checksPending: true,
+    };
+
+    const partial = seedPullRequestWatch({
+      detail: makeDetail({ headSha: "e7cf68c111", checks: [lint, placeholder] }),
+      activity: emptyActivity,
+      endedWatch: pendingEnded,
+      nowMs: NOW_MS,
+    });
+    assert.isTrue(partial.initialWatch.checksPending);
+    assert.equal(partial.initialWatch.awaitingBaseline, "checks");
+
+    const gatedFail = check("gated", "failure");
+    const failedLater = evaluatePullRequestWatch(
+      partial.initialWatch,
+      makeDetail({ headSha: "e7cf68c111", checks: [lint, gatedFail] }),
+      [],
+      NOW_MS + 60_000,
+    );
+    assert.deepEqual(failedLater.changes, [{ kind: "checks-failed", failed: [gatedFail] }]);
+
+    const passedLater = evaluatePullRequestWatch(
+      partial.initialWatch,
+      makeDetail({ headSha: "e7cf68c111", checks: [lint, check("gated", "success")] }),
+      [],
+      NOW_MS + 60_000,
+    );
+    assert.deepEqual(passedLater.changes, [{ kind: "checks-passed", count: 2, required: false }]);
+
+    // Without a pending endedWatch on the same head, a partial read does not fabricate checksPending.
+    for (const endedWatch of [
+      undefined,
+      { ...pendingEnded, headSha: "other-head" },
+      { ...pendingEnded, checksPending: false },
+    ]) {
+      const seeded = seedPullRequestWatch({
+        detail: makeDetail({ headSha: "e7cf68c111", checks: [lint, placeholder] }),
+        activity: emptyActivity,
+        endedWatch,
+        nowMs: NOW_MS,
+      });
+      assert.isFalse(seeded.initialWatch.checksPending);
+      assert.equal(seeded.initialWatch.awaitingBaseline, "checks");
+    }
   });
 });
