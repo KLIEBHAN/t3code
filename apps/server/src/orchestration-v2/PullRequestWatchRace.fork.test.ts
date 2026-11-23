@@ -22,7 +22,6 @@ import * as Layer from "effect/Layer";
 import * as TestClock from "effect/testing/TestClock";
 
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
-import * as ProjectService from "../project/ProjectService.ts";
 import * as PullRequestService from "../pullRequest/PullRequestService.ts";
 import * as PullRequestWatchService from "../pullRequest/PullRequestWatchService.ts";
 import * as ServerSettings from "../serverSettings.ts";
@@ -234,6 +233,7 @@ describe("pull request watch race fixes", () => {
         };
 
         const pullRequestLayer = Layer.mock(PullRequestService.PullRequestService)({
+          addressedProject: () => Effect.succeed(forgejoProject),
           invalidate: () => Effect.void,
           watchFingerprint: () => Effect.succeed(null),
           summary: () =>
@@ -255,15 +255,7 @@ describe("pull request watch race fixes", () => {
         });
 
         const serviceLayer = PullRequestWatchService.layer.pipe(
-          Layer.provide(
-            Layer.mergeAll(
-              Layer.mock(ProjectService.ProjectService)({
-                getShell: () => Effect.succeedSome(forgejoProject),
-              }),
-              pullRequestLayer,
-              NodeCrypto.layer,
-            ),
-          ),
+          Layer.provide(Layer.mergeAll(pullRequestLayer, NodeCrypto.layer)),
         );
 
         const result = yield* PullRequestWatchService.PullRequestWatchService.pipe(
@@ -346,6 +338,7 @@ describe("pull request watch race fixes", () => {
         let comments: ReadonlyArray<PullRequestComment> = [];
 
         const pullRequestLayer = Layer.mock(PullRequestService.PullRequestService)({
+          addressedProject: () => Effect.succeed(forgejoProject),
           invalidate: () => Effect.void,
           watchFingerprint: () => Effect.succeed(null),
           summary: () =>
@@ -372,15 +365,7 @@ describe("pull request watch race fixes", () => {
         });
 
         const serviceLayer = PullRequestWatchService.layer.pipe(
-          Layer.provide(
-            Layer.mergeAll(
-              Layer.mock(ProjectService.ProjectService)({
-                getShell: () => Effect.succeedSome(forgejoProject),
-              }),
-              pullRequestLayer,
-              NodeCrypto.layer,
-            ),
-          ),
+          Layer.provide(Layer.mergeAll(pullRequestLayer, NodeCrypto.layer)),
         );
 
         const result = yield* PullRequestWatchService.PullRequestWatchService.pipe(
