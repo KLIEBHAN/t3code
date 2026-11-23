@@ -1,6 +1,7 @@
 import type {
   PullRequestActivity,
   PullRequestCheck,
+  PullRequestChecksState,
   PullRequestComment,
   PullRequestDetail,
   PullRequestMergeability,
@@ -30,6 +31,8 @@ export interface WatchPullRequestRemarkSummary {
 }
 
 export interface WatchPullRequestSnapshot {
+  /** CI as the start read saw it. Checks that already passed never wake the watch. */
+  readonly checksState?: PullRequestChecksState;
   readonly headSha?: string | null;
   readonly checks?: WatchPullRequestCheckSummary;
   readonly mergeability?: PullRequestMergeability;
@@ -243,9 +246,24 @@ export function seedPullRequestWatch(input: {
       ? undefined
       : `Current state recorded as baseline (will not trigger a later wake): ${clauses.join("; ")}. Act on this now if ready (call unwatch_pull_request before handing back), or end your turn only if still waiting on a later change.`;
 
+  const checksState: PullRequestChecksState | undefined =
+    checks.failed.length > 0
+      ? "failing"
+      : checks.pending > 0 || checks.incomplete === true
+        ? "pending"
+        : realChecks.length > 0
+          ? "passing"
+          : undefined;
+  // Fork: upstream's tool handler swaps `next` for a generic note when checks pass. The
+  // baseline note above already says so and also names remarks, threads, and conflicts, so
+  // passing is left out whenever that note is present.
+  const reportedChecksState =
+    checksState === "passing" && next !== undefined ? undefined : checksState;
+
   return {
     initialWatch,
     snapshot: {
+      ...(reportedChecksState !== undefined ? { checksState: reportedChecksState } : {}),
       headSha: detail.headSha ?? null,
       checks,
       mergeability: detail.mergeability,

@@ -302,6 +302,27 @@ describe("PullRequestWatchService", () => {
     }),
   );
 
+  it.effect("tells the caller when the checks already passed, since no wake will report it", () =>
+    Effect.gen(function* () {
+      const failing = yield* makeHarness({ readChecks: [check("ci", "failure")] });
+      const failingResult = yield* failing.setWatching(true, {
+        url: "https://github.com/t3tools/t3code/pull/9",
+      });
+      expect(failingResult).toMatchObject({ wasWatching: false, checksState: "failing" });
+
+      // Fork: the baseline note already reports passed checks, so the generic note must not replace it.
+      const passing = yield* makeHarness({ readChecks: [check("ci", "success")] });
+      const passingResult = yield* passing.setWatching(true, {
+        url: "https://github.com/t3tools/t3code/pull/9",
+      });
+      expect(passingResult).toMatchObject({
+        wasWatching: false,
+        next: expect.stringContaining("all 1 check passed"),
+      });
+      expect(passingResult.checksState).toBeUndefined();
+    }),
+  );
+
   it.effect("reports a missing hosting CLI before saving a watch and still allows unwatch", () =>
     Effect.gen(function* () {
       const missing = new PullRequestUnavailableError({
