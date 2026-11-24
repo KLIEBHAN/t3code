@@ -166,8 +166,9 @@ export function evaluatePullRequestWatch(
       checks.every((check) => check.status !== "pending");
     owedChecks = owed;
     if (passedNow && (!passed || gateGrew)) {
-      // Fork: match checks-failed when CI was pending at start and passed before baseline.
-      if (!checksBaseline || watch.checksPending === true) {
+      // CI running at the start that has since settled green is news. The start rollup can be
+      // pending only on optional checks, so a passed gate alone is not.
+      if (!checksBaseline || (watch.checksPending === true && settled)) {
         changes.push({ kind: "checks-passed", count: gate.length, required: required.length > 0 });
       }
       owedChecks =
