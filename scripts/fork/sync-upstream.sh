@@ -6,8 +6,8 @@
 #
 # Usage: scripts/fork/sync-upstream.sh [--no-push] [--no-assist]
 # Exit codes: 0 merged or already current, 1 failed with the fork branch
-# untouched, 2 wrong checkout state. A failed attempt stays in the scratch
-# worktree until the next run.
+# untouched, 2 wrong checkout state, 75 another sync is already running. A
+# failed attempt stays in the scratch worktree until the next run.
 set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
@@ -25,6 +25,19 @@ for arg in "$@"; do
       ;;
   esac
 done
+
+# One sync at a time; protects the shared sync-worktree, report file, and branch advance.
+if [ "${FORK_SYNC_LOCKED:-}" != 1 ]; then
+  mkdir -p "$FORK_STATE_DIR"
+  locked=0
+  FORK_SYNC_LOCKED=1 lockf -s -k -t 0 "$FORK_STATE_DIR/sync-upstream.lock" \
+    scripts/fork/sync-upstream.sh "$@" || locked=$?
+  if [ "$locked" = 75 ]; then
+    echo "sync: another sync is already running" >&2
+    exit 75
+  fi
+  exit "$locked"
+fi
 
 if [ "$(git branch --show-current)" != "$FORK_BRANCH" ]; then
   echo "sync: check out $FORK_BRANCH first" >&2

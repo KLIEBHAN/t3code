@@ -156,10 +156,10 @@ export T3CODE_MOBILE_APP_NAME="${FORK_IOS_APP_NAME:-$FORK_APP_NAME}"
 export T3CODE_MOBILE_SCHEME="${FORK_IOS_SCHEME:-t3code-fork}"
 export T3CODE_MOBILE_UPDATES_ENABLED=0
 
-# Prints a deterministic list of apps/mobile's native/plugin npm packages (version + patch_hash)
-# and matching patches/ digests so desktop/server or pure-JS bumps do not trigger cold prebuilds.
-# Falls back to hashing raw package.json, pnpm-lock.yaml, and all patches/ if the lockfile layout
-# does not list apps/mobile.
+# Prints a deterministic digest of apps/mobile's native, plugin, and prebuild-asset npm packages
+# (snapshot key, lockfile resolution/integrity, local file: archive contents) and matching patches/
+# so desktop/server or pure-JS bumps do not trigger cold prebuilds. Falls back to hashing raw
+# package.json, pnpm-lock.yaml, and all patches/ if the lockfile layout does not list apps/mobile.
 mobile_native_deps_digest() {
   python3 - <<'PY'
 import hashlib, json, os, posixpath, re, urllib.parse
@@ -187,19 +187,24 @@ if not os.path.isfile("pnpm-lock.yaml") or not os.path.isfile("apps/mobile/packa
 
 Q = "'\""
 importers: dict[str, dict[str, str]] = {}
+packages: dict[str, list[str]] = {}
 snapshots: dict[str, list[str]] = {}
 
 def snapshot_key(dep: str, ver: str) -> str:
     base = ver.split("(", 1)[0]
+    if base.startswith("file:"):
+        return f"{dep}@{ver}"
     return ver if "@" in base[1:] else f"{dep}@{ver}"
 
 section = cur_key = cur_sub = cur_dep = None
+in_resolution = False
 with open("pnpm-lock.yaml", encoding="utf-8", errors="replace") as f:
     for line in f:
         line = line.rstrip("\r\n")
         if line and not line.startswith(" "):
             section = line.rstrip(":")
             cur_key = cur_sub = cur_dep = None
+            in_resolution = False
             continue
         if section == "importers":
             if line.startswith("  ") and not line.startswith("   "):
@@ -217,6 +222,25 @@ with open("pnpm-lock.yaml", encoding="utf-8", errors="replace") as f:
                     cur_dep = line.strip()[:-1].strip(Q) if line.endswith(":") else None
                 elif cur_dep and line.startswith("        version: "):
                     importers[cur_key][cur_dep] = line.split("version: ", 1)[1].strip().strip(Q)
+        elif section == "packages":
+            if line.startswith("  ") and not line.startswith("   "):
+                in_resolution = False
+                if line.endswith(":"):
+                    cur_key = line.strip()[:-1].strip(Q)
+                    packages.setdefault(cur_key, [])
+                else:
+                    cur_key = None
+            elif cur_key and line.startswith("    ") and not line.startswith("     "):
+                stripped = line.strip()
+                if stripped == "resolution:":
+                    in_resolution = True
+                elif stripped.startswith("resolution: "):
+                    in_resolution = False
+                    packages[cur_key].append(stripped[len("resolution: "):].strip())
+                else:
+                    in_resolution = False
+            elif cur_key and in_resolution and line.startswith("      "):
+                packages[cur_key].append(line.strip())
         elif section == "snapshots":
             if line.startswith("  ") and not line.startswith("   "):
                 cur_sub = None
@@ -247,8 +271,14 @@ except Exception:
     emit_fallback()
     raise SystemExit(0)
 
+app_config_text = ""
+if os.path.isfile("apps/mobile/app.config.ts"):
+    with open("apps/mobile/app.config.ts", encoding="utf-8", errors="replace") as f:
+        app_config_text = f.read()
+
 visited_importers: set[str] = set()
 visited_pkgs: set[str] = set()
+pkg_importers: dict[str, set[str]] = {}
 imp_queue = [k for k in importers if k == "apps/mobile" or k.startswith("apps/mobile/")]
 pkg_queue: list[str] = []
 while imp_queue:
@@ -262,7 +292,9 @@ while imp_queue:
             if target == "apps/mobile" or target.startswith("apps/mobile/"):
                 imp_queue.append(target)
         else:
-            pkg_queue.append(snapshot_key(dep, ver))
+            skey = snapshot_key(dep, ver)
+            pkg_importers.setdefault(skey, set()).add(imp)
+            pkg_queue.append(skey)
 
 while pkg_queue:
     pkg = pkg_queue.pop()
@@ -295,8 +327,35 @@ markers = (
     "plugin",
 )
 
+def referenced_in_app_config(name: str) -> bool:
+    if not app_config_text or name not in app_config_text:
+        return False
+    return any(
+        f"{q}{name}{s}" in app_config_text
+        for q in ('"', "'", "`")
+        for s in ('"', "'", "`", "/")
+    )
+
+def declares_expo_plugin(pkg_dir: str) -> bool:
+    pkg_json_path = os.path.join(pkg_dir, "package.json")
+    if not os.path.isfile(pkg_json_path):
+        return False
+    try:
+        with open(pkg_json_path, encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception:
+        return True
+    expo_field = data.get("expo")
+    if isinstance(expo_field, dict) and any(k in expo_field for k in ("plugin", "plugins", "autolinking")):
+        return True
+    return False
+
 def is_native_or_plugin(name: str) -> bool:
-    if name in ("expo", "react-native") or name.startswith("@expo/"):
+    if (
+        name in ("expo", "react-native")
+        or name.startswith(("@expo/", "@expo-google-fonts/"))
+        or referenced_in_app_config(name)
+    ):
         return True
     dirs = list(pnpm_entries.get(name, ()))
     direct = os.path.join("apps/mobile/node_modules", name)
@@ -309,6 +368,8 @@ def is_native_or_plugin(name: str) -> bool:
             return True
         if any(os.path.exists(os.path.join(pkg_dir, marker)) for marker in markers):
             return True
+        if declares_expo_plugin(pkg_dir):
+            return True
         try:
             if any(entry.endswith(".podspec") for entry in os.listdir(pkg_dir)):
                 return True
@@ -316,13 +377,53 @@ def is_native_or_plugin(name: str) -> bool:
             return True
     return False
 
+def hash_local_ref(ref: str, base_dirs: list[str]) -> None:
+    rel = ref[5:] if ref.startswith("file:") else ref
+    if not rel:
+        return
+    resolved = None
+    for base in base_dirs:
+        candidate = os.path.normpath(os.path.join(base, rel)) if base else os.path.normpath(rel)
+        if os.path.exists(candidate):
+            resolved = candidate
+            break
+    if resolved is None:
+        print(f"native-local-missing:{ref}")
+        return
+    if os.path.isfile(resolved):
+        print(f"native-local-file:{resolved}:{sha256_file(resolved)}")
+    elif os.path.isdir(resolved):
+        for root_dir, dirnames, filenames in os.walk(resolved):
+            dirnames[:] = sorted(d for d in dirnames if d not in ("node_modules", "build", ".build", "Pods"))
+            for fname in sorted(filenames):
+                fpath = os.path.join(root_dir, fname)
+                if os.path.isfile(fpath):
+                    print(f"native-local-dir:{fpath}:{sha256_file(fpath)}")
+
 native_names: set[str] = set()
+hashed_local_refs: set[str] = set()
 for key in sorted(visited_pkgs):
     at = key.find("@", 1)
     name = key[:at] if at > 0 else key
     if is_native_or_plugin(name):
         native_names.add(name)
-        print(f"native-pkg:{key}")
+        base_key = key.split("(", 1)[0]
+        res_entries = packages.get(base_key, [])
+        res_str = ";".join(res_entries)
+        print(f"native-pkg:{key}:{res_str}")
+        local_refs: list[str] = []
+        ver_part = base_key[at + 1:] if at > 0 else ""
+        if ver_part.startswith("file:"):
+            local_refs.append(ver_part)
+        for m in re.finditer(r"(?:tarball|directory):\s*['\"]?([^,'\"}\s]+)", res_str):
+            val = m.group(1)
+            if val.startswith("file:") or not re.match(r"^[a-zA-Z][a-zA-Z0-9+.-]*://", val):
+                local_refs.append(val)
+        base_dirs = sorted(pkg_importers.get(key, set())) + ["", "apps/mobile"]
+        for ref in local_refs:
+            if ref not in hashed_local_refs:
+                hashed_local_refs.add(ref)
+                hash_local_ref(ref, base_dirs)
 
 if os.path.isdir("patches"):
     for fname in sorted(os.listdir("patches")):
@@ -343,21 +444,26 @@ PY
 prebuild_fingerprint() {
   local extra_files=() roots=()
   local candidate
-  for candidate in apps/mobile/fingerprint.config.js scripts/lib/brand-assets.ts scripts/lib/public-config.ts .env .env.local; do
+  for candidate in apps/mobile/fingerprint.config.js apps/mobile/clerk-theme.json scripts/lib/brand-assets.ts scripts/lib/public-config.ts .env .env.local; do
     [ -f "$candidate" ] && extra_files+=("$candidate")
   done
   for candidate in apps/mobile/plugins apps/mobile/modules apps/mobile/assets assets/dev; do
     [ -d "$candidate" ] && roots+=("$candidate")
   done
   {
-    printf 'env:%s:%s:%s:%s:%s:%s:%s\n' \
+    printf 'env:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s\n' \
       "$APP_VARIANT" \
+      "${MOBILE_VERSION_POLICY:-}" \
       "$T3CODE_IOS_PERSONAL_TEAM" \
       "$T3CODE_IOS_PERSONAL_TEAM_BUNDLE_ID" \
       "$T3CODE_MOBILE_APP_NAME" \
       "$T3CODE_MOBILE_SCHEME" \
       "$T3CODE_MOBILE_UPDATES_ENABLED" \
+      "${T3CODE_MOBILE_VERSION:-}" \
+      "${T3CODE_RELAY_URL:-}" \
+      "${T3_SHOWCASE_CAPTURE_BUILD:-}" \
       "$team_id"
+    { env | grep '^EXPO_PUBLIC_' || true; } | LC_ALL=C sort
     shasum -a 256 apps/mobile/app.config.ts \
       ${extra_files[@]+"${extra_files[@]}"}
     mobile_native_deps_digest

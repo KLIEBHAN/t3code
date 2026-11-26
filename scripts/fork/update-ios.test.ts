@@ -241,6 +241,7 @@ function runForkScript(
         FORK_UPDATE_LOCKED: "",
         FORK_IOS_UPDATE_LOCKED: "",
         FORK_IOS_BUILD_LOCKED: "",
+        FORK_SYNC_LOCKED: "",
         PATH: `${fixture.binDir}:/usr/bin:/bin:/usr/sbin:/sbin`,
         VP_ENV: NodePath.join(fixture.root, "vp-env.sh"),
         FORK_STATE_DIR: fixture.stateDir,
@@ -827,33 +828,57 @@ PLIST
     expect(readLines(prebuildLog)).toHaveLength(3);
   });
 
-  it("scopes build-ios.sh prebuild_fingerprint to apps/mobile native deps and logs xcodebuild to file", () => {
+  it("scopes build-ios.sh prebuild_fingerprint to apps/mobile native/plugin/asset deps and logs xcodebuild to file", () => {
     const fixture = createFixture({ realBuildScript: true });
     const prebuildLog = NodePath.join(fixture.root, "prebuild.log");
     const xcodeFailFlag = NodePath.join(fixture.root, "xcode-fail");
 
-    // Create realistic pnpm store entries: expo-audio has expo-module.config.json, effect is pure JS.
-    const nativePkgDir = NodePath.join(
-      fixture.repo,
-      "node_modules/.pnpm/expo-audio@58.0.11/node_modules/expo-audio",
+    const seedPnpmPkg = (storeEntry: string, pkgName: string, files: Record<string, string>) => {
+      const dir = NodePath.join(
+        fixture.repo,
+        "node_modules/.pnpm",
+        storeEntry,
+        "node_modules",
+        pkgName,
+      );
+      NodeFS.mkdirSync(dir, { recursive: true });
+      for (const [rel, content] of Object.entries(files)) {
+        NodeFS.writeFileSync(NodePath.join(dir, rel), content);
+      }
+      return NodePath.join(fixture.repo, "node_modules/.pnpm", storeEntry);
+    };
+
+    // Seed native marker, package.json expo.plugin, app.config.ts asset, local archive, and pure-JS store entries.
+    const audioStore58_11 = seedPnpmPkg("expo-audio@58.0.11", "expo-audio", {
+      "expo-module.config.json": "{}\n",
+    });
+    const pluginStore1 = seedPnpmPkg("custom-expo-plugin@1.0.0", "custom-expo-plugin", {
+      "package.json": JSON.stringify({ name: "custom-expo-plugin", expo: { plugin: "./plug.js" } }),
+    });
+    const fontStore1 = seedPnpmPkg(
+      "@expo-google-fonts+dm-sans@0.4.1",
+      "@expo-google-fonts/dm-sans",
+      { "package.json": '{"name":"@expo-google-fonts/dm-sans"}\n' },
     );
-    const jsPkgDir = NodePath.join(
-      fixture.repo,
-      "node_modules/.pnpm/effect@4.1.4/node_modules/effect",
-    );
-    const serverPkgDir = NodePath.join(
-      fixture.repo,
-      "node_modules/.pnpm/@cursor+sdk@1.4.0/node_modules/@cursor/sdk",
-    );
-    NodeFS.mkdirSync(nativePkgDir, { recursive: true });
-    NodeFS.mkdirSync(jsPkgDir, { recursive: true });
-    NodeFS.mkdirSync(serverPkgDir, { recursive: true });
-    NodeFS.writeFileSync(NodePath.join(nativePkgDir, "expo-module.config.json"), "{}\n");
-    NodeFS.writeFileSync(NodePath.join(jsPkgDir, "package.json"), '{"name":"effect"}\n');
-    NodeFS.writeFileSync(NodePath.join(serverPkgDir, "package.json"), '{"name":"@cursor/sdk"}\n');
+    seedPnpmPkg("local-native@file+vendor+local-native.tgz", "local-native", {
+      "expo-module.config.json": "{}\n",
+    });
+    const effectStore4_1_4 = seedPnpmPkg("effect@4.1.4", "effect", {
+      "package.json": '{"name":"effect"}\n',
+    });
+    seedPnpmPkg("@cursor+sdk@1.4.0", "@cursor/sdk", {
+      "package.json": '{"name":"@cursor/sdk"}\n',
+    });
     NodeFS.writeFileSync(NodePath.join(fixture.repo, "node_modules/.modules.yaml"), "ok: true\n");
 
-    NodeFS.writeFileSync(NodePath.join(fixture.repo, "apps/mobile/app.config.ts"), "export {};\n");
+    const localArchive = NodePath.join(fixture.repo, "vendor/local-native.tgz");
+    NodeFS.mkdirSync(NodePath.dirname(localArchive), { recursive: true });
+    NodeFS.writeFileSync(localArchive, "archive-v1\n");
+
+    NodeFS.writeFileSync(
+      NodePath.join(fixture.repo, "apps/mobile/app.config.ts"),
+      'export const font = "@expo-google-fonts/dm-sans/400Regular/DMSans_400Regular.ttf";\n',
+    );
     const writeMobilePkg = (effectVer: string) =>
       NodeFS.writeFileSync(
         NodePath.join(fixture.repo, "apps/mobile/package.json"),
@@ -861,7 +886,13 @@ PLIST
           {
             name: "@t3tools/mobile",
             version: "2.3.0",
-            dependencies: { "expo-audio": "58.0.11", effect: effectVer },
+            dependencies: {
+              "expo-audio": "58.0.11",
+              "custom-expo-plugin": "1.0.0",
+              "@expo-google-fonts/dm-sans": "0.4.1",
+              "local-native": "file:../../vendor/local-native.tgz",
+              effect: effectVer,
+            },
           },
           null,
           2,
@@ -871,9 +902,15 @@ PLIST
 
     const writeLockfile = (opts: {
       readonly audioVer: string;
+      readonly audioIntegrity?: string;
+      readonly pluginVer?: string;
+      readonly fontVer?: string;
       readonly effectVer: string;
       readonly serverVer: string;
-    }) =>
+    }) => {
+      const audioIntegrity = opts.audioIntegrity ?? "sha512-aaa";
+      const pluginVer = opts.pluginVer ?? "1.0.0";
+      const fontVer = opts.fontVer ?? "0.4.1";
       NodeFS.writeFileSync(
         NodePath.join(fixture.repo, "pnpm-lock.yaml"),
         [
@@ -887,6 +924,15 @@ PLIST
           "      expo-audio:",
           `        specifier: ${opts.audioVer}`,
           `        version: ${opts.audioVer}`,
+          "      custom-expo-plugin:",
+          `        specifier: ${pluginVer}`,
+          `        version: ${pluginVer}`,
+          "      '@expo-google-fonts/dm-sans':",
+          `        specifier: ${fontVer}`,
+          `        version: ${fontVer}`,
+          "      local-native:",
+          "        specifier: file:../../vendor/local-native.tgz",
+          "        version: file:vendor/local-native.tgz",
           "      effect:",
           `        specifier: ${opts.effectVer}`,
           `        version: ${opts.effectVer}`,
@@ -895,13 +941,30 @@ PLIST
           "      '@cursor/sdk':",
           `        specifier: ${opts.serverVer}`,
           `        version: ${opts.serverVer}`,
+          "packages:",
+          `  expo-audio@${opts.audioVer}:`,
+          `    resolution: {integrity: ${audioIntegrity}}`,
+          `  custom-expo-plugin@${pluginVer}:`,
+          "    resolution: {integrity: sha512-plugin}",
+          `  '@expo-google-fonts/dm-sans@${fontVer}':`,
+          "    resolution: {integrity: sha512-font}",
+          "  'local-native@file:vendor/local-native.tgz':",
+          "    resolution: {tarball: file:vendor/local-native.tgz}",
+          `  effect@${opts.effectVer}:`,
+          "    resolution: {integrity: sha512-effect}",
+          `  '@cursor/sdk@${opts.serverVer}':`,
+          "    resolution: {integrity: sha512-server}",
           "snapshots:",
           `  expo-audio@${opts.audioVer}: {}`,
+          `  custom-expo-plugin@${pluginVer}: {}`,
+          `  '@expo-google-fonts/dm-sans@${fontVer}': {}`,
+          "  'local-native@file:vendor/local-native.tgz': {}",
           `  effect@${opts.effectVer}: {}`,
           `  '@cursor/sdk@${opts.serverVer}': {}`,
           "",
         ].join("\n"),
       );
+    };
     writeLockfile({ audioVer: "58.0.11", effectVer: "4.1.4", serverVer: "1.4.0" });
 
     NodeFS.mkdirSync(NodePath.join(fixture.repo, "patches"), { recursive: true });
@@ -966,7 +1029,9 @@ PLIST
     expect(afterServerBump.output).toContain("reusing cached prebuild");
     expect(readLines(prebuildLog)).toHaveLength(1);
 
-    // 3. Bumping a pure-JS mobile dependency (effect) also reuses cached prebuild.
+    // 3. Bumping a pure-JS mobile dependency (effect) with installed store dir reuses cached prebuild.
+    NodeFS.rmSync(effectStore4_1_4, { recursive: true, force: true });
+    seedPnpmPkg("effect@4.1.5", "effect", { "package.json": '{"name":"effect"}\n' });
     writeMobilePkg("4.1.5");
     writeLockfile({ audioVer: "58.0.11", effectVer: "4.1.5", serverVer: "1.5.0" });
     const afterPureJsBump = runForkScript(
@@ -979,7 +1044,9 @@ PLIST
     expect(afterPureJsBump.output).toContain("reusing cached prebuild");
     expect(readLines(prebuildLog)).toHaveLength(1);
 
-    // 4. Bumping a native mobile dependency (expo-audio) invalidates the prebuild cache.
+    // 4. Bumping a native mobile dependency (with installed store marker) invalidates the cache.
+    NodeFS.rmSync(audioStore58_11, { recursive: true, force: true });
+    seedPnpmPkg("expo-audio@58.0.12", "expo-audio", { "expo-module.config.json": "{}\n" });
     writeLockfile({ audioVer: "58.0.12", effectVer: "4.1.5", serverVer: "1.5.0" });
     const afterNativeBump = runForkScript(
       fixture,
@@ -990,18 +1057,77 @@ PLIST
     expect(afterNativeBump.exitCode).toBe(0);
     expect(readLines(prebuildLog)).toHaveLength(2);
 
-    // 5. Editing a native mobile patch file invalidates the prebuild cache.
-    NodeFS.writeFileSync(nativePatch, "--- a/ios/Audio.swift\n+++ b/ios/Audio.swift\n+fix\n");
-    const afterNativePatch = runForkScript(
-      fixture,
-      "scripts/fork/build-ios.sh",
-      ["--stage"],
-      buildEnv,
-    );
-    expect(afterNativePatch.exitCode).toBe(0);
+    // 5. Changing lockfile resolution/integrity without changing version invalidates the cache.
+    writeLockfile({
+      audioVer: "58.0.12",
+      audioIntegrity: "sha512-bbb",
+      effectVer: "4.1.5",
+      serverVer: "1.5.0",
+    });
+    expect(
+      runForkScript(fixture, "scripts/fork/build-ios.sh", ["--stage"], buildEnv).exitCode,
+    ).toBe(0);
     expect(readLines(prebuildLog)).toHaveLength(3);
 
-    // 6. On xcodebuild failure, build-ios.sh exits non-zero and prints the tail from ios-xcodebuild.log.
+    // 6. Bumping a package with package.json expo.plugin invalidates the cache.
+    NodeFS.rmSync(pluginStore1, { recursive: true, force: true });
+    seedPnpmPkg("custom-expo-plugin@1.0.1", "custom-expo-plugin", {
+      "package.json": JSON.stringify({ name: "custom-expo-plugin", expo: { plugin: "./plug.js" } }),
+    });
+    writeLockfile({
+      audioVer: "58.0.12",
+      audioIntegrity: "sha512-bbb",
+      pluginVer: "1.0.1",
+      effectVer: "4.1.5",
+      serverVer: "1.5.0",
+    });
+    expect(
+      runForkScript(fixture, "scripts/fork/build-ios.sh", ["--stage"], buildEnv).exitCode,
+    ).toBe(0);
+    expect(readLines(prebuildLog)).toHaveLength(4);
+
+    // 7. Bumping a prebuild asset package referenced by app.config.ts (@expo-google-fonts/dm-sans) invalidates the cache.
+    NodeFS.rmSync(fontStore1, { recursive: true, force: true });
+    seedPnpmPkg("@expo-google-fonts+dm-sans@0.4.2", "@expo-google-fonts/dm-sans", {
+      "package.json": '{"name":"@expo-google-fonts/dm-sans"}\n',
+    });
+    writeLockfile({
+      audioVer: "58.0.12",
+      audioIntegrity: "sha512-bbb",
+      pluginVer: "1.0.1",
+      fontVer: "0.4.2",
+      effectVer: "4.1.5",
+      serverVer: "1.5.0",
+    });
+    expect(
+      runForkScript(fixture, "scripts/fork/build-ios.sh", ["--stage"], buildEnv).exitCode,
+    ).toBe(0);
+    expect(readLines(prebuildLog)).toHaveLength(5);
+
+    // 8. Replacing a local file: native archive in place invalidates the cache.
+    NodeFS.writeFileSync(localArchive, "archive-v2\n");
+    expect(
+      runForkScript(fixture, "scripts/fork/build-ios.sh", ["--stage"], buildEnv).exitCode,
+    ).toBe(0);
+    expect(readLines(prebuildLog)).toHaveLength(6);
+
+    // 9. Editing a native mobile patch file invalidates the cache.
+    NodeFS.writeFileSync(nativePatch, "--- a/ios/Audio.swift\n+++ b/ios/Audio.swift\n+fix\n");
+    expect(
+      runForkScript(fixture, "scripts/fork/build-ios.sh", ["--stage"], buildEnv).exitCode,
+    ).toBe(0);
+    expect(readLines(prebuildLog)).toHaveLength(7);
+
+    // 10. Changing an app-config process env variable invalidates the cache.
+    expect(
+      runForkScript(fixture, "scripts/fork/build-ios.sh", ["--stage"], {
+        ...buildEnv,
+        T3CODE_MOBILE_VERSION: "2.4.0",
+      }).exitCode,
+    ).toBe(0);
+    expect(readLines(prebuildLog)).toHaveLength(8);
+
+    // 11. On xcodebuild failure, build-ios.sh exits non-zero and prints the tail from ios-xcodebuild.log.
     NodeFS.writeFileSync(xcodeFailFlag, "1\n");
     const failed = runForkScript(fixture, "scripts/fork/build-ios.sh", ["--stage"], buildEnv);
     expect(failed.exitCode).toBe(1);
@@ -1069,7 +1195,7 @@ echo "update-ios: stub done"
     }
   });
 
-  it("keeps sync-upstream.sh worktree warm across merges and runs verify commands in parallel", () => {
+  it("serializes sync-upstream.sh with lockf, keeps sync-worktree warm, and runs verify commands in parallel", async () => {
     const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "fork-sync-upstream-test-"));
     tempRoots.push(root);
     const upstreamBare = NodePath.join(root, "upstream.git");
@@ -1127,7 +1253,7 @@ echo "update-ios: stub done"
     git(repo, ["add", "scripts/fork"]);
     git(repo, ["commit", "-m", "add fork scripts"]);
 
-    // Stub vp: `vp i` seeds a gitignored marker in node_modules; verify calls synchronize briefly to prove concurrency.
+    // Stub vp: `vp i` seeds a gitignored marker in node_modules; verify calls require a concurrent sibling before exiting.
     writeExecutable(
       NodePath.join(binDir, "vp"),
       `#!/usr/bin/env bash
@@ -1148,16 +1274,20 @@ if [ -f "${failVerifyFlag}" ]; then
     echo "MOBILE_REACT_FAILED" >&2
     exit 1
   fi
+  exit 0
 fi
-touch "${barrierDir}/$$"
-for _ in $(seq 1 40); do
-  count="$(ls -1 "${barrierDir}" | wc -l | tr -d ' ')"
-  if [ "$count" -ge 2 ]; then
-    echo "$count" > "${parallelFlag}"
-    break
+marker="${barrierDir}/$$"
+touch "$marker"
+trap 'rm -f "$marker"' EXIT
+for _ in $(seq 1 60); do
+  if [ -f "${parallelFlag}" ] || [ "$(ls -1 "${barrierDir}" | wc -l | tr -d ' ')" -ge 2 ]; then
+    touch "${parallelFlag}"
+    exit 0
   fi
   sleep 0.05
 done
+echo "NO_CONCURRENT_SIBLING_OBSERVED" >&2
+exit 1
 `,
     );
     NodeFS.writeFileSync(NodePath.join(root, "vp-env.sh"), `PATH="${binDir}:$PATH"\n`, "utf8");
@@ -1201,7 +1331,14 @@ done
         ["--no-push", "--no-assist"],
       );
 
-    // 1. First sync merges tag 1, leaves sync-worktree warm, and proves parallel verify execution.
+    // 0. Holding sync-upstream.lock prevents overlapping syncs from touching the shared worktree.
+    await withFileLock(NodePath.join(stateDir, "sync-upstream.lock"), () => {
+      const busy = runSync();
+      expect(busy.exitCode).toBe(75);
+      expect(busy.output).toContain("sync: another sync is already running");
+    });
+
+    // 1. First sync merges tag 1, leaves sync-worktree warm, and requires parallel verify execution.
     pushTag("v0.1.0-nightly.20261125.1001", "export const v = 1;\n");
     const first = runSync();
     expect(first.exitCode).toBe(0);
@@ -1215,9 +1352,6 @@ done
     const junkFile = NodePath.join(stateDir, "sync-worktree/stale-untracked.txt");
     NodeFS.writeFileSync(junkFile, "junk\n");
     NodeFS.rmSync(parallelFlag, { force: true });
-    for (const f of NodeFS.readdirSync(barrierDir)) {
-      NodeFS.rmSync(NodePath.join(barrierDir, f), { force: true });
-    }
     pushTag("v0.1.0-nightly.20261125.1002", "export const v = 2;\n");
     const second = runSync();
     expect(second.exitCode).toBe(0);
