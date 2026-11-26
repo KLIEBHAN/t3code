@@ -855,6 +855,9 @@ PLIST
     const pluginStore1 = seedPnpmPkg("custom-expo-plugin@1.0.0", "custom-expo-plugin", {
       "package.json": JSON.stringify({ name: "custom-expo-plugin", expo: { plugin: "./plug.js" } }),
     });
+    const helperStore1 = seedPnpmPkg("plist-helper@1.0.0", "plist-helper", {
+      "package.json": '{"name":"plist-helper"}\n',
+    });
     const fontStore1 = seedPnpmPkg(
       "@expo-google-fonts+dm-sans@0.4.1",
       "@expo-google-fonts/dm-sans",
@@ -904,12 +907,14 @@ PLIST
       readonly audioVer: string;
       readonly audioIntegrity?: string;
       readonly pluginVer?: string;
+      readonly helperVer?: string;
       readonly fontVer?: string;
       readonly effectVer: string;
       readonly serverVer: string;
     }) => {
       const audioIntegrity = opts.audioIntegrity ?? "sha512-aaa";
       const pluginVer = opts.pluginVer ?? "1.0.0";
+      const helperVer = opts.helperVer ?? "1.0.0";
       const fontVer = opts.fontVer ?? "0.4.1";
       NodeFS.writeFileSync(
         NodePath.join(fixture.repo, "pnpm-lock.yaml"),
@@ -946,6 +951,8 @@ PLIST
           `    resolution: {integrity: ${audioIntegrity}}`,
           `  custom-expo-plugin@${pluginVer}:`,
           "    resolution: {integrity: sha512-plugin}",
+          `  plist-helper@${helperVer}:`,
+          "    resolution: {integrity: sha512-helper}",
           `  '@expo-google-fonts/dm-sans@${fontVer}':`,
           "    resolution: {integrity: sha512-font}",
           "  'local-native@file:vendor/local-native.tgz':",
@@ -956,7 +963,10 @@ PLIST
           "    resolution: {integrity: sha512-server}",
           "snapshots:",
           `  expo-audio@${opts.audioVer}: {}`,
-          `  custom-expo-plugin@${pluginVer}: {}`,
+          `  custom-expo-plugin@${pluginVer}:`,
+          "    dependencies:",
+          `      plist-helper: ${helperVer}`,
+          `  plist-helper@${helperVer}: {}`,
           `  '@expo-google-fonts/dm-sans@${fontVer}': {}`,
           "  'local-native@file:vendor/local-native.tgz': {}",
           `  effect@${opts.effectVer}: {}`,
@@ -1086,6 +1096,24 @@ PLIST
     ).toBe(0);
     expect(readLines(prebuildLog)).toHaveLength(4);
 
+    // 6b. Bumping a marker-free transitive dependency of a config plugin also invalidates the cache.
+    NodeFS.rmSync(helperStore1, { recursive: true, force: true });
+    seedPnpmPkg("plist-helper@1.0.1", "plist-helper", {
+      "package.json": '{"name":"plist-helper"}\n',
+    });
+    writeLockfile({
+      audioVer: "58.0.12",
+      audioIntegrity: "sha512-bbb",
+      pluginVer: "1.0.1",
+      helperVer: "1.0.1",
+      effectVer: "4.1.5",
+      serverVer: "1.5.0",
+    });
+    expect(
+      runForkScript(fixture, "scripts/fork/build-ios.sh", ["--stage"], buildEnv).exitCode,
+    ).toBe(0);
+    expect(readLines(prebuildLog)).toHaveLength(5);
+
     // 7. Bumping a prebuild asset package referenced by app.config.ts (@expo-google-fonts/dm-sans) invalidates the cache.
     NodeFS.rmSync(fontStore1, { recursive: true, force: true });
     seedPnpmPkg("@expo-google-fonts+dm-sans@0.4.2", "@expo-google-fonts/dm-sans", {
@@ -1095,6 +1123,7 @@ PLIST
       audioVer: "58.0.12",
       audioIntegrity: "sha512-bbb",
       pluginVer: "1.0.1",
+      helperVer: "1.0.1",
       fontVer: "0.4.2",
       effectVer: "4.1.5",
       serverVer: "1.5.0",
@@ -1102,21 +1131,21 @@ PLIST
     expect(
       runForkScript(fixture, "scripts/fork/build-ios.sh", ["--stage"], buildEnv).exitCode,
     ).toBe(0);
-    expect(readLines(prebuildLog)).toHaveLength(5);
+    expect(readLines(prebuildLog)).toHaveLength(6);
 
     // 8. Replacing a local file: native archive in place invalidates the cache.
     NodeFS.writeFileSync(localArchive, "archive-v2\n");
     expect(
       runForkScript(fixture, "scripts/fork/build-ios.sh", ["--stage"], buildEnv).exitCode,
     ).toBe(0);
-    expect(readLines(prebuildLog)).toHaveLength(6);
+    expect(readLines(prebuildLog)).toHaveLength(7);
 
     // 9. Editing a native mobile patch file invalidates the cache.
     NodeFS.writeFileSync(nativePatch, "--- a/ios/Audio.swift\n+++ b/ios/Audio.swift\n+fix\n");
     expect(
       runForkScript(fixture, "scripts/fork/build-ios.sh", ["--stage"], buildEnv).exitCode,
     ).toBe(0);
-    expect(readLines(prebuildLog)).toHaveLength(7);
+    expect(readLines(prebuildLog)).toHaveLength(8);
 
     // 10. Changing an app-config process env variable invalidates the cache.
     expect(
@@ -1125,7 +1154,7 @@ PLIST
         T3CODE_MOBILE_VERSION: "2.4.0",
       }).exitCode,
     ).toBe(0);
-    expect(readLines(prebuildLog)).toHaveLength(8);
+    expect(readLines(prebuildLog)).toHaveLength(9);
 
     // 11. On xcodebuild failure, build-ios.sh exits non-zero and prints the tail from ios-xcodebuild.log.
     NodeFS.writeFileSync(xcodeFailFlag, "1\n");
@@ -1203,7 +1232,7 @@ echo "update-ios: stub done"
     const repo = NodePath.join(root, "repo");
     const stateDir = NodePath.join(root, "state");
     const binDir = NodePath.join(root, "bin");
-    const barrierDir = NodePath.join(root, "barrier");
+    const barrierFifo = NodePath.join(root, "barrier.fifo");
     const parallelFlag = NodePath.join(root, "saw-parallel");
     const failVerifyFlag = NodePath.join(root, "fail-verify");
     const gitEnv = {
@@ -1222,7 +1251,7 @@ echo "update-ios: stub done"
     NodeFS.mkdirSync(upstreamWork, { recursive: true });
     NodeFS.mkdirSync(stateDir, { recursive: true });
     NodeFS.mkdirSync(binDir, { recursive: true });
-    NodeFS.mkdirSync(barrierDir, { recursive: true });
+    NodeChildProcess.execFileSync("mkfifo", [barrierFifo], { stdio: "pipe" });
 
     git(upstreamBare, ["init", "--bare", "-b", "main"]);
     git(upstreamWork, ["init", "-b", "main"]);
@@ -1253,7 +1282,7 @@ echo "update-ios: stub done"
     git(repo, ["add", "scripts/fork"]);
     git(repo, ["commit", "-m", "add fork scripts"]);
 
-    // Stub vp: `vp i` seeds a gitignored marker in node_modules; verify calls require a concurrent sibling before exiting.
+    // Stub vp: `vp i` seeds a gitignored marker; two verify commands rendezvous via a blocking FIFO (zero polling).
     writeExecutable(
       NodePath.join(binDir, "vp"),
       `#!/usr/bin/env bash
@@ -1276,18 +1305,25 @@ if [ -f "${failVerifyFlag}" ]; then
   fi
   exit 0
 fi
-marker="${barrierDir}/$$"
-touch "$marker"
-trap 'rm -f "$marker"' EXIT
-for _ in $(seq 1 60); do
-  if [ -f "${parallelFlag}" ] || [ "$(ls -1 "${barrierDir}" | wc -l | tr -d ' ')" -ge 2 ]; then
-    touch "${parallelFlag}"
-    exit 0
-  fi
-  sleep 0.05
-done
-echo "NO_CONCURRENT_SIBLING_OBSERVED" >&2
-exit 1
+if [ "\${1:-}" = "run" ] && [ "\${2:-}" = "i18n:check" ]; then
+  perl -e '
+    $SIG{ALRM} = sub { die "FIFO_WRITE_TIMEOUT\\n" };
+    alarm(5);
+    open my $fh, ">", $ARGV[0] or die $!;
+    print $fh "ready\\n";
+    close $fh;
+  ' "${barrierFifo}"
+elif [ "\${1:-}" = "run" ] && [ "\${2:-}" = "--filter" ]; then
+  perl -e '
+    $SIG{ALRM} = sub { die "FIFO_READ_TIMEOUT\\n" };
+    alarm(5);
+    open my $fh, "<", $ARGV[0] or die $!;
+    my $line = <$fh>;
+    close $fh;
+    die "EMPTY_FIFO\\n" unless defined $line && $line =~ /ready/;
+  ' "${barrierFifo}"
+  echo "rendezvous" > "${parallelFlag}"
+fi
 `,
     );
     NodeFS.writeFileSync(NodePath.join(root, "vp-env.sh"), `PATH="${binDir}:$PATH"\n`, "utf8");

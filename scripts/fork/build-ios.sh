@@ -271,10 +271,17 @@ except Exception:
     emit_fallback()
     raise SystemExit(0)
 
-app_config_text = ""
+config_text_parts: list[str] = []
 if os.path.isfile("apps/mobile/app.config.ts"):
     with open("apps/mobile/app.config.ts", encoding="utf-8", errors="replace") as f:
-        app_config_text = f.read()
+        config_text_parts.append(f.read())
+if os.path.isdir("apps/mobile/plugins"):
+    for fname in sorted(os.listdir("apps/mobile/plugins")):
+        fpath = os.path.join("apps/mobile/plugins", fname)
+        if os.path.isfile(fpath):
+            with open(fpath, encoding="utf-8", errors="replace") as f:
+                config_text_parts.append(f.read())
+app_config_text = "\n".join(config_text_parts)
 
 visited_importers: set[str] = set()
 visited_pkgs: set[str] = set()
@@ -400,30 +407,48 @@ def hash_local_ref(ref: str, base_dirs: list[str]) -> None:
                 if os.path.isfile(fpath):
                     print(f"native-local-dir:{fpath}:{sha256_file(fpath)}")
 
-native_names: set[str] = set()
-hashed_local_refs: set[str] = set()
-for key in sorted(visited_pkgs):
+# Include every native/plugin/prebuild-asset package plus its transitive dependency closure
+# so marker-free helpers used by config plugins also invalidate the prebuild cache.
+selected_pkgs: set[str] = set()
+closure_queue: list[str] = []
+for key in visited_pkgs:
     at = key.find("@", 1)
     name = key[:at] if at > 0 else key
     if is_native_or_plugin(name):
-        native_names.add(name)
-        base_key = key.split("(", 1)[0]
-        res_entries = packages.get(base_key, [])
-        res_str = ";".join(res_entries)
-        print(f"native-pkg:{key}:{res_str}")
-        local_refs: list[str] = []
-        ver_part = base_key[at + 1:] if at > 0 else ""
-        if ver_part.startswith("file:"):
-            local_refs.append(ver_part)
-        for m in re.finditer(r"(?:tarball|directory):\s*['\"]?([^,'\"}\s]+)", res_str):
-            val = m.group(1)
-            if val.startswith("file:") or not re.match(r"^[a-zA-Z][a-zA-Z0-9+.-]*://", val):
-                local_refs.append(val)
-        base_dirs = sorted(pkg_importers.get(key, set())) + ["", "apps/mobile"]
-        for ref in local_refs:
-            if ref not in hashed_local_refs:
-                hashed_local_refs.add(ref)
-                hash_local_ref(ref, base_dirs)
+        closure_queue.append(key)
+
+while closure_queue:
+    key = closure_queue.pop()
+    if key in selected_pkgs:
+        continue
+    selected_pkgs.add(key)
+    for child in snapshots.get(key, ()):
+        if child not in selected_pkgs:
+            closure_queue.append(child)
+
+native_names: set[str] = set()
+hashed_local_refs: set[str] = set()
+for key in sorted(selected_pkgs):
+    at = key.find("@", 1)
+    name = key[:at] if at > 0 else key
+    native_names.add(name)
+    base_key = key.split("(", 1)[0]
+    res_entries = packages.get(base_key, [])
+    res_str = ";".join(res_entries)
+    print(f"native-pkg:{key}:{res_str}")
+    local_refs: list[str] = []
+    ver_part = base_key[at + 1:] if at > 0 else ""
+    if ver_part.startswith("file:"):
+        local_refs.append(ver_part)
+    for m in re.finditer(r"(?:tarball|directory):\s*['\"]?([^,'\"}\s]+)", res_str):
+        val = m.group(1)
+        if val.startswith("file:") or not re.match(r"^[a-zA-Z][a-zA-Z0-9+.-]*://", val):
+            local_refs.append(val)
+    base_dirs = sorted(pkg_importers.get(key, set())) + ["", "apps/mobile"]
+    for ref in local_refs:
+        if ref not in hashed_local_refs:
+            hashed_local_refs.add(ref)
+            hash_local_ref(ref, base_dirs)
 
 if os.path.isdir("patches"):
     for fname in sorted(os.listdir("patches")):
