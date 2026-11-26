@@ -223,7 +223,20 @@ with open("pnpm-lock.yaml", encoding="utf-8", errors="replace") as f:
                 elif cur_dep and line.startswith("        version: "):
                     importers[cur_key][cur_dep] = line.split("version: ", 1)[1].strip().strip(Q)
         elif section == "packages":
-            if line.startswith("  ") and not line.startswith("   "):
+            if line.startswith("  ? "):
+                in_resolution = False
+                cur_key = line[4:].strip().strip(Q)
+                packages.setdefault(cur_key, [])
+            elif line.startswith("  : ") and cur_key:
+                rest = line[4:].strip()
+                if rest == "resolution:":
+                    in_resolution = True
+                elif rest.startswith("resolution: "):
+                    in_resolution = False
+                    packages[cur_key].append(rest[len("resolution: "):].strip())
+                else:
+                    in_resolution = False
+            elif line.startswith("  ") and not line.startswith("   "):
                 in_resolution = False
                 if line.endswith(":"):
                     cur_key = line.strip()[:-1].strip(Q)
@@ -242,7 +255,14 @@ with open("pnpm-lock.yaml", encoding="utf-8", errors="replace") as f:
             elif cur_key and in_resolution and line.startswith("      "):
                 packages[cur_key].append(line.strip())
         elif section == "snapshots":
-            if line.startswith("  ") and not line.startswith("   "):
+            if line.startswith("  ? "):
+                cur_key = line[4:].strip().strip(Q)
+                snapshots.setdefault(cur_key, [])
+                cur_sub = None
+            elif line.startswith("  : ") and cur_key:
+                rest = line[4:].strip()
+                cur_sub = rest[:-1] if rest.endswith(":") else None
+            elif line.startswith("  ") and not line.startswith("   "):
                 cur_sub = None
                 if line.endswith(":"):
                     cur_key = line.strip()[:-1].strip(Q)
@@ -276,11 +296,13 @@ if os.path.isfile("apps/mobile/app.config.ts"):
     with open("apps/mobile/app.config.ts", encoding="utf-8", errors="replace") as f:
         config_text_parts.append(f.read())
 if os.path.isdir("apps/mobile/plugins"):
-    for fname in sorted(os.listdir("apps/mobile/plugins")):
-        fpath = os.path.join("apps/mobile/plugins", fname)
-        if os.path.isfile(fpath):
-            with open(fpath, encoding="utf-8", errors="replace") as f:
-                config_text_parts.append(f.read())
+    for root_dir, dirnames, filenames in os.walk("apps/mobile/plugins"):
+        dirnames[:] = sorted(d for d in dirnames if d != "node_modules")
+        for fname in sorted(filenames):
+            fpath = os.path.join(root_dir, fname)
+            if os.path.isfile(fpath):
+                with open(fpath, encoding="utf-8", errors="replace") as f:
+                    config_text_parts.append(f.read())
 app_config_text = "\n".join(config_text_parts)
 
 visited_importers: set[str] = set()
@@ -488,7 +510,7 @@ prebuild_fingerprint() {
       "${T3CODE_RELAY_URL:-}" \
       "${T3_SHOWCASE_CAPTURE_BUILD:-}" \
       "$team_id"
-    { env | grep '^EXPO_PUBLIC_' || true; } | LC_ALL=C sort
+    { env | grep -E '^(EXPO_PUBLIC_|T3CODE_CLERK_|T3CODE_MOBILE_OTLP_|VITE_T3CODE_RELAY_URL=)' || true; } | LC_ALL=C sort
     shasum -a 256 apps/mobile/app.config.ts \
       ${extra_files[@]+"${extra_files[@]}"}
     mobile_native_deps_digest
