@@ -79,6 +79,11 @@ if [ "${FORK_UPDATE_LOCKED:-}" != 1 ]; then
     if [ "$was_locked" = 0 ] && [ "$locked" != 2 ] && [ -z "$FORK_BUILD_HOST" ] && [ -x scripts/fork/update-ios.sh ]; then
       case " $* " in
         *" --scheduled "*)
+          # Write to a regular file instead of the stamp_lines pipe so resident Xcode daemons
+          # (such as SWBBuildService) inheriting stdout/stderr can never hold the pipe open.
+          ios_run_log="$(mktemp "$FORK_STATE_DIR/logs/update-ios-run.XXXXXX")"
+          trap 'rm -f "${ios_run_log:-}"' EXIT
+          ios_rc=0
           perl -MPOSIX=WNOHANG -e '
             my ($t, @cmd) = @ARGV;
             my $pid = fork();
@@ -98,7 +103,13 @@ if [ "${FORK_UPDATE_LOCKED:-}" != 1 ]; then
             alarm(0);
             exit(124) if $timed_out;
             exit($? == -1 ? 1 : ($? & 127 ? 128 + ($? & 127) : $? >> 8));
-          ' 3600 scripts/fork/update-ios.sh --scheduled || echo "update: iOS update step reported a failure" >&2
+          ' 3600 scripts/fork/update-ios.sh --scheduled </dev/null >"$ios_run_log" 2>&1 || ios_rc=$?
+          cat "$ios_run_log" 2>/dev/null || true
+          rm -f "$ios_run_log"
+          ios_run_log=""
+          if [ "$ios_rc" != 0 ]; then
+            echo "update: iOS update step reported a failure" >&2
+          fi
           ;;
       esac
     fi

@@ -10,6 +10,7 @@ const CONFIG_SH = NodePath.join(REPO_ROOT, "scripts/fork/config.sh");
 const BUILD_IOS_SH = NodePath.join(REPO_ROOT, "scripts/fork/build-ios.sh");
 const UPDATE_IOS_SH = NodePath.join(REPO_ROOT, "scripts/fork/update-ios.sh");
 const UPDATE_SH = NodePath.join(REPO_ROOT, "scripts/fork/update.sh");
+const SYNC_UPSTREAM_SH = NodePath.join(REPO_ROOT, "scripts/fork/sync-upstream.sh");
 const FIXED_NOW = 1_800_000_000;
 
 interface Fixture {
@@ -229,6 +230,7 @@ function runForkScript(
   scriptPath: string,
   args: string[],
   extraEnv: Record<string, string> = {},
+  timeoutMs?: number,
 ): { readonly exitCode: number; readonly output: string } {
   try {
     const output = NodeChildProcess.execFileSync("bash", [scriptPath, ...args], {
@@ -250,6 +252,7 @@ function runForkScript(
       },
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
+      ...(timeoutMs !== undefined ? { timeout: timeoutMs } : {}),
     });
     return { exitCode: 0, output };
   } catch (error) {
@@ -822,5 +825,416 @@ PLIST
     expect(withLoopLink.exitCode).toBe(0);
     expect(withLoopLink.output).toContain("reusing cached prebuild");
     expect(readLines(prebuildLog)).toHaveLength(3);
+  });
+
+  it("scopes build-ios.sh prebuild_fingerprint to apps/mobile native deps and logs xcodebuild to file", () => {
+    const fixture = createFixture({ realBuildScript: true });
+    const prebuildLog = NodePath.join(fixture.root, "prebuild.log");
+    const xcodeFailFlag = NodePath.join(fixture.root, "xcode-fail");
+
+    // Create realistic pnpm store entries: expo-audio has expo-module.config.json, effect is pure JS.
+    const nativePkgDir = NodePath.join(
+      fixture.repo,
+      "node_modules/.pnpm/expo-audio@58.0.11/node_modules/expo-audio",
+    );
+    const jsPkgDir = NodePath.join(
+      fixture.repo,
+      "node_modules/.pnpm/effect@4.1.4/node_modules/effect",
+    );
+    const serverPkgDir = NodePath.join(
+      fixture.repo,
+      "node_modules/.pnpm/@cursor+sdk@1.4.0/node_modules/@cursor/sdk",
+    );
+    NodeFS.mkdirSync(nativePkgDir, { recursive: true });
+    NodeFS.mkdirSync(jsPkgDir, { recursive: true });
+    NodeFS.mkdirSync(serverPkgDir, { recursive: true });
+    NodeFS.writeFileSync(NodePath.join(nativePkgDir, "expo-module.config.json"), "{}\n");
+    NodeFS.writeFileSync(NodePath.join(jsPkgDir, "package.json"), '{"name":"effect"}\n');
+    NodeFS.writeFileSync(NodePath.join(serverPkgDir, "package.json"), '{"name":"@cursor/sdk"}\n');
+    NodeFS.writeFileSync(NodePath.join(fixture.repo, "node_modules/.modules.yaml"), "ok: true\n");
+
+    NodeFS.writeFileSync(NodePath.join(fixture.repo, "apps/mobile/app.config.ts"), "export {};\n");
+    const writeMobilePkg = (effectVer: string) =>
+      NodeFS.writeFileSync(
+        NodePath.join(fixture.repo, "apps/mobile/package.json"),
+        JSON.stringify(
+          {
+            name: "@t3tools/mobile",
+            version: "2.3.0",
+            dependencies: { "expo-audio": "58.0.11", effect: effectVer },
+          },
+          null,
+          2,
+        ) + "\n",
+      );
+    writeMobilePkg("4.1.4");
+
+    const writeLockfile = (opts: {
+      readonly audioVer: string;
+      readonly effectVer: string;
+      readonly serverVer: string;
+    }) =>
+      NodeFS.writeFileSync(
+        NodePath.join(fixture.repo, "pnpm-lock.yaml"),
+        [
+          "lockfileVersion: '9.0'",
+          "importers:",
+          "  .:",
+          "    dependencies: {}",
+          "importers:",
+          "  apps/mobile:",
+          "    dependencies:",
+          "      expo-audio:",
+          `        specifier: ${opts.audioVer}`,
+          `        version: ${opts.audioVer}`,
+          "      effect:",
+          `        specifier: ${opts.effectVer}`,
+          `        version: ${opts.effectVer}`,
+          "  apps/server:",
+          "    dependencies:",
+          "      '@cursor/sdk':",
+          `        specifier: ${opts.serverVer}`,
+          `        version: ${opts.serverVer}`,
+          "snapshots:",
+          `  expo-audio@${opts.audioVer}: {}`,
+          `  effect@${opts.effectVer}: {}`,
+          `  '@cursor/sdk@${opts.serverVer}': {}`,
+          "",
+        ].join("\n"),
+      );
+    writeLockfile({ audioVer: "58.0.11", effectVer: "4.1.4", serverVer: "1.4.0" });
+
+    NodeFS.mkdirSync(NodePath.join(fixture.repo, "patches"), { recursive: true });
+    const nativePatch = NodePath.join(fixture.repo, "patches/expo-audio@58.0.11.patch");
+    const serverPatch = NodePath.join(fixture.repo, "patches/@cursor__sdk@1.4.0.patch");
+    NodeFS.writeFileSync(nativePatch, "--- a/ios/Audio.swift\n+++ b/ios/Audio.swift\n");
+    NodeFS.writeFileSync(serverPatch, "--- a/server.js\n+++ b/server.js\n");
+
+    writeExecutable(
+      NodePath.join(fixture.binDir, "vp"),
+      `#!/usr/bin/env bash
+set -euo pipefail
+if [ "\${1:-}" = "install" ]; then
+  touch node_modules/.modules.yaml
+  exit 0
+fi
+echo "$*" >> "${prebuildLog}"
+mkdir -p ios/T3CodeFork.xcworkspace ios/Pods
+touch ios/Pods/Manifest.lock
+`,
+    );
+    writeExecutable(
+      NodePath.join(fixture.binDir, "xcodebuild"),
+      `#!/usr/bin/env bash
+set -euo pipefail
+echo "XCODE_NOISE_LINE: compiling pods"
+if [ -f "${xcodeFailFlag}" ]; then
+  echo "XCODE_FATAL_ERROR: code sign failed" >&2
+  exit 65
+fi
+app_dir="$FORK_STATE_DIR/ios-derived-data/Build/Products/Release-iphoneos/T3CodeFork.app"
+mkdir -p "$app_dir"
+cat >"$app_dir/Info.plist" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict><key>CFBundleShortVersionString</key><string>2.3.0</string></dict></plist>
+PLIST
+`,
+    );
+    writeExecutable(NodePath.join(fixture.binDir, "node"), "#!/usr/bin/env bash\nexit 0\n");
+
+    const buildEnv = { FORK_IOS_TEAM_ID: "TEAMTEST01" };
+    const xcodeLogPath = NodePath.join(fixture.stateDir, "logs/ios-xcodebuild.log");
+
+    // 1. Initial build runs prebuild and routes xcodebuild output to ios-xcodebuild.log.
+    const first = runForkScript(fixture, "scripts/fork/build-ios.sh", ["--stage"], buildEnv);
+    expect(first.exitCode).toBe(0);
+    expect(readLines(prebuildLog)).toHaveLength(1);
+    expect(first.output).not.toContain("XCODE_NOISE_LINE");
+    expect(NodeFS.readFileSync(xcodeLogPath, "utf8")).toContain("XCODE_NOISE_LINE");
+
+    // 2. Bumping desktop/server lockfile deps and patches reuses cached prebuild.
+    writeLockfile({ audioVer: "58.0.11", effectVer: "4.1.4", serverVer: "1.5.0" });
+    NodeFS.writeFileSync(serverPatch, "--- a/server.js\n+++ b/server.js\n+updated\n");
+    const afterServerBump = runForkScript(
+      fixture,
+      "scripts/fork/build-ios.sh",
+      ["--stage"],
+      buildEnv,
+    );
+    expect(afterServerBump.exitCode).toBe(0);
+    expect(afterServerBump.output).toContain("reusing cached prebuild");
+    expect(readLines(prebuildLog)).toHaveLength(1);
+
+    // 3. Bumping a pure-JS mobile dependency (effect) also reuses cached prebuild.
+    writeMobilePkg("4.1.5");
+    writeLockfile({ audioVer: "58.0.11", effectVer: "4.1.5", serverVer: "1.5.0" });
+    const afterPureJsBump = runForkScript(
+      fixture,
+      "scripts/fork/build-ios.sh",
+      ["--stage"],
+      buildEnv,
+    );
+    expect(afterPureJsBump.exitCode).toBe(0);
+    expect(afterPureJsBump.output).toContain("reusing cached prebuild");
+    expect(readLines(prebuildLog)).toHaveLength(1);
+
+    // 4. Bumping a native mobile dependency (expo-audio) invalidates the prebuild cache.
+    writeLockfile({ audioVer: "58.0.12", effectVer: "4.1.5", serverVer: "1.5.0" });
+    const afterNativeBump = runForkScript(
+      fixture,
+      "scripts/fork/build-ios.sh",
+      ["--stage"],
+      buildEnv,
+    );
+    expect(afterNativeBump.exitCode).toBe(0);
+    expect(readLines(prebuildLog)).toHaveLength(2);
+
+    // 5. Editing a native mobile patch file invalidates the prebuild cache.
+    NodeFS.writeFileSync(nativePatch, "--- a/ios/Audio.swift\n+++ b/ios/Audio.swift\n+fix\n");
+    const afterNativePatch = runForkScript(
+      fixture,
+      "scripts/fork/build-ios.sh",
+      ["--stage"],
+      buildEnv,
+    );
+    expect(afterNativePatch.exitCode).toBe(0);
+    expect(readLines(prebuildLog)).toHaveLength(3);
+
+    // 6. On xcodebuild failure, build-ios.sh exits non-zero and prints the tail from ios-xcodebuild.log.
+    NodeFS.writeFileSync(xcodeFailFlag, "1\n");
+    const failed = runForkScript(fixture, "scripts/fork/build-ios.sh", ["--stage"], buildEnv);
+    expect(failed.exitCode).toBe(1);
+    expect(failed.output).toContain("XCODE_FATAL_ERROR: code sign failed");
+    expect(failed.output).toContain("ios-xcodebuild.log");
+  });
+
+  it("exits promptly from scheduled update.sh when update-ios.sh spawns a detached daemon holding stdout/stderr", () => {
+    const fixture = createFixture({ realUpdateScript: true });
+    const head = gitHead(fixture.repo);
+    const daemonPidFile = NodePath.join(fixture.root, "daemon.pid");
+
+    NodeFS.writeFileSync(NodePath.join(fixture.stateDir, "last-sync"), `${FIXED_NOW}\n`);
+    NodeFS.writeFileSync(NodePath.join(fixture.stateDir, "build-failed"), `${head}\n`);
+
+    // Simulate SWBBuildService: a detached session leader that inherits stdout/stderr and stays alive.
+    writeExecutable(
+      NodePath.join(fixture.repo, "scripts/fork/update-ios.sh"),
+      `#!/usr/bin/env bash
+set -euo pipefail
+echo "update-ios: stub start"
+perl -MPOSIX=setsid -e '
+  my $pid = fork();
+  die "fork: $!" unless defined $pid;
+  if ($pid) {
+    open my $fh, ">", $ARGV[0] or die $!;
+    print $fh "$pid\\n";
+    close $fh;
+    exit 0;
+  }
+  setsid();
+  sleep 60;
+' "${daemonPidFile}"
+echo "update-ios: stub done"
+`,
+    );
+
+    try {
+      const result = runForkScript(
+        fixture,
+        "scripts/fork/update.sh",
+        ["--scheduled"],
+        { TEST_NOW_HOUR: "14" },
+        10_000,
+      );
+      expect(result.exitCode).toBe(0);
+      expect(result.output).toContain("update-ios: stub start");
+      expect(result.output).toContain("update-ios: stub done");
+      // Proves update.sh returned while the detached daemon was still alive holding its FDs.
+      const daemonPid = NodeFS.readFileSync(daemonPidFile, "utf8").trim();
+      expect(daemonPid).toMatch(/^\d+$/);
+      expect(NodeChildProcess.spawnSync("kill", ["-0", daemonPid]).status).toBe(0);
+      expect(
+        NodeFS.readdirSync(NodePath.join(fixture.stateDir, "logs")).filter((name) =>
+          name.startsWith("update-ios-run."),
+        ),
+      ).toEqual([]);
+    } finally {
+      if (NodeFS.existsSync(daemonPidFile)) {
+        const daemonPid = NodeFS.readFileSync(daemonPidFile, "utf8").trim();
+        if (/^\d+$/.test(daemonPid)) {
+          NodeChildProcess.spawnSync("kill", ["-TERM", daemonPid]);
+        }
+      }
+    }
+  });
+
+  it("keeps sync-upstream.sh worktree warm across merges and runs verify commands in parallel", () => {
+    const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "fork-sync-upstream-test-"));
+    tempRoots.push(root);
+    const upstreamBare = NodePath.join(root, "upstream.git");
+    const upstreamWork = NodePath.join(root, "upstream-work");
+    const repo = NodePath.join(root, "repo");
+    const stateDir = NodePath.join(root, "state");
+    const binDir = NodePath.join(root, "bin");
+    const barrierDir = NodePath.join(root, "barrier");
+    const parallelFlag = NodePath.join(root, "saw-parallel");
+    const failVerifyFlag = NodePath.join(root, "fail-verify");
+    const gitEnv = {
+      ...process.env,
+      GIT_AUTHOR_NAME: "Test",
+      GIT_AUTHOR_EMAIL: "test@example.com",
+      GIT_COMMITTER_NAME: "Test",
+      GIT_COMMITTER_EMAIL: "test@example.com",
+    };
+    const git = (cwd: string, args: string[]) =>
+      NodeChildProcess.execFileSync("git", args, { cwd, env: gitEnv, stdio: "pipe" })
+        .toString()
+        .trim();
+
+    NodeFS.mkdirSync(upstreamBare, { recursive: true });
+    NodeFS.mkdirSync(upstreamWork, { recursive: true });
+    NodeFS.mkdirSync(stateDir, { recursive: true });
+    NodeFS.mkdirSync(binDir, { recursive: true });
+    NodeFS.mkdirSync(barrierDir, { recursive: true });
+
+    git(upstreamBare, ["init", "--bare", "-b", "main"]);
+    git(upstreamWork, ["init", "-b", "main"]);
+    git(upstreamWork, ["remote", "add", "origin", upstreamBare]);
+    NodeFS.mkdirSync(NodePath.join(upstreamWork, "apps/mobile"), { recursive: true });
+    NodeFS.writeFileSync(NodePath.join(upstreamWork, ".gitignore"), "node_modules/\n");
+    NodeFS.writeFileSync(
+      NodePath.join(upstreamWork, "apps/mobile/index.ts"),
+      "export const v = 0;\n",
+    );
+    git(upstreamWork, ["add", "."]);
+    git(upstreamWork, ["commit", "-m", "base"]);
+    git(upstreamWork, ["push", "-u", "origin", "main"]);
+
+    git(root, ["clone", upstreamBare, repo]);
+    git(repo, ["remote", "rename", "origin", "upstream"]);
+    git(repo, ["checkout", "-b", "pi-prompt-suggestions"]);
+    NodeFS.mkdirSync(NodePath.join(repo, "scripts/fork"), { recursive: true });
+    NodeFS.writeFileSync(
+      NodePath.join(repo, "scripts/fork/config.sh"),
+      NodeFS.readFileSync(CONFIG_SH, "utf8"),
+    );
+    writeExecutable(
+      NodePath.join(repo, "scripts/fork/sync-upstream.sh"),
+      NodeFS.readFileSync(SYNC_UPSTREAM_SH, "utf8"),
+    );
+    NodeFS.writeFileSync(NodePath.join(repo, "scripts/fork/owned-paths.txt"), "scripts/fork/\n");
+    git(repo, ["add", "scripts/fork"]);
+    git(repo, ["commit", "-m", "add fork scripts"]);
+
+    // Stub vp: `vp i` seeds a gitignored marker in node_modules; verify calls synchronize briefly to prove concurrency.
+    writeExecutable(
+      NodePath.join(binDir, "vp"),
+      `#!/usr/bin/env bash
+set -euo pipefail
+if [ "\${1:-}" = "i" ]; then
+  mkdir -p node_modules
+  if [ ! -f node_modules/.warm-marker ]; then
+    echo "seeded-on-first-run" > node_modules/.warm-marker
+  fi
+  exit 0
+fi
+if [ -f "${failVerifyFlag}" ]; then
+  if [ "\${1:-}" = "run" ] && [ "\${2:-}" = "i18n:check" ]; then
+    echo "I18N_CHECK_FAILED" >&2
+    exit 1
+  fi
+  if [ "\${1:-}" = "test" ] && [ "\${2:-}" = "run" ] && [ "\${3:-}" = "--project" ] && [ "\${4:-}" = "react" ]; then
+    echo "MOBILE_REACT_FAILED" >&2
+    exit 1
+  fi
+fi
+touch "${barrierDir}/$$"
+for _ in $(seq 1 40); do
+  count="$(ls -1 "${barrierDir}" | wc -l | tr -d ' ')"
+  if [ "$count" -ge 2 ]; then
+    echo "$count" > "${parallelFlag}"
+    break
+  fi
+  sleep 0.05
+done
+`,
+    );
+    NodeFS.writeFileSync(NodePath.join(root, "vp-env.sh"), `PATH="${binDir}:$PATH"\n`, "utf8");
+
+    let tagTimestamp = FIXED_NOW;
+    const pushTag = (version: string, content: string) => {
+      tagTimestamp += 60;
+      const tagEnv = { ...gitEnv, GIT_COMMITTER_DATE: `${tagTimestamp} +0000` };
+      NodeFS.writeFileSync(NodePath.join(upstreamWork, "apps/mobile/index.ts"), content);
+      NodeChildProcess.execFileSync("git", ["add", "apps/mobile/index.ts"], {
+        cwd: upstreamWork,
+        env: tagEnv,
+        stdio: "pipe",
+      });
+      NodeChildProcess.execFileSync("git", ["commit", "-m", `release ${version}`], {
+        cwd: upstreamWork,
+        env: tagEnv,
+        stdio: "pipe",
+      });
+      NodeChildProcess.execFileSync("git", ["tag", "-a", version, "-m", version], {
+        cwd: upstreamWork,
+        env: tagEnv,
+        stdio: "pipe",
+      });
+      git(upstreamWork, ["push", "origin", "main", version]);
+    };
+
+    const runSync = () =>
+      runForkScript(
+        {
+          root,
+          repo,
+          stateDir,
+          binDir,
+          buildLog: "",
+          installLog: "",
+          pushLog: "",
+          iosUpdateLog: "",
+        },
+        "scripts/fork/sync-upstream.sh",
+        ["--no-push", "--no-assist"],
+      );
+
+    // 1. First sync merges tag 1, leaves sync-worktree warm, and proves parallel verify execution.
+    pushTag("v0.1.0-nightly.20261125.1001", "export const v = 1;\n");
+    const first = runSync();
+    expect(first.exitCode).toBe(0);
+    expect(first.output).toContain("v0.1.0-nightly.20261125.1001");
+    expect(NodeFS.existsSync(parallelFlag)).toBe(true);
+    const warmMarker = NodePath.join(stateDir, "sync-worktree/node_modules/.warm-marker");
+    expect(NodeFS.readFileSync(warmMarker, "utf8").trim()).toBe("seeded-on-first-run");
+
+    // 2. Second sync reuses the warm worktree (keeping gitignored node_modules) while cleaning untracked junk.
+    NodeFS.writeFileSync(warmMarker, "preserved-across-syncs\n");
+    const junkFile = NodePath.join(stateDir, "sync-worktree/stale-untracked.txt");
+    NodeFS.writeFileSync(junkFile, "junk\n");
+    NodeFS.rmSync(parallelFlag, { force: true });
+    for (const f of NodeFS.readdirSync(barrierDir)) {
+      NodeFS.rmSync(NodePath.join(barrierDir, f), { force: true });
+    }
+    pushTag("v0.1.0-nightly.20261125.1002", "export const v = 2;\n");
+    const second = runSync();
+    expect(second.exitCode).toBe(0);
+    expect(second.output).toContain("v0.1.0-nightly.20261125.1002");
+    expect(NodeFS.readFileSync(warmMarker, "utf8").trim()).toBe("preserved-across-syncs");
+    expect(NodeFS.existsSync(junkFile)).toBe(false);
+    expect(NodeFS.existsSync(parallelFlag)).toBe(true);
+
+    // 3. When multiple parallel verify commands fail, sync exits 1, keeps branch untouched, and reports all failures.
+    const headBeforeFailure = gitHead(repo);
+    NodeFS.writeFileSync(failVerifyFlag, "1\n");
+    pushTag("v0.1.0-nightly.20261125.1003", "export const v = 3;\n");
+    const third = runSync();
+    expect(third.exitCode).toBe(1);
+    expect(gitHead(repo)).toBe(headBeforeFailure);
+    const reportText = NodeFS.readFileSync(NodePath.join(stateDir, "sync-report.txt"), "utf8");
+    expect(reportText).toContain("I18N_CHECK_FAILED");
+    expect(reportText).toContain("MOBILE_REACT_FAILED");
   });
 });
