@@ -156,26 +156,364 @@ export T3CODE_MOBILE_APP_NAME="${FORK_IOS_APP_NAME:-$FORK_APP_NAME}"
 export T3CODE_MOBILE_SCHEME="${FORK_IOS_SCHEME:-t3code-fork}"
 export T3CODE_MOBILE_UPDATES_ENABLED=0
 
+# Prints a deterministic digest of apps/mobile's native, plugin, and prebuild-asset npm packages
+# (snapshot key, lockfile resolution/integrity, local file: archive contents) and matching patches/
+# so desktop/server or pure-JS bumps do not trigger cold prebuilds. Falls back to hashing raw
+# package.json, pnpm-lock.yaml, and all patches/ if the lockfile layout does not list apps/mobile.
+mobile_native_deps_digest() {
+  python3 - <<'PY'
+import hashlib, json, os, posixpath, re, urllib.parse
+
+def sha256_file(path: str) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(65536), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+def emit_fallback() -> None:
+    for path in ("apps/mobile/package.json", "pnpm-lock.yaml"):
+        if os.path.isfile(path):
+            print(f"fallback-file:{path}:{sha256_file(path)}")
+    if os.path.isdir("patches"):
+        for fname in sorted(os.listdir("patches")):
+            fpath = os.path.join("patches", fname)
+            if os.path.isfile(fpath):
+                print(f"fallback-patch:{fname}:{sha256_file(fpath)}")
+
+if not os.path.isfile("pnpm-lock.yaml") or not os.path.isfile("apps/mobile/package.json"):
+    emit_fallback()
+    raise SystemExit(0)
+
+Q = "'\""
+importers: dict[str, dict[str, str]] = {}
+packages: dict[str, list[str]] = {}
+snapshots: dict[str, list[str]] = {}
+
+def snapshot_key(dep: str, ver: str) -> str:
+    base = ver.split("(", 1)[0]
+    if base.startswith("file:"):
+        return f"{dep}@{ver}"
+    return ver if "@" in base[1:] else f"{dep}@{ver}"
+
+section = cur_key = cur_sub = cur_dep = None
+in_resolution = False
+with open("pnpm-lock.yaml", encoding="utf-8", errors="replace") as f:
+    for line in f:
+        line = line.rstrip("\r\n")
+        if line and not line.startswith(" "):
+            section = line.rstrip(":")
+            cur_key = cur_sub = cur_dep = None
+            in_resolution = False
+            continue
+        if section == "importers":
+            if line.startswith("  ") and not line.startswith("   "):
+                cur_sub = cur_dep = None
+                if line.endswith(":"):
+                    cur_key = line.strip()[:-1].strip(Q)
+                    importers.setdefault(cur_key, {})
+                else:
+                    cur_key = None
+            elif cur_key and line.startswith("    ") and not line.startswith("     "):
+                cur_dep = None
+                cur_sub = line.strip()[:-1] if line.endswith(":") else None
+            elif cur_key and cur_sub in ("dependencies", "devDependencies", "optionalDependencies"):
+                if line.startswith("      ") and not line.startswith("       "):
+                    cur_dep = line.strip()[:-1].strip(Q) if line.endswith(":") else None
+                elif cur_dep and line.startswith("        version: "):
+                    importers[cur_key][cur_dep] = line.split("version: ", 1)[1].strip().strip(Q)
+        elif section == "packages":
+            if line.startswith("  ? "):
+                in_resolution = False
+                cur_key = line[4:].strip().strip(Q)
+                packages.setdefault(cur_key, [])
+            elif line.startswith("  : ") and cur_key:
+                rest = line[4:].strip()
+                if rest == "resolution:":
+                    in_resolution = True
+                elif rest.startswith("resolution: "):
+                    in_resolution = False
+                    packages[cur_key].append(rest[len("resolution: "):].strip())
+                else:
+                    in_resolution = False
+            elif line.startswith("  ") and not line.startswith("   "):
+                in_resolution = False
+                if line.endswith(":"):
+                    cur_key = line.strip()[:-1].strip(Q)
+                    packages.setdefault(cur_key, [])
+                else:
+                    cur_key = None
+            elif cur_key and line.startswith("    ") and not line.startswith("     "):
+                stripped = line.strip()
+                if stripped == "resolution:":
+                    in_resolution = True
+                elif stripped.startswith("resolution: "):
+                    in_resolution = False
+                    packages[cur_key].append(stripped[len("resolution: "):].strip())
+                else:
+                    in_resolution = False
+            elif cur_key and in_resolution and line.startswith("      "):
+                packages[cur_key].append(line.strip())
+        elif section == "snapshots":
+            if line.startswith("  ? "):
+                cur_key = line[4:].strip().strip(Q)
+                snapshots.setdefault(cur_key, [])
+                cur_sub = None
+            elif line.startswith("  : ") and cur_key:
+                rest = line[4:].strip()
+                cur_sub = rest[:-1] if rest.endswith(":") else None
+            elif line.startswith("  ") and not line.startswith("   "):
+                cur_sub = None
+                if line.endswith(":"):
+                    cur_key = line.strip()[:-1].strip(Q)
+                    snapshots.setdefault(cur_key, [])
+                else:
+                    cur_key = None
+            elif cur_key and line.startswith("    ") and not line.startswith("     "):
+                cur_sub = line.strip()[:-1] if line.endswith(":") else None
+            elif cur_key and cur_sub in ("dependencies", "optionalDependencies") and line.startswith("      ") and ":" in line:
+                k, v = line.strip().split(":", 1)
+                snapshots[cur_key].append(snapshot_key(k.strip(Q), v.strip().strip(Q)))
+
+if "apps/mobile" not in importers:
+    emit_fallback()
+    raise SystemExit(0)
+
+# Hash non-dependency metadata from apps/mobile/package.json (name, version, main, expo, etc.).
+try:
+    with open("apps/mobile/package.json", encoding="utf-8") as f:
+        pkg_meta = json.load(f)
+    for dep_field in ("dependencies", "devDependencies", "optionalDependencies"):
+        pkg_meta.pop(dep_field, None)
+    meta_json = json.dumps(pkg_meta, sort_keys=True, separators=(",", ":"))
+    print(f"mobile-pkg-meta:{hashlib.sha256(meta_json.encode()).hexdigest()}")
+except Exception:
+    emit_fallback()
+    raise SystemExit(0)
+
+config_text_parts: list[str] = []
+if os.path.isfile("apps/mobile/app.config.ts"):
+    with open("apps/mobile/app.config.ts", encoding="utf-8", errors="replace") as f:
+        config_text_parts.append(f.read())
+if os.path.isdir("apps/mobile/plugins"):
+    for root_dir, dirnames, filenames in os.walk("apps/mobile/plugins"):
+        dirnames[:] = sorted(d for d in dirnames if d != "node_modules")
+        for fname in sorted(filenames):
+            fpath = os.path.join(root_dir, fname)
+            if os.path.isfile(fpath):
+                with open(fpath, encoding="utf-8", errors="replace") as f:
+                    config_text_parts.append(f.read())
+app_config_text = "\n".join(config_text_parts)
+
+visited_importers: set[str] = set()
+visited_pkgs: set[str] = set()
+pkg_importers: dict[str, set[str]] = {}
+imp_queue = [k for k in importers if k == "apps/mobile" or k.startswith("apps/mobile/")]
+pkg_queue: list[str] = []
+while imp_queue:
+    imp = imp_queue.pop()
+    if imp in visited_importers or imp not in importers:
+        continue
+    visited_importers.add(imp)
+    for dep, ver in importers[imp].items():
+        if ver.startswith("link:"):
+            target = posixpath.normpath(posixpath.join(imp, ver[5:]))
+            if target == "apps/mobile" or target.startswith("apps/mobile/"):
+                imp_queue.append(target)
+        else:
+            skey = snapshot_key(dep, ver)
+            pkg_importers.setdefault(skey, set()).add(imp)
+            pkg_queue.append(skey)
+
+while pkg_queue:
+    pkg = pkg_queue.pop()
+    if pkg in visited_pkgs:
+        continue
+    visited_pkgs.add(pkg)
+    for child in snapshots.get(pkg, ()):
+        if child not in visited_pkgs:
+            pkg_queue.append(child)
+
+pnpm_entries: dict[str, list[str]] = {}
+if os.path.isdir("node_modules/.pnpm"):
+    for entry in os.listdir("node_modules/.pnpm"):
+        m = re.match(r"^((?:@[^+]+\+)?[^@]+)@", entry)
+        if m:
+            raw = m.group(1)
+            name = raw.replace("+", "/", 1) if raw.startswith("@") else raw
+            pnpm_entries.setdefault(name, []).append(
+                os.path.join("node_modules/.pnpm", entry, "node_modules", name)
+            )
+
+markers = (
+    "expo-module.config.json",
+    "react-native.config.js",
+    "react-native.config.cjs",
+    "app.plugin.js",
+    "app.plugin.cjs",
+    "app.plugin.ts",
+    "ios",
+    "plugin",
+)
+
+def referenced_in_app_config(name: str) -> bool:
+    if not app_config_text or name not in app_config_text:
+        return False
+    return any(
+        f"{q}{name}{s}" in app_config_text
+        for q in ('"', "'", "`")
+        for s in ('"', "'", "`", "/")
+    )
+
+def declares_expo_plugin(pkg_dir: str) -> bool:
+    pkg_json_path = os.path.join(pkg_dir, "package.json")
+    if not os.path.isfile(pkg_json_path):
+        return False
+    try:
+        with open(pkg_json_path, encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception:
+        return True
+    expo_field = data.get("expo")
+    if isinstance(expo_field, dict) and any(k in expo_field for k in ("plugin", "plugins", "autolinking")):
+        return True
+    return False
+
+def is_native_or_plugin(name: str) -> bool:
+    if (
+        name in ("expo", "react-native")
+        or name.startswith(("@expo/", "@expo-google-fonts/"))
+        or referenced_in_app_config(name)
+    ):
+        return True
+    dirs = list(pnpm_entries.get(name, ()))
+    direct = os.path.join("apps/mobile/node_modules", name)
+    if os.path.isdir(direct):
+        dirs.append(direct)
+    if not dirs:
+        return True
+    for pkg_dir in dirs:
+        if not os.path.isdir(pkg_dir):
+            return True
+        if any(os.path.exists(os.path.join(pkg_dir, marker)) for marker in markers):
+            return True
+        if declares_expo_plugin(pkg_dir):
+            return True
+        try:
+            if any(entry.endswith(".podspec") for entry in os.listdir(pkg_dir)):
+                return True
+        except OSError:
+            return True
+    return False
+
+def hash_local_ref(ref: str, base_dirs: list[str]) -> None:
+    rel = ref[5:] if ref.startswith("file:") else ref
+    if not rel:
+        return
+    resolved = None
+    for base in base_dirs:
+        candidate = os.path.normpath(os.path.join(base, rel)) if base else os.path.normpath(rel)
+        if os.path.exists(candidate):
+            resolved = candidate
+            break
+    if resolved is None:
+        print(f"native-local-missing:{ref}")
+        return
+    if os.path.isfile(resolved):
+        print(f"native-local-file:{resolved}:{sha256_file(resolved)}")
+    elif os.path.isdir(resolved):
+        for root_dir, dirnames, filenames in os.walk(resolved):
+            dirnames[:] = sorted(d for d in dirnames if d not in ("node_modules", "build", ".build", "Pods"))
+            for fname in sorted(filenames):
+                fpath = os.path.join(root_dir, fname)
+                if os.path.isfile(fpath):
+                    print(f"native-local-dir:{fpath}:{sha256_file(fpath)}")
+
+# Include every native/plugin/prebuild-asset package plus its transitive dependency closure
+# so marker-free helpers used by config plugins also invalidate the prebuild cache.
+selected_pkgs: set[str] = set()
+closure_queue: list[str] = []
+for key in visited_pkgs:
+    at = key.find("@", 1)
+    name = key[:at] if at > 0 else key
+    if is_native_or_plugin(name):
+        closure_queue.append(key)
+
+while closure_queue:
+    key = closure_queue.pop()
+    if key in selected_pkgs:
+        continue
+    selected_pkgs.add(key)
+    for child in snapshots.get(key, ()):
+        if child not in selected_pkgs:
+            closure_queue.append(child)
+
+native_names: set[str] = set()
+hashed_local_refs: set[str] = set()
+for key in sorted(selected_pkgs):
+    at = key.find("@", 1)
+    name = key[:at] if at > 0 else key
+    native_names.add(name)
+    base_key = key.split("(", 1)[0]
+    res_entries = packages.get(base_key, [])
+    res_str = ";".join(res_entries)
+    print(f"native-pkg:{key}:{res_str}")
+    local_refs: list[str] = []
+    ver_part = base_key[at + 1:] if at > 0 else ""
+    if ver_part.startswith("file:"):
+        local_refs.append(ver_part)
+    for m in re.finditer(r"(?:tarball|directory):\s*['\"]?([^,'\"}\s]+)", res_str):
+        val = m.group(1)
+        if val.startswith("file:") or not re.match(r"^[a-zA-Z][a-zA-Z0-9+.-]*://", val):
+            local_refs.append(val)
+    base_dirs = sorted(pkg_importers.get(key, set())) + ["", "apps/mobile"]
+    for ref in local_refs:
+        if ref not in hashed_local_refs:
+            hashed_local_refs.add(ref)
+            hash_local_ref(ref, base_dirs)
+
+if os.path.isdir("patches"):
+    for fname in sorted(os.listdir("patches")):
+        fpath = os.path.join("patches", fname)
+        if not os.path.isfile(fpath) or not fname.endswith(".patch"):
+            continue
+        stem = urllib.parse.unquote(fname[:-6])
+        at = stem.rfind("@")
+        raw_name = stem[:at] if at > 0 else stem
+        pkg_name = raw_name
+        if pkg_name.startswith("@") and "/" not in pkg_name:
+            pkg_name = pkg_name.replace("__", "/", 1) if "__" in pkg_name else pkg_name.replace("+", "/", 1)
+        if at <= 0 or pkg_name in native_names:
+            print(f"native-patch:{fname}:{sha256_file(fpath)}")
+PY
+}
+
 prebuild_fingerprint() {
   local extra_files=() roots=()
   local candidate
-  for candidate in scripts/lib/brand-assets.ts scripts/lib/public-config.ts .env .env.local; do
+  for candidate in apps/mobile/fingerprint.config.js apps/mobile/clerk-theme.json scripts/lib/brand-assets.ts scripts/lib/public-config.ts .env .env.local; do
     [ -f "$candidate" ] && extra_files+=("$candidate")
   done
-  for candidate in apps/mobile/plugins apps/mobile/modules apps/mobile/assets assets/dev patches; do
+  for candidate in apps/mobile/plugins apps/mobile/modules apps/mobile/assets assets/dev; do
     [ -d "$candidate" ] && roots+=("$candidate")
   done
   {
-    printf 'env:%s:%s:%s:%s:%s:%s:%s\n' \
+    printf 'env:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s\n' \
       "$APP_VARIANT" \
+      "${MOBILE_VERSION_POLICY:-}" \
       "$T3CODE_IOS_PERSONAL_TEAM" \
       "$T3CODE_IOS_PERSONAL_TEAM_BUNDLE_ID" \
       "$T3CODE_MOBILE_APP_NAME" \
       "$T3CODE_MOBILE_SCHEME" \
       "$T3CODE_MOBILE_UPDATES_ENABLED" \
+      "${T3CODE_MOBILE_VERSION:-}" \
+      "${T3CODE_RELAY_URL:-}" \
+      "${T3_SHOWCASE_CAPTURE_BUILD:-}" \
       "$team_id"
-    shasum -a 256 apps/mobile/app.config.ts apps/mobile/package.json pnpm-lock.yaml \
+    { env | grep -E '^(EXPO_PUBLIC_|T3CODE_CLERK_|T3CODE_MOBILE_OTLP_|VITE_T3CODE_RELAY_URL=)' || true; } | LC_ALL=C sort
+    shasum -a 256 apps/mobile/app.config.ts \
       ${extra_files[@]+"${extra_files[@]}"}
+    mobile_native_deps_digest
     if [ "${#roots[@]}" -gt 0 ]; then
       # Match regular files and file symlinks (e.g. AppleSpeechEngine.swift -> native/apple-speech/)
       # without descending into directory symlinks, avoiding symlink loops.
@@ -280,11 +618,14 @@ if [ "$renew_profile" = 1 ]; then
   stash_cached_profiles
 fi
 
-echo "build-ios: compiling Release arm64 bundle (team $team_id)"
-mkdir -p "$FORK_IOS_DERIVED_DATA"
+xcode_log="$FORK_STATE_DIR/logs/ios-xcodebuild.log"
+mkdir -p "$(dirname "$xcode_log")" "$FORK_IOS_DERIVED_DATA"
+echo "build-ios: compiling Release arm64 bundle (team $team_id; log: $xcode_log)"
 # Match Expo's bundle phase expectation so Node resolves in launchd's bare PATH.
 export NODE_BINARY="${NODE_BINARY:-$(command -v node)}"
-xcodebuild \
+# Redirect xcodebuild to a regular file so resident Xcode daemons (SWBBuildService) never inherit
+# a caller's log pipe and block exit, and to keep update.log free of compiler warning noise.
+if ! xcodebuild \
   -quiet \
   -workspace "$workspace" \
   -scheme T3CodeFork \
@@ -295,7 +636,11 @@ xcodebuild \
   CODE_SIGN_STYLE=Automatic \
   -allowProvisioningUpdates \
   -allowProvisioningDeviceRegistration \
-  build
+  build </dev/null >"$xcode_log" 2>&1; then
+  tail -n 80 "$xcode_log" >&2 || true
+  echo "build-ios: xcodebuild failed; full log in $xcode_log" >&2
+  exit 1
+fi
 
 # Build succeeded; discard any stashed stale profile backup.
 if [ -n "$profile_backup_dir" ]; then

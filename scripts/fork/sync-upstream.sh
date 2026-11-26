@@ -6,8 +6,8 @@
 #
 # Usage: scripts/fork/sync-upstream.sh [--no-push] [--no-assist]
 # Exit codes: 0 merged or already current, 1 failed with the fork branch
-# untouched, 2 wrong checkout state. A failed attempt stays in the scratch
-# worktree until the next run.
+# untouched, 2 wrong checkout state, 75 another sync is already running. A
+# failed attempt stays in the scratch worktree until the next run.
 set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
@@ -25,6 +25,19 @@ for arg in "$@"; do
       ;;
   esac
 done
+
+# One sync at a time; protects the shared sync-worktree, report file, and branch advance.
+if [ "${FORK_SYNC_LOCKED:-}" != 1 ]; then
+  mkdir -p "$FORK_STATE_DIR"
+  locked=0
+  FORK_SYNC_LOCKED=1 lockf -s -k -t 0 "$FORK_STATE_DIR/sync-upstream.lock" \
+    scripts/fork/sync-upstream.sh "$@" || locked=$?
+  if [ "$locked" = 75 ]; then
+    echo "sync: another sync is already running" >&2
+    exit 75
+  fi
+  exit "$locked"
+fi
 
 if [ "$(git branch --show-current)" != "$FORK_BRANCH" ]; then
   echo "sync: check out $FORK_BRANCH first" >&2
@@ -60,17 +73,41 @@ worktree="$FORK_STATE_DIR/sync-worktree"
 report="$FORK_STATE_DIR/sync-report.txt"
 # Read before the merge, so a repair cannot widen what the fork may change.
 owned_paths="$(git show "$FORK_BRANCH:scripts/fork/owned-paths.txt")"
-check_commands='vp i
-vp test run packages/provider-pi/src/server/adapter.test.ts apps/desktop/src/app/DesktopUserData.test.ts apps/server/src/orchestration-v2/StoppedWatchNote.test.ts apps/server/src/orchestration-v2/ThreadStop.test.ts apps/server/src/pullRequest/pullRequestWatchSeed.test.ts apps/server/src/pullRequest/PullRequestWatchService.test.ts apps/server/src/orchestration-v2/PullRequestWatchRace.fork.test.ts apps/server/src/orchestration-v2/pullRequestWatch.test.ts scripts/fork/update-ios.test.ts
-(cd apps/mobile && vp test run --project unit app.config.test.ts app.config.fork.test.ts src/features/threads/composerSuggestions.test.ts && vp test run --project unit src/reactCompilerCoverage.test.ts -t "composerSuggestions|useComposerSuggestions|ComposerSuggestionBar|PromptSuggestionsBetaSection|ThreadComposer|ThreadDetailScreen|ThreadSettingsSections")
-(cd apps/mobile && vp test run --project react src/features/threads/useComposerSuggestions.test.tsx src/features/threads/ComposerSuggestionBar.test.tsx src/features/settings/PromptSuggestionsBetaSection.test.tsx)
-vp run --filter @t3tools/provider-pi --filter @t3tools/desktop --filter @t3tools/mobile --filter t3 typecheck
-vp run i18n:check'
+install_command='vp i'
+verify_commands=(
+  'vp test run packages/provider-pi/src/server/adapter.test.ts apps/desktop/src/app/DesktopUserData.test.ts apps/server/src/orchestration-v2/StoppedWatchNote.test.ts apps/server/src/orchestration-v2/ThreadStop.test.ts apps/server/src/pullRequest/pullRequestWatchSeed.test.ts apps/server/src/pullRequest/PullRequestWatchService.test.ts apps/server/src/orchestration-v2/PullRequestWatchRace.fork.test.ts apps/server/src/orchestration-v2/pullRequestWatch.test.ts scripts/fork/update-ios.test.ts'
+  '(cd apps/mobile && vp test run --project unit app.config.test.ts app.config.fork.test.ts src/features/threads/composerSuggestions.test.ts && vp test run --project unit src/reactCompilerCoverage.test.ts -t "composerSuggestions|useComposerSuggestions|ComposerSuggestionBar|PromptSuggestionsBetaSection|ThreadComposer|ThreadDetailScreen|ThreadSettingsSections")'
+  '(cd apps/mobile && vp test run --project react src/features/threads/useComposerSuggestions.test.tsx src/features/threads/ComposerSuggestionBar.test.tsx src/features/settings/PromptSuggestionsBetaSection.test.tsx)'
+  'vp run --filter @t3tools/provider-pi --filter @t3tools/desktop --filter @t3tools/mobile --filter t3 typecheck'
+  'vp run i18n:check'
+)
+check_commands="$(printf '%s\n' "$install_command" "${verify_commands[@]}")"
 
-mkdir -p "$FORK_STATE_DIR"
-git worktree remove --force "$worktree" 2>/dev/null || true
-git worktree prune
-git worktree add --quiet --detach "$worktree" "$FORK_BRANCH"
+# Reuse sync-worktree across runs so gitignored node_modules and tool caches stay warm;
+# fall back to recreating it cleanly if its checkout state cannot be reset.
+prepare_worktree() {
+  mkdir -p "$FORK_STATE_DIR"
+  local common_dir wt_common_dir
+  common_dir="$(git -C "$checkout" rev-parse --path-format=absolute --git-common-dir)"
+  if [ -f "$worktree/.git" ]; then
+    wt_common_dir="$(git -C "$worktree" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
+    if [ "$wt_common_dir" = "$common_dir" ]; then
+      git -C "$worktree" merge --abort 2>/dev/null || true
+      git -C "$worktree" rebase --abort 2>/dev/null || true
+      if git -C "$worktree" checkout --quiet --force --detach "$FORK_BRANCH" &&
+        git -C "$worktree" reset --quiet --hard "$FORK_BRANCH" &&
+        git -C "$worktree" clean --quiet -fd; then
+        return 0
+      fi
+    fi
+  fi
+  git worktree remove --force "$worktree" 2>/dev/null || true
+  rm -rf "$worktree"
+  git worktree prune
+  git worktree add --quiet --detach "$worktree" "$FORK_BRANCH"
+}
+
+prepare_worktree
 cd "$worktree"
 
 fail() {
@@ -103,17 +140,39 @@ verify() {
     printf 'The merge differs from %s outside the fork-owned paths:\n%s\n' "$tag" "$foreign" >"$report"
     return 1
   fi
-  local command
-  while IFS= read -r command; do
-    if ! bash -c "$command" </dev/null >"$report.out" 2>&1; then
+  rm -f "$report.failed" "$report.out" "$report.out".*
+  if ! bash -c "$install_command" </dev/null >"$report.out" 2>&1; then
+    {
+      printf 'This command failed:\n%s\n\nIts last output:\n' "$install_command"
+      tail -n 120 "$report.out"
+    } >"$report"
+    rm -f "$report.out"
+    return 1
+  fi
+  local pids=() i rc failed=0
+  for i in "${!verify_commands[@]}"; do
+    bash -c "${verify_commands[$i]}" </dev/null >"$report.out.$i" 2>&1 &
+    pids+=("$!")
+  done
+  : >"$report.failed"
+  for i in "${!pids[@]}"; do
+    rc=0
+    wait "${pids[$i]}" || rc=$?
+    if [ "$rc" != 0 ]; then
+      failed=1
       {
-        printf 'This command failed:\n%s\n\nIts last output:\n' "$command"
-        tail -n 120 "$report.out"
-      } >"$report"
-      return 1
+        printf 'This command failed:\n%s\n\nIts last output:\n' "${verify_commands[$i]}"
+        tail -n 120 "$report.out.$i"
+        printf '\n'
+      } >>"$report.failed"
     fi
-  done <<<"$check_commands"
-  rm -f "$report" "$report.out"
+  done
+  if [ "$failed" != 0 ]; then
+    mv "$report.failed" "$report"
+    rm -f "$report.out" "$report.out".*
+    return 1
+  fi
+  rm -f "$report" "$report.failed" "$report.out" "$report.out".*
 }
 
 # One model run per sync. It edits and stages; this function commits.
@@ -168,6 +227,7 @@ fi
 merged="$(git rev-parse HEAD)"
 cd "$checkout"
 git merge --quiet --ff-only "$merged"
-git worktree remove --force "$worktree"
+# Keep sync-worktree warm (preserving gitignored node_modules) for faster subsequent syncs.
+git -C "$worktree" checkout --quiet --force --detach "$merged" 2>/dev/null || true
 publish
 echo "sync: $FORK_BRANCH now contains $tag"
