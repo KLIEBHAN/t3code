@@ -252,7 +252,9 @@ if [ -n "$FORK_BUILD_HOST" ]; then
 else
   follow_origin
   if [ "$full" = 1 ]; then
-    date +%s >"$stamp"
+    # Only scheduled runs advance last-sync so manual checks and --restart runs
+    # never shift the next 04:00 daily sync window.
+    [ "$scheduled" = 0 ] || date +%s >"$stamp"
     echo "update: daily sync and build"
     if ! scripts/fork/sync-upstream.sh; then
       status=1
