@@ -1407,4 +1407,115 @@ fi
     expect(reportText).toContain("I18N_CHECK_FAILED");
     expect(reportText).toContain("MOBILE_REACT_FAILED");
   });
+
+  it("keeps last-sync scoped to scheduled daily syncs and enforces the 04:00 and 20h gates", () => {
+    const fixture = createFixture({ realUpdateScript: true });
+    const syncLog = NodePath.join(fixture.root, "sync.log");
+    const syncFailFlag = NodePath.join(fixture.root, "sync-fail");
+    const lastSyncPath = NodePath.join(fixture.stateDir, "last-sync");
+
+    writeExecutable(
+      NodePath.join(fixture.repo, "scripts/fork/sync-upstream.sh"),
+      `#!/usr/bin/env bash
+set -euo pipefail
+echo "\${TEST_NOW_EPOCH:-0}" >> "${syncLog}"
+if [ -f "${syncFailFlag}" ]; then
+  exit 1
+fi
+`,
+    );
+
+    const day1At0430 = FIXED_NOW;
+    NodeFS.writeFileSync(lastSyncPath, `${day1At0430}\n`);
+
+    // 1. Manual runs (plain and --restart) sync now without shifting last-sync.
+    const manualCheck = runForkScript(fixture, "scripts/fork/update.sh", [], {
+      TEST_NOW_EPOCH: String(day1At0430 + 10 * 3600),
+      TEST_NOW_HOUR: "14",
+    });
+    expect(manualCheck.exitCode).toBe(0);
+    expect(readLines(syncLog)).toEqual([String(day1At0430 + 10 * 3600)]);
+    expect(NodeFS.readFileSync(lastSyncPath, "utf8").trim()).toBe(String(day1At0430));
+
+    const manualRestart = runForkScript(fixture, "scripts/fork/update.sh", ["--restart"], {
+      TEST_NOW_EPOCH: String(day1At0430 + 10 * 3600 + 60),
+      TEST_NOW_HOUR: "14",
+    });
+    expect(manualRestart.exitCode).toBe(0);
+    expect(readLines(syncLog)).toHaveLength(2);
+    expect(NodeFS.readFileSync(lastSyncPath, "utf8").trim()).toBe(String(day1At0430));
+
+    // 2. Scheduled run before 04:00 skips daily sync even when age >= 20h.
+    const pre0400 = runForkScript(fixture, "scripts/fork/update.sh", ["--scheduled"], {
+      TEST_NOW_EPOCH: String(day1At0430 + 23 * 3600),
+      TEST_NOW_HOUR: "03",
+    });
+    expect(pre0400.exitCode).toBe(0);
+    expect(readLines(syncLog)).toHaveLength(2);
+    expect(NodeFS.readFileSync(lastSyncPath, "utf8").trim()).toBe(String(day1At0430));
+
+    // 3. Scheduled run at 04:30 runs daily sync on time (unshifted by prior manual runs) and advances last-sync.
+    const day2At0430 = day1At0430 + 24 * 3600;
+    const day2Scheduled = runForkScript(fixture, "scripts/fork/update.sh", ["--scheduled"], {
+      TEST_NOW_EPOCH: String(day2At0430),
+      TEST_NOW_HOUR: "04",
+    });
+    expect(day2Scheduled.exitCode).toBe(0);
+    expect(readLines(syncLog)).toHaveLength(3);
+    expect(NodeFS.readFileSync(lastSyncPath, "utf8").trim()).toBe(String(day2At0430));
+
+    // 4. Cooldown boundary: 19h59m59s skips; 20h00m00s (with leading-zero hour 08) runs and updates last-sync.
+    const justUnder20h = runForkScript(fixture, "scripts/fork/update.sh", ["--scheduled"], {
+      TEST_NOW_EPOCH: String(day2At0430 + 20 * 3600 - 1),
+      TEST_NOW_HOUR: "08",
+    });
+    expect(justUnder20h.exitCode).toBe(0);
+    expect(readLines(syncLog)).toHaveLength(3);
+    expect(NodeFS.readFileSync(lastSyncPath, "utf8").trim()).toBe(String(day2At0430));
+
+    const exact20h = day2At0430 + 20 * 3600;
+    const at20h = runForkScript(fixture, "scripts/fork/update.sh", ["--scheduled"], {
+      TEST_NOW_EPOCH: String(exact20h),
+      TEST_NOW_HOUR: "08",
+    });
+    expect(at20h.exitCode).toBe(0);
+    expect(readLines(syncLog)).toHaveLength(4);
+    expect(NodeFS.readFileSync(lastSyncPath, "utf8").trim()).toBe(String(exact20h));
+
+    // 5. Failed manual --restart sync exits 1 without Bark push or advancing last-sync;
+    //    failed scheduled daily sync alerts once and stamps last-sync so the next hour does not re-alert.
+    NodeFS.writeFileSync(syncFailFlag, "1\n");
+    const manualFail = runForkScript(fixture, "scripts/fork/update.sh", ["--restart"], {
+      TEST_NOW_EPOCH: String(exact20h + 3600),
+      TEST_NOW_HOUR: "09",
+    });
+    expect(manualFail.exitCode).toBe(1);
+    expect(readLines(syncLog)).toHaveLength(5);
+    expect(NodeFS.readFileSync(lastSyncPath, "utf8").trim()).toBe(String(exact20h));
+    expect(readLines(fixture.pushLog).filter((line) => line.includes("--event fehler"))).toEqual(
+      [],
+    );
+
+    const day3FailedEpoch = exact20h + 20 * 3600;
+    const scheduledFail = runForkScript(fixture, "scripts/fork/update.sh", ["--scheduled"], {
+      TEST_NOW_EPOCH: String(day3FailedEpoch),
+      TEST_NOW_HOUR: "04",
+    });
+    expect(scheduledFail.exitCode).toBe(1);
+    expect(readLines(syncLog)).toHaveLength(6);
+    expect(NodeFS.readFileSync(lastSyncPath, "utf8").trim()).toBe(String(day3FailedEpoch));
+    expect(
+      readLines(fixture.pushLog).filter((line) => line.includes("--event fehler")),
+    ).toHaveLength(1);
+
+    const scheduledAfterFail = runForkScript(fixture, "scripts/fork/update.sh", ["--scheduled"], {
+      TEST_NOW_EPOCH: String(day3FailedEpoch + 3600),
+      TEST_NOW_HOUR: "05",
+    });
+    expect(scheduledAfterFail.exitCode).toBe(0);
+    expect(readLines(syncLog)).toHaveLength(6);
+    expect(
+      readLines(fixture.pushLog).filter((line) => line.includes("--event fehler")),
+    ).toHaveLength(1);
+  });
 });
