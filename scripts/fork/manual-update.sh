@@ -7,7 +7,8 @@
 # for the applet as `<step of 4>|<text>`. At the end
 # $FORK_STATE_DIR/manual-result.<run> holds the summary. <run> is MANUAL_RUN_ID,
 # which the applet picks for each run, so a run it stopped watching cannot
-# answer for a later one:
+# answer for a later one; the applet deletes such a run's files when it starts
+# the next one:
 #   status=<installed|waiting|current|busy|failed> version=<version> current=<version> runs=<n> host=<build host>
 # `version` is the new build for `waiting`, otherwise the installed app;
 # `current` is the app that was installed before the run. `waiting` means a

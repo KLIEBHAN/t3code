@@ -42,8 +42,12 @@ if [ "${FORK_UPDATE_LOCKED:-}" != 1 ]; then
     # build host, otherwise to the app's own commit. The head keeps script changes
     # merged since the last build, such as a new applet, from going back until
     # the next build. Away from the build host they stay with the app this Mac
-    # has. Here, before the locked run starts, no script is mid-read: bash has
-    # parsed this whole block already.
+    # has. Here, before the locked run starts, no script of this run is mid-read:
+    # bash has parsed this whole block already. Another run that holds
+    # update.lock reads its scripts as it goes, so the move happens inside the
+    # locked run, before it starts update.sh: one lock covers both, and while
+    # another run holds it this run reports busy and moves nothing.
+    move_to=""
     if [ -n "$FORK_BUILD_HOST" ] && [ "$(git branch --show-current)" = "$FORK_BRANCH" ]; then
       wanted="$(scripts/fork/fetch-app.sh --commit 2>/dev/null || true)"
       [ -n "$wanted" ] || wanted="$(fork_app_commit "$FORK_STAGED_APP")"
@@ -63,12 +67,20 @@ if [ "${FORK_UPDATE_LOCKED:-}" != 1 ]; then
       fi
       # An app built before this Mac's role existed has no scripts for it; keep the current ones.
       if [ -n "$target" ] && [ "$target" != "$(git rev-parse HEAD)" ] && [ -n "$(git ls-tree --name-only "$target" scripts/fork/fetch-app.sh)" ]; then
-        git checkout --quiet -B "$FORK_BRANCH" "$target" || echo "update: could not move the scripts to ${target:0:10}" >&2
+        move_to="$target"
       fi
     fi
     locked=0
     was_locked=0
-    FORK_UPDATE_LOCKED=1 lockf -s -k -t 0 "$FORK_STATE_DIR/update.lock" scripts/fork/update.sh "$@" || locked=$?
+    # $1 is the commit to move the scripts to, or empty; $2 the branch; the rest goes to update.sh.
+    # shellcheck disable=SC2016
+    FORK_UPDATE_LOCKED=1 lockf -s -k -t 0 "$FORK_STATE_DIR/update.lock" bash -c '
+      if [ -n "$1" ]; then
+        git checkout --quiet -B "$2" "$1" || echo "update: could not move the scripts to ${1:0:10}" >&2
+      fi
+      shift 2
+      exec scripts/fork/update.sh "$@"
+    ' move-scripts "$move_to" "$FORK_BRANCH" "$@" || locked=$?
     if [ "$locked" = 75 ]; then
       echo "update: another run is active"
       was_locked=1

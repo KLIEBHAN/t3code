@@ -30,6 +30,8 @@ end run
 -- Returns "" when the user stops watching; the update goes on regardless.
 on runInBackground(extraArgument)
 	-- A run of its own: an earlier run this applet stopped watching writes to other files.
+	-- Nobody reads those files any more, so they go now; that run reports through banners and the log.
+	do shell script "rm -f " & quoted form of stateDir & "/manual-result.* " & quoted form of stateDir & "/manual-progress.*"
 	set runId to do shell script "/usr/bin/uuidgen"
 	set resultPath to stateDir & "/manual-result." & runId
 	set progressPath to stateDir & "/manual-progress." & runId
@@ -53,7 +55,7 @@ on runInBackground(extraArgument)
 			delay 1
 		end repeat
 	on error number -128
-		display notification "Das Update läuft im Hintergrund weiter. Ergebnis im Log oder beim nächsten Öffnen." with title appTitle
+		display notification "Das Update läuft im Hintergrund weiter. Installation und Fehler meldet eine Mitteilung, Details stehen im Log." with title appTitle
 		return ""
 	end try
 	set progress completed steps to totalSteps

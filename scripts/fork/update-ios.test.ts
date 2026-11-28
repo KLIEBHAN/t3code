@@ -616,6 +616,40 @@ describe.skipIf(NodeOS.platform() !== "darwin")("scripts/fork/update-ios.sh", ()
     expect(readLines(updateLockFixture.iosUpdateLog)).toEqual(["unlocked:--scheduled"]);
   });
 
+  it("moves a fetching Mac's scripts only while no other update run holds update.lock", async () => {
+    const fixture = createFixture({ realUpdateScript: true });
+    // fetch-app.sh stub: offers the commit in $FORK_STATE_DIR/offered and fetches nothing.
+    const fetchApp = NodePath.join(fixture.repo, "scripts/fork/fetch-app.sh");
+    const fetchAppSource = `#!/usr/bin/env bash
+if [ "\${1:-}" = "--commit" ]; then cat "$FORK_STATE_DIR/offered"; fi
+exit 0
+`;
+    writeExecutable(fetchApp, fetchAppSource);
+    const base = commitChange(fixture.repo, "scripts/fork/fetch-app.sh", fetchAppSource);
+
+    // origin is one fork commit ahead, and the build host offers that commit's app.
+    const origin = NodePath.join(fixture.root, "origin");
+    NodeChildProcess.execFileSync("git", ["clone", "--quiet", fixture.repo, origin]);
+    const offered = commitChange(origin, "apps/web/index.ts", "export const w = 2;\n");
+    NodeChildProcess.execFileSync("git", ["remote", "add", "origin", `file://${origin}`], {
+      cwd: fixture.repo,
+    });
+    NodeFS.writeFileSync(NodePath.join(fixture.stateDir, "offered"), `${offered}\n`);
+    const env = { FORK_BUILD_HOST: "build-mac.test", TEST_NOW_HOUR: "14" };
+
+    // A run that holds update.lock reads these scripts as it goes, so they stay put.
+    await withFileLock(NodePath.join(fixture.stateDir, "update.lock"), () => {
+      const busyRun = runForkScript(fixture, "scripts/fork/update.sh", [], env);
+      expect(busyRun.exitCode).toBe(0);
+      expect(busyRun.output).toContain("update: another run is active");
+      expect(gitHead(fixture.repo)).toBe(base);
+    });
+
+    const freeRun = runForkScript(fixture, "scripts/fork/update.sh", [], env);
+    expect(freeRun.exitCode).toBe(0);
+    expect(gitHead(fixture.repo)).toBe(offered);
+  });
+
   it("skips macOS desktop rebuilds on apps/mobile-only commits while still running update-ios.sh", () => {
     const fixture = createFixture({ realUpdateScript: true });
     const baseHead = gitHead(fixture.repo);
