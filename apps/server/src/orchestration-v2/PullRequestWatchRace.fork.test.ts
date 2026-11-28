@@ -74,7 +74,10 @@ const forgejoProject: OrchestrationProjectShell = {
 
 const makeLayer = () => {
   const layerDatabase = SqlitePersistence.layerMemory;
-  const projectionStore = ProjectionStore.layer.pipe(Layer.provide(layerDatabase));
+  const projectionStore = ProjectionStore.layer.pipe(
+    Layer.provide(NodeCrypto.layerDigest),
+    Layer.provide(layerDatabase),
+  );
   const eventStore = EventStore.layer.pipe(Layer.provide(layerDatabase));
   return ThreadManagementService.layer.pipe(
     Layer.provideMerge(
