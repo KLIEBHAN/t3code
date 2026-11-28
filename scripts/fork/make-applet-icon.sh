@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Builds the Dock applet's icon into scripts/fork/applet-icon/ from upstream's
+# Builds the Dock app's icon into scripts/fork/applet-icon/ from upstream's
 # Icon Composer icon (assets/dev/app-icon.icon) with the update badge on top.
 # Needs Xcode (swift, actool). Run it only to change the look and commit the
-# result: install-applet.sh copies the files, so receiving Macs need no Xcode.
+# result: install-applet.sh copies the files, so receiving Macs need no actool.
 #
 # Usage: scripts/fork/make-applet-icon.sh
 set -euo pipefail

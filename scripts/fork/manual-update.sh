@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# One update.sh run for the Dock applet (update-applet.applescript). The applet
-# starts it in the background and only watches, so closing the applet cannot
-# stop the update. Output streams into update.log as the run goes.
+# One update.sh run for the Dock app (update-app.swift). The app starts it in
+# the background and only watches, so closing the app cannot stop the update.
+# Output streams into update.log as the run goes.
 #
 # While it runs, $FORK_STATE_DIR/manual-progress.<run> holds the current step
-# for the applet as `<step of 4>|<text>`. At the end
+# for the app as `<step of 4>|<text>`. At the end
 # $FORK_STATE_DIR/manual-result.<run> holds the summary. <run> is MANUAL_RUN_ID,
-# which the applet picks for each run, so a run it stopped watching cannot
-# answer for a later one; the applet deletes such a run's files when it starts
+# which the app picks for each run, so a run it stopped watching cannot
+# answer for a later one; the app deletes such a run's files when it starts
 # the next one:
 #   status=<installed|waiting|current|busy|failed> version=<version> current=<version> runs=<n> host=<build host>
 # `version` is the new build for `waiting`, otherwise the installed app;
@@ -87,7 +87,7 @@ else
   version="$(version_of "$FORK_APP_PATH")"
 fi
 summary="status=$status version=$version current=$current runs=$runs host=$FORK_BUILD_HOST"
-# Written in one step, so the applet never reads half a line.
+# Written in one step, so the app never reads half a line.
 printf '%s\n' "$summary" >"$result.tmp" && mv "$result.tmp" "$result"
 rm -f "$progress"
 echo "$summary"

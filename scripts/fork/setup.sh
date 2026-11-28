@@ -2,7 +2,7 @@
 # One-time setup of the fork app on this Mac. Safe to run again: it keeps what
 # exists. See FORK.md.
 #   1. A check that the signing identity from config.sh is in the keychain.
-#   2. The Dock applet for updates by hand, ~/Applications/T3 Code Fork Update.app.
+#   2. The Dock app for updates by hand, ~/Applications/T3 Code Fork Update.app.
 #   3. Copies of the bark and ntfy skill senders with their .env and a link to
 #      Python 3.10 or newer, through which the hourly run reports failures to
 #      the phone. Run setup.sh again when
