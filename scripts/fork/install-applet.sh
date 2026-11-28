@@ -33,6 +33,9 @@ rmdir "$work/incoming" "$work/previous" "$work" 2>/dev/null || true
 plist="$(mktemp)"
 cleanup_work=0
 trap 'rm -f "$plist"; if [ "$cleanup_work" = 1 ]; then restore_previous; rm -rf "$work"; fi' EXIT
+# The app runs from elsewhere, so a relative state directory becomes absolute.
+mkdir -p "$FORK_STATE_DIR"
+state_dir="$(cd "$FORK_STATE_DIR" && pwd)"
 # plutil escapes the values, so any path is safe here.
 plutil -create xml1 "$plist"
 for entry in \
@@ -45,7 +48,7 @@ for entry in \
   "CFBundleIconName=AppIcon" \
   "LSMinimumSystemVersion=14.0" \
   "T3ForkRepoPath=$PWD" \
-  "T3ForkStateDir=$FORK_STATE_DIR" \
+  "T3ForkStateDir=$state_dir" \
   "T3ForkAppPath=$FORK_APP_PATH" \
   "T3ForkBuildHost=$FORK_BUILD_HOST"; do
   plutil -insert "${entry%%=*}" -string "${entry#*=}" "$plist"

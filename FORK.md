@@ -89,7 +89,7 @@ A patch that touches a new upstream file needs that path in `scripts/fork/owned-
 
 ## A second Mac
 
-A second Mac can install the app the first one builds. It needs no signing certificate, toolchain, or full checkout, only SSH access to the build Mac without a password prompt. Both Macs need the same home folder path, such as `/Users/fabi`: the second Mac reads the app from the paths `scripts/fork/config.sh` gives.
+A second Mac can install the app the first one builds. It needs no signing certificate, Node or Rust toolchain, or full checkout, only the Swift compiler for the update app (Xcode or the Command Line Tools, `xcode-select --install`) and SSH access to the build Mac without a password prompt. Both Macs need the same home folder path, such as `/Users/fabi`: the second Mac reads the app from the paths `scripts/fork/config.sh` gives.
 
 ```sh
 cd ~/workspace

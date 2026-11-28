@@ -98,10 +98,16 @@ final class UpdateModel {
   var runs = ""
   /// Why a run failed, as far as the log tells.
   var failure = ""
+  /// The app's version before the run, from its summary.
+  var before = ""
   var now = Date()
   var onAttention: () -> Void = {}
 
   private var runId = ""
+  /// The detached manual-update.sh; 0 before it started.
+  private var runPid: pid_t = 0
+  /// Where this run's lines start in update.log.
+  private var logOffset: UInt64 = 0
   private var started = Date()
   private var timer: Timer?
   private var closeItem: DispatchWorkItem?
@@ -162,17 +168,22 @@ final class UpdateModel {
       return
     }
     runId = UUID().uuidString
+    runPid = 0
+    let log = (try? files.attributesOfItem(atPath: logPath))?[.size] as? NSNumber
+    logOffset = log?.uint64Value ?? 0
     // `&` covers only the update command, whose input and output are
-    // redirected, so sh returns at once; nohup keeps the run going when this
-    // app quits. The script reads its state directory from the environment, so
-    // both sides use the same files.
+    // redirected, so sh returns at once with its PID; nohup keeps the run going
+    // when this app quits. The script reads its state directory from the
+    // environment, so both sides use the same files.
     let shell = Process()
+    let output = Pipe()
     shell.executableURL = URL(fileURLWithPath: "/bin/sh")
     shell.arguments = [
       "-c",
-      #"cd "$1" || exit 1; FORK_STATE_DIR="$2" MANUAL_RUN_ID="$3" /usr/bin/nohup /bin/bash scripts/fork/manual-update.sh ${4:+"$4"} </dev/null >/dev/null 2>&1 &"#,
+      #"cd "$1" || exit 1; FORK_STATE_DIR="$2" MANUAL_RUN_ID="$3" /usr/bin/nohup /bin/bash scripts/fork/manual-update.sh ${4:+"$4"} </dev/null >/dev/null 2>&1 & echo $!"#,
       "sh", config.repoPath, config.stateDir, runId, restart ? "--restart" : "",
     ]
+    shell.standardOutput = output
     do {
       try shell.run()
       shell.waitUntilExit()
@@ -180,6 +191,13 @@ final class UpdateModel {
       fail("manual-update.sh ließ sich nicht starten: \(error.localizedDescription)")
       return
     }
+    let pid = String(decoding: output.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    guard shell.terminationStatus == 0, let pid = pid_t(pid) else {
+      fail("manual-update.sh ließ sich nicht starten (Status \(shell.terminationStatus)).")
+      return
+    }
+    runPid = pid
     timer?.invalidate()
     timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
       MainActor.assumeIsolated { self?.tick() }
@@ -188,22 +206,45 @@ final class UpdateModel {
 
   func tick() {
     now = Date()
-    let resultPath = config.stateDir + "/manual-result." + runId
-    if let summary = try? String(contentsOfFile: resultPath, encoding: .utf8),
-      !summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    {
-      try? FileManager.default.removeItem(atPath: resultPath)
+    // Progress first: the run removes it right after it writes its result.
+    readProgress()
+    if let summary = takeResult() {
       finish(summary)
+      return
+    }
+    if runPid > 0 && kill(runPid, 0) != 0 && errno == ESRCH {
+      // The run ended; its result may have landed since the check above.
+      readProgress()
+      if let summary = takeResult() {
+        finish(summary)
+      } else {
+        finish("status=failed")
+        if failure.isEmpty { failure = "manual-update.sh endete ohne Ergebnis." }
+      }
       return
     }
     if now.timeIntervalSince(started) > Self.maxWait {
       finish("status=slow")
-      return
     }
+  }
+
+  private var logPath: String { config.stateDir + "/logs/update.log" }
+
+  private func readProgress() {
     let progressPath = config.stateDir + "/manual-progress." + runId
     if let line = try? String(contentsOfFile: progressPath, encoding: .utf8) {
       advance(line)
     }
+  }
+
+  /// This run's summary line, which it then no longer needs, or nil while it runs.
+  private func takeResult() -> String? {
+    let resultPath = config.stateDir + "/manual-result." + runId
+    guard let summary = try? String(contentsOfFile: resultPath, encoding: .utf8),
+      !summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    else { return nil }
+    try? FileManager.default.removeItem(atPath: resultPath)
+    return summary
   }
 
   /// Applies a progress line `<step>|<text>` from manual-update.sh. Steps
@@ -237,12 +278,13 @@ final class UpdateModel {
     now = Date()
     phase = Phase(rawValue: Self.value(summary, "status")) ?? .failed
     let version = Self.value(summary, "version")
-    let current = Self.value(summary, "current")
-    if !current.isEmpty { installed = current }
+    before = Self.value(summary, "current")
+    if !before.isEmpty { installed = before }
     runs = Self.value(summary, "runs")
     switch phase {
     case .waiting, .installed: offered = version
-    case .current: if !version.isEmpty { installed = version }
+    // A failed run can still have installed a build it found staged.
+    case .current, .failed: if !version.isEmpty { installed = version }
     default: break
     }
     for index in steps.indices {
@@ -311,17 +353,14 @@ final class UpdateModel {
 
   /// The last line of this run in update.log that names a failure, else its last line.
   private func lastTellingLogLine() -> String {
-    guard let log = FileHandle(forReadingAtPath: config.stateDir + "/logs/update.log") else {
-      return ""
-    }
+    guard let log = FileHandle(forReadingAtPath: logPath) else { return "" }
     defer { try? log.close() }
     let size = (try? log.seekToEnd()) ?? 0
-    try? log.seek(toOffset: size > 65_536 ? size - 65_536 : 0)
-    var lines = String(decoding: log.readDataToEndOfFile(), as: UTF8.self)
+    // From where this run started, or the last 64 KiB of it; all of a log that shrank.
+    let from = logOffset <= size ? max(logOffset, size > 65_536 ? size - 65_536 : 0) : 0
+    try? log.seek(toOffset: from)
+    let lines = String(decoding: log.readDataToEndOfFile(), as: UTF8.self)
       .split(separator: "\n").map(String.init)
-    if let start = lines.lastIndex(where: { $0.contains("update: manual run") }) {
-      lines = Array(lines[(start + 1)...])
-    }
     let messages = lines.map {
       $0.replacingOccurrences(of: #"^\[[^\]]*\] "#, with: "", options: .regularExpression)
     }.filter { !$0.isEmpty }
@@ -450,7 +489,12 @@ struct UpdateView: View {
     case .failed:
       VStack(alignment: .leading, spacing: 8) {
         Hint(symbol: "xmark.octagon.fill", tint: .red, text: failureText)
-        Text("Die installierte App bleibt unverändert.").foregroundStyle(.secondary)
+        if !model.before.isEmpty && model.installed != model.before {
+          Text("\(VersionLabel(model.installed).name) \(VersionLabel(model.installed).number) wurde trotzdem installiert.")
+            .foregroundStyle(.secondary)
+        } else {
+          Text("Die installierte App bleibt unverändert.").foregroundStyle(.secondary)
+        }
       }
     }
   }
